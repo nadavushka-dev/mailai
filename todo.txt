@@ -1,4 +1,4 @@
-(B) 2026-10-29 M2 identity: peer pid (SO_PEERCRED/LOCAL_PEERPID), outside_pane vs pane via fake proc tree, tokens +m2
+x 2026-10-29 2026-10-29 M2 identity: peer pid (SO_PEERCRED/LOCAL_PEERPID), outside_pane vs pane via fake proc tree, tokens +m2
 (B) 2026-10-29 M2 human: nonce at attach, verified vs claimed_human, forced peek of human inbox, from human refused from pane +m2
 (B) 2026-10-29 M2 inbox: attention items (asks to human, ask-human, errored), inbox/answer/dismiss verbs and CLI, D13 two views +m2
 (C) 2026-10-29 M3 adapter interface + none adapter; herdr adapter: agents/sessions/state, wake via agent prompt, tty/pid/token placement +m3

@@ -26,7 +26,9 @@ build() {
 	version=${VERSION:-v0.0.0-dev.$(TZ=UTC git show -s --format=%cd --date=format-local:%Y%m%d%H%M%S HEAD).$(git rev-parse --short=7 HEAD)}
 	arch=$(docker info --format '{{.Architecture}}' | sed 's/x86_64/amd64/; s/aarch64/arm64/')
 	echo "building $version for linux/$arch"
-	CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -ldflags "-X github.com/nadavushka-dev/mailai/internal/buildinfo.Version=$version" -o "$dir/bin/mailai" ./cmd/mailai
+	CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -ldflags "-X github.com/nadavushka-dev/mailai/internal/buildinfo.Version=$version" -o "$dir/bin/mailai.new" ./cmd/mailai
+	# The boxes bind-mount the file, so write into the same inode: cp, not rename.
+	cp "$dir/bin/mailai.new" "$dir/bin/mailai" && rm -f "$dir/bin/mailai.new"
 }
 
 start_daemon() {
