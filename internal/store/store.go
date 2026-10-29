@@ -17,6 +17,7 @@ var (
 	ErrSubjectNotOneLine = errors.New("subject must be one line")
 	ErrTextTooLong       = fmt.Errorf("text longer than %d bytes", MaxText)
 	ErrMailboxFull       = errors.New("mailbox_full")
+	ErrKindMismatch      = errors.New("a reply cannot carry another kind")
 )
 
 // Limits bound one mailbox (SPEC §6).
@@ -71,6 +72,8 @@ type Store struct {
 	machine string
 	nextID  uint64
 	boxes   map[Address]*mailbox
+	// byMID finds a message in whatever box holds it, for threads.
+	byMID map[string]*Message
 }
 
 type mailbox struct {
@@ -90,7 +93,7 @@ func New(o Options) *Store {
 	if o.MachineID == "" {
 		o.MachineID = "local"
 	}
-	return &Store{now: o.Now, limits: o.Limits, machine: o.MachineID, boxes: map[Address]*mailbox{}}
+	return &Store{now: o.Now, limits: o.Limits, machine: o.MachineID, boxes: map[Address]*mailbox{}, byMID: map[string]*Message{}}
 }
 
 // Send validates a request and stores it in the recipient's mailbox, or the
@@ -122,6 +125,12 @@ func (s *Store) Send(r SendRequest) (Message, error) {
 	} else if kind == "" {
 		kind = KindMail
 	}
+	if r.ReplyTo != "" {
+		if kind != KindMail && kind != KindReply {
+			return Message{}, ErrKindMismatch
+		}
+		kind = KindReply
+	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -140,15 +149,113 @@ func (s *Store) Send(r SendRequest) (Message, error) {
 		Attachments: append([]Attachment(nil), r.Attachments...),
 		SentAt:      s.now().UnixNano(),
 	}
+	// Thread id is resolved now, not walked at read time: the store is
+	// bounded and forgets, and a thread must answer to one id forever.
 	m.ThreadID = m.MID
+	if r.ReplyTo != "" {
+		if parent, ok := s.byMID[r.ReplyTo]; ok {
+			m.ThreadID = parent.ThreadID
+		} else {
+			m.ThreadID = r.ReplyTo
+			m.ReplyToMissing = true
+		}
+	}
 	mb := s.box(box)
-	if err := mb.makeRoom(m.size(), s.limits); err != nil {
+	if err := mb.makeRoom(m.size(), s.limits, s.byMID); err != nil {
 		s.nextID--
 		return Message{}, err
 	}
 	mb.msgs = append(mb.msgs, m)
 	mb.bytes += m.size()
+	s.byMID[m.MID] = m
 	return *m, nil
+}
+
+// PeekQuery reads without marking read. A peek by the mailbox's own
+// principal marks its unread messages seen, so a sender can tell they were
+// looked at; any other peek changes nothing (SPEC §6).
+type PeekQuery struct {
+	Mailbox Address
+	By      Address
+	Unread  bool
+}
+
+// Peek returns copies like Read does, stamping SeenAt only for an own-inbox
+// peek.
+func (s *Store) Peek(q PeekQuery) ([]Message, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	mb, ok := s.boxes[q.Mailbox]
+	if !ok {
+		return nil, nil
+	}
+	now := s.now().UnixNano()
+	own := q.By != "" && q.By == q.Mailbox
+	var out []Message
+	for _, m := range mb.msgs {
+		if q.Unread && m.ReadAt != 0 {
+			continue
+		}
+		c := *m
+		c.WasUnread = m.ReadAt == 0
+		c.WasSeen = m.ReadAt == 0 && m.SeenAt != 0
+		if own && m.ReadAt == 0 && m.SeenAt == 0 {
+			m.SeenAt = now
+			c.SeenAt = now
+		}
+		out = append(out, c)
+	}
+	return out, nil
+}
+
+// Thread returns copies of every stored message in a thread, oldest first,
+// whatever mailbox holds each; nil when none is held.
+func (s *Store) Thread(threadID string) []Message {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []Message
+	for _, mb := range s.boxes {
+		for _, m := range mb.msgs {
+			if m.ThreadID == threadID {
+				out = append(out, *m)
+			}
+		}
+	}
+	sortByID(out)
+	return out
+}
+
+// Unread is the count of unread messages in a box and the distinct senders,
+// in order of first appearance. It is what a notice line is built from (D12).
+func (s *Store) Unread(box Address) (int, []Address) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	mb, ok := s.boxes[box]
+	if !ok {
+		return 0, nil
+	}
+	n := 0
+	seen := map[Address]bool{}
+	var from []Address
+	for _, m := range mb.msgs {
+		if m.ReadAt != 0 {
+			continue
+		}
+		n++
+		if !seen[m.From] {
+			seen[m.From] = true
+			from = append(from, m.From)
+		}
+	}
+	return n, from
+}
+
+func sortByID(ms []Message) {
+	for i := 1; i < len(ms); i++ {
+		for j := i; j > 0 && ms[j].ID < ms[j-1].ID; j-- {
+			ms[j], ms[j-1] = ms[j-1], ms[j]
+		}
+	}
 }
 
 // Read returns copies of the messages a query selects, oldest first.
@@ -209,7 +316,7 @@ func (s *Store) box(a Address) *mailbox {
 // makeRoom evicts the oldest read messages until a message of n bytes fits.
 // Unread messages are never evicted; if they alone fill the box, the send is
 // refused with ErrMailboxFull (SPEC §6).
-func (mb *mailbox) makeRoom(n int, lim Limits) error {
+func (mb *mailbox) makeRoom(n int, lim Limits, index map[string]*Message) error {
 	if n > lim.MaxBytes {
 		return ErrMailboxFull
 	}
@@ -228,6 +335,7 @@ func (mb *mailbox) makeRoom(n int, lim Limits) error {
 			return ErrMailboxFull
 		}
 		mb.bytes -= mb.msgs[i].size()
+		delete(index, mb.msgs[i].MID)
 		mb.msgs = append(mb.msgs[:i], mb.msgs[i+1:]...)
 		mb.evicted++
 	}
