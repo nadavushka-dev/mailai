@@ -98,5 +98,8 @@ func (m *Message) size() int {
 	return n
 }
 
+// Human is the person's address (SPEC §5).
+const Human Address = "human"
+
 // NoticeBox is the mailbox key that holds a session's notices.
 func NoticeBox(session string) Address { return Address("session:" + session) }
