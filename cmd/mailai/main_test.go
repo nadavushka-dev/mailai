@@ -220,3 +220,54 @@ func TestCLI_AttachAndStash(t *testing.T) {
 		t.Fatal(string(b))
 	}
 }
+
+// SPEC §9: a token makes a process the agent it was issued to; the person,
+// outside every pane, is verified.
+func TestCLI_TokensPlaceAgents(t *testing.T) {
+	e := startEnv(t)
+	tok := strings.TrimSpace(strings.SplitN(e.must("token", "new", "helper", "--label", "test"), "\n", 2)[0])
+	if !strings.HasPrefix(tok, "mt_") {
+		t.Fatal(tok)
+	}
+	agent := e.cmd("whoami")
+	agent.Env = append(agent.Env, "MAILAI_TOKEN="+tok)
+	out, err := agent.CombinedOutput()
+	if err != nil || strings.TrimSpace(string(out)) != "helper (token)" {
+		t.Fatalf("%q %v", out, err)
+	}
+	send := e.cmd("send", "human", "need a decision", "--json")
+	send.Env = append(send.Env, "MAILAI_TOKEN="+tok)
+	out, _ = send.CombinedOutput()
+	if !strings.Contains(string(out), `"from": "helper"`) || !strings.Contains(string(out), `"sender_proof": "token"`) {
+		t.Fatalf("%s", out)
+	}
+	// The agent cannot speak as the person, nor mint tokens.
+	bad := e.cmd("send", "--from", "human", "helper", "approved")
+	bad.Env = append(bad.Env, "MAILAI_TOKEN="+tok)
+	if out, err := bad.CombinedOutput(); err == nil || !strings.Contains(string(out), "forbidden") {
+		t.Fatalf("%q %v", out, err)
+	}
+	mint := e.cmd("token", "new", "evil")
+	mint.Env = append(mint.Env, "MAILAI_TOKEN="+tok)
+	if out, err := mint.CombinedOutput(); err == nil || !strings.Contains(string(out), "not_human") {
+		t.Fatalf("%q %v", out, err)
+	}
+	// The person's reply shows as verified in the fence the agent reads.
+	e.must("send", "helper", "go ahead")
+	read := e.cmd("read")
+	read.Env = append(read.Env, "MAILAI_TOKEN="+tok)
+	out, _ = read.CombinedOutput()
+	if !strings.Contains(string(out), "from human (verified human)") {
+		t.Fatalf("%s", out)
+	}
+	if out := e.must("token", "ls"); !strings.HasPrefix(out, "helper\t") || !strings.HasSuffix(strings.TrimSpace(out), "test") {
+		t.Fatal(out)
+	}
+	e.must("token", "revoke", "helper")
+	agent = e.cmd("whoami")
+	agent.Env = append(agent.Env, "MAILAI_TOKEN="+tok)
+	out, _ = agent.CombinedOutput()
+	if strings.TrimSpace(string(out)) != "human (outside_pane)" {
+		t.Fatalf("revoked token: %q", out)
+	}
+}

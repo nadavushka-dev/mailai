@@ -57,6 +57,26 @@ type AskResult struct {
 	Reply store.Message `json:"reply"`
 }
 
+// HelloArgs is sent once after connecting; the token, if any, re-places
+// the connection. The client sends it from MAILAI_TOKEN.
+type HelloArgs struct {
+	Token string `json:"token,omitempty"`
+}
+
+type TokenNewArgs struct {
+	Name  store.Address `json:"name"`
+	Label string        `json:"label,omitempty"`
+}
+
+type TokenNewResult struct {
+	Name  store.Address `json:"name"`
+	Token string        `json:"token"`
+}
+
+type TokenRevokeArgs struct {
+	Name store.Address `json:"name"`
+}
+
 type WhoamiResult struct {
 	Principal store.Address `json:"principal"`
 	Proof     store.Proof   `json:"proof"`

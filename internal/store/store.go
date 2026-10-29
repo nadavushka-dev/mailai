@@ -59,6 +59,7 @@ type SendRequest struct {
 	Proof      Proof
 	Origin     string
 	OriginHost string
+	Verified   string
 }
 
 // ReadQuery selects messages from one mailbox, oldest first.
@@ -200,6 +201,7 @@ func (s *Store) Send(r SendRequest) (Message, error) {
 		SenderProof: r.Proof,
 		Origin:      r.Origin,
 		OriginHost:  r.OriginHost,
+		Verified:    r.Verified,
 	}
 	// Thread id is resolved now, not walked at read time: the store is
 	// bounded and forgets, and a thread must answer to one id forever.

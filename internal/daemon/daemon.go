@@ -18,6 +18,7 @@ import (
 	"github.com/nadavushka-dev/mailai/internal/proto"
 	"github.com/nadavushka-dev/mailai/internal/stash"
 	"github.com/nadavushka-dev/mailai/internal/store"
+	"github.com/nadavushka-dev/mailai/internal/tokens"
 )
 
 // Options configure a Daemon.
@@ -30,6 +31,8 @@ type Options struct {
 	MaxAsks int
 	// Stash holds session files; nil disables the stash verbs.
 	Stash *stash.Stash
+	// Tokens is the token file; nil disables the token verbs.
+	Tokens *tokens.Tokens
 }
 
 // Daemon serves one machine.
@@ -40,6 +43,7 @@ type Daemon struct {
 	log    *log.Logger
 	maxAsk int
 	stash  *stash.Stash
+	tokens *tokens.Tokens
 
 	mu    sync.Mutex
 	subs  map[*conn]bool
@@ -63,7 +67,7 @@ func New(o Options) *Daemon {
 	if o.MaxAsks == 0 {
 		o.MaxAsks = 16
 	}
-	return &Daemon{st: o.Store, placer: o.Placer, now: o.Now, log: o.Log, maxAsk: o.MaxAsks, stash: o.Stash,
+	return &Daemon{st: o.Store, placer: o.Placer, now: o.Now, log: o.Log, maxAsk: o.MaxAsks, stash: o.Stash, tokens: o.Tokens,
 		subs: map[*conn]bool{}, asks: newAskGraph(), waits: map[string][]chan store.Message{}}
 }
 
@@ -124,7 +128,7 @@ func (c *conn) write(v any) error {
 }
 
 func (d *Daemon) serveConn(nc net.Conn) {
-	c := &conn{Conn: nc, pl: d.placer.Place(nc)}
+	c := &conn{Conn: nc, pl: d.placer.Place(nc, "")}
 	defer func() {
 		d.mu.Lock()
 		delete(d.subs, c)
@@ -194,6 +198,13 @@ func (d *Daemon) handle(c *conn, req proto.Request) (any, error) {
 	switch req.Verb {
 	case "ping":
 		return map[string]string{"pong": d.now().UTC().Format(time.RFC3339)}, nil
+	case "hello":
+		a, err := decode[HelloArgs](req.Args)
+		if err != nil {
+			return nil, err
+		}
+		c.pl = d.placer.Place(c.Conn, a.Token)
+		return WhoamiResult{Principal: d.own(c.pl), Proof: c.pl.Proof, PID: c.pl.PID}, nil
 	case "whoami":
 		return WhoamiResult{Principal: d.own(c.pl), Proof: c.pl.Proof, PID: c.pl.PID}, nil
 	case "send":
@@ -232,6 +243,8 @@ func (d *Daemon) handle(c *conn, req proto.Request) (any, error) {
 		return map[string]bool{"subscribed": true}, nil
 	case "stash-put", "stash-get", "stash-list":
 		return d.stashVerb(req.Verb, req.Args)
+	case "token-new", "token-list", "token-revoke":
+		return d.tokenVerb(c, req.Verb, req.Args)
 	}
 	return nil, proto.Errorf(proto.CodeUnknownVerb, "%q", req.Verb)
 }
@@ -256,7 +269,7 @@ func (d *Daemon) send(c *conn, a SendArgs) (any, error) {
 	m, err := d.store(c.pl, store.SendRequest{
 		From: from, FromLabel: a.FromLabel, To: a.To, Session: a.Session,
 		Subject: a.Subject, Text: a.Text, ReplyTo: a.ReplyTo, Attachments: atts,
-		Proof: c.pl.Proof,
+		Proof: c.pl.Proof, Verified: verifiedFor(c.pl, from),
 	})
 	if err != nil {
 		return nil, err
@@ -289,7 +302,7 @@ func (d *Daemon) read(c *conn, a ReadArgs) (any, error) {
 	}
 	peekForced := false
 	// SPEC §9: a pane reading the person's inbox never clears it.
-	if box == store.Human && c.pl.Proof != store.ProofOutsidePane && !a.Peek {
+	if box == store.Human && !isPerson(c.pl) && !a.Peek {
 		a.Peek = true
 		peekForced = true
 	}
@@ -336,6 +349,15 @@ func (d *Daemon) publish(m store.Message) {
 		default:
 		}
 	}
+}
+
+// verifiedFor is the one place "verified" is set (SPEC §9): the person's
+// own sends, from outside every pane. Supervisors come with grants (M4).
+func verifiedFor(pl Placement, from store.Address) string {
+	if from == store.Human && isPerson(pl) {
+		return "human"
+	}
+	return ""
 }
 
 func errForbidden(format string, a ...any) error {

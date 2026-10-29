@@ -26,14 +26,21 @@ type Client struct {
 	err    error
 }
 
-// Dial connects to the socket at path.
-func Dial(path string) (*Client, error) {
+// Dial connects to the socket at path. With a token it says hello first, so
+// the daemon places the connection as that agent (SPEC §9).
+func Dial(path string, token string) (*Client, error) {
 	c, err := net.DialTimeout("unix", path, 2*time.Second)
 	if err != nil {
 		return nil, fmt.Errorf("no daemon at %s: %w", path, err)
 	}
 	cl := &Client{c: c, r: proto.NewReader(c), pend: map[uint64]chan proto.Frame{}, events: make(chan proto.Frame, 64), done: make(chan struct{})}
 	go cl.readLoop()
+	if token != "" {
+		if err := cl.Call("hello", map[string]string{"token": token}, nil); err != nil {
+			cl.Close()
+			return nil, err
+		}
+	}
 	return cl, nil
 }
 

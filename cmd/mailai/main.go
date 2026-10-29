@@ -24,6 +24,7 @@ mail
   unread                  how much mail waits: count and senders
   notice                  the one-line notice an agent is given, if any
   stash put|get|list      keep a file for the session so a reader finds it later
+  token new|ls|revoke     agent tokens, for an agent with no pane (person only)
 
 daemon
   daemon run              run the daemon in the foreground
@@ -32,6 +33,7 @@ daemon
   version
 
 Every command takes --json. MAILAI_SOCKET points at a daemon elsewhere.
+MAILAI_TOKEN makes this process the agent the token was issued to.
 `
 
 func main() {
@@ -58,6 +60,8 @@ func main() {
 		err = cmdNotice(args)
 	case "stash":
 		err = cmdStash(args)
+	case "token":
+		err = cmdToken(args)
 	case "ping":
 		err = cmdPing(args)
 	case "whoami":
@@ -97,7 +101,7 @@ func connect() (*client.Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	return client.Dial(p.Socket())
+	return client.Dial(p.Socket(), os.Getenv("MAILAI_TOKEN"))
 }
 
 func printJSON(v any) error {

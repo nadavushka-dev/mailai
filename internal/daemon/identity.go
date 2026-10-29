@@ -3,28 +3,29 @@ package daemon
 import (
 	"net"
 
+	"github.com/nadavushka-dev/mailai/internal/identity"
 	"github.com/nadavushka-dev/mailai/internal/store"
 )
 
 // Placement is what the daemon knows about a connection's caller (SPEC §9).
-type Placement struct {
-	Proof store.Proof
-	// Principal is the caller's own address when the proof fixes it (a pane
-	// or a token); empty for outside_pane, where --from is honoured.
-	Principal store.Address
-	PID       int
-}
+type Placement = identity.Placement
 
-// Placer places a connection. Milestone 2 brings peer pids and tokens; the
-// default treats every caller as outside_pane, which on a single-user box
-// is the person.
+// Placer places a connection, once at connect and again when the client
+// says hello with a token. The default treats every caller as
+// outside_pane, which on a single-user box is the person.
 type Placer interface {
-	Place(conn net.Conn) Placement
+	Place(conn net.Conn, token string) Placement
 }
 
 type outsidePlacer struct{}
 
-func (outsidePlacer) Place(net.Conn) Placement { return Placement{Proof: store.ProofOutsidePane} }
+func (outsidePlacer) Place(net.Conn, string) Placement {
+	return Placement{Proof: store.ProofOutsidePane}
+}
+
+// isPerson says whether a placement may act as the person (SPEC §9):
+// outside every pane, with no token. Milestone 5 adds the attached client.
+func isPerson(pl Placement) bool { return pl.Proof == store.ProofOutsidePane }
 
 // resolveFrom decides the sender address for a request: a placed principal
 // wins over the claim; an outside_pane caller may claim any address, "human"

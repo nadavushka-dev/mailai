@@ -33,7 +33,7 @@ type fakePlacer struct {
 	next []Placement
 }
 
-func (f *fakePlacer) Place(net.Conn) Placement {
+func (f *fakePlacer) Place(net.Conn, string) Placement {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if len(f.next) == 0 {
@@ -60,7 +60,7 @@ func startDaemon(t *testing.T, pl Placer) (string, *Daemon) {
 
 func dial(t *testing.T, sock string) *client.Client {
 	t.Helper()
-	c, err := client.Dial(sock)
+	c, err := client.Dial(sock, "")
 	if err != nil {
 		t.Fatal(err)
 	}
