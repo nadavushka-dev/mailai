@@ -271,3 +271,75 @@ func TestCLI_TokensPlaceAgents(t *testing.T) {
 		t.Fatalf("revoked token: %q", out)
 	}
 }
+
+// D13: the Inbox lists what waits on the person; ask-human blocks the agent's
+// process and prints the chosen answer alone.
+func TestCLI_InboxAskHumanAnswerDismiss(t *testing.T) {
+	e := startEnv(t)
+	tok := strings.TrimSpace(strings.SplitN(e.must("token", "new", "worker"), "\n", 2)[0])
+	agent := func(args ...string) *exec.Cmd {
+		c := e.cmd(args...)
+		c.Env = append(c.Env, "MAILAI_TOKEN="+tok)
+		return c
+	}
+	if out := e.must("inbox"); !strings.HasPrefix(out, "inbox empty") {
+		t.Fatal(out)
+	}
+	// Plain mail to the person is not an Inbox item.
+	if out, err := agent("send", "human", "fyi, tests pass").CombinedOutput(); err != nil {
+		t.Fatal(string(out))
+	}
+	if out := e.must("inbox"); !strings.HasPrefix(out, "inbox empty") {
+		t.Fatal(out)
+	}
+	type res struct {
+		out string
+		err error
+	}
+	got := make(chan res, 1)
+	go func() {
+		out, err := agent("ask-human", "Deploy to staging?", "-o", "yes", "-o", "no", "--timeout", "10s").CombinedOutput()
+		got <- res{string(out), err}
+	}()
+	var out string
+	deadline := time.Now().Add(5 * time.Second)
+	for !strings.Contains(out, "Deploy to staging?") && time.Now().Before(deadline) {
+		out = e.must("inbox")
+		time.Sleep(20 * time.Millisecond)
+	}
+	if !strings.Contains(out, "#1  ask_human worker") || !strings.Contains(out, "[yes|no]") {
+		t.Fatalf("%q", out)
+	}
+	if o, err := e.run("answer", "1", "maybe"); err == nil || !strings.Contains(o, "must be one of") {
+		t.Fatalf("%q %v", o, err)
+	}
+	e.must("answer", "#1", "yes")
+	select {
+	case r := <-got:
+		if r.err != nil || r.out != "yes\n" {
+			t.Fatalf("%q %v", r.out, r.err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("ask-human did not return")
+	}
+	if out := e.must("inbox"); !strings.HasPrefix(out, "inbox empty") {
+		t.Fatal(out)
+	}
+	if out := e.must("inbox", "--all"); !strings.Contains(out, "(answered)") {
+		t.Fatal(out)
+	}
+	// --no-wait, then dismiss: the agent coming back is told, exit 1.
+	o, _ := agent("ask-human", "Proceed?", "--no-wait").CombinedOutput()
+	if !strings.Contains(string(o), "asked as item #2") {
+		t.Fatalf("%s", o)
+	}
+	e.must("dismiss", "2")
+	o, err := agent("ask-human", "--wait-for", "2").CombinedOutput()
+	if err == nil || !strings.Contains(string(o), "without an answer") {
+		t.Fatalf("%s %v", o, err)
+	}
+	// An agent may look at the Inbox but not act on it.
+	if o, err := agent("dismiss", "1").CombinedOutput(); err == nil || !strings.Contains(string(o), "not_human") {
+		t.Fatalf("%s %v", o, err)
+	}
+}

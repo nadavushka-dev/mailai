@@ -21,10 +21,16 @@ mail
   read                    read your mailbox inside the fence
   reply <mid> [text]      reply in a thread
   ask <to> <text>         send and wait for the reply; prints the reply alone
+  ask-human <text> -o A   put a question with fixed answers in the person's Inbox
   unread                  how much mail waits: count and senders
   notice                  the one-line notice an agent is given, if any
   stash put|get|list      keep a file for the session so a reader finds it later
   token new|ls|revoke     agent tokens, for an agent with no pane (person only)
+
+inbox (the person)
+  inbox                   everything waiting on you
+  answer <item> <text>    answer an item; closes it
+  dismiss <item>          close an item without an answer
 
 daemon
   daemon run              run the daemon in the foreground
@@ -54,6 +60,14 @@ func main() {
 		err = cmdReply(args)
 	case "ask":
 		err = cmdAsk(args)
+	case "ask-human":
+		err = cmdAskHuman(args)
+	case "inbox":
+		err = cmdInbox(args)
+	case "answer":
+		err = cmdAnswer(args)
+	case "dismiss":
+		err = cmdDismiss(args)
 	case "unread":
 		err = cmdUnread(args)
 	case "notice":

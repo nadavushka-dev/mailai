@@ -51,17 +51,19 @@ type Attachment struct {
 // Message is one immutable record (SPEC §6). Fields after SentAt are set by
 // the daemon and never taken from a request.
 type Message struct {
-	ID          uint64       `json:"id"`
-	MID         string       `json:"mid"`
-	Kind        Kind         `json:"kind"`
-	Session     string       `json:"session,omitempty"`
-	From        Address      `json:"from"`
-	FromLabel   string       `json:"from_label,omitempty"`
-	To          Address      `json:"to,omitempty"`
-	Subject     string       `json:"subject,omitempty"`
-	Text        string       `json:"text"`
-	ReplyTo     string       `json:"reply_to,omitempty"`
-	ThreadID    string       `json:"thread_id"`
+	ID        uint64  `json:"id"`
+	MID       string  `json:"mid"`
+	Kind      Kind    `json:"kind"`
+	Session   string  `json:"session,omitempty"`
+	From      Address `json:"from"`
+	FromLabel string  `json:"from_label,omitempty"`
+	To        Address `json:"to,omitempty"`
+	Subject   string  `json:"subject,omitempty"`
+	Text      string  `json:"text"`
+	ReplyTo   string  `json:"reply_to,omitempty"`
+	ThreadID  string  `json:"thread_id"`
+	// Options are the fixed answers of an ask_human; a reply picks one.
+	Options     []string     `json:"options,omitempty"`
 	Attachments []Attachment `json:"attachments,omitempty"`
 	SentAt      int64        `json:"sent_at"`
 

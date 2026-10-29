@@ -79,22 +79,10 @@ func (d *Daemon) ask(c *conn, a AskArgs) (any, error) {
 	}
 	timeout := time.Duration(a.TimeoutMS) * time.Millisecond
 
-	d.mu.Lock()
-	if d.asks.open[from] >= d.maxAsk {
-		d.mu.Unlock()
-		return nil, proto.Errorf(proto.CodeAskLimit, "%d asks already open from %s", d.maxAsk, from)
+	if err := d.checkAsk(from, a.To); err != nil {
+		return nil, err
 	}
-	if d.asks.reaches(from, a.To) {
-		d.mu.Unlock()
-		return nil, proto.Errorf(proto.CodeAskCycle, "%s is already waiting on %s", a.To, from)
-	}
-	d.asks.add(from, a.To)
-	d.mu.Unlock()
-	defer func() {
-		d.mu.Lock()
-		d.asks.remove(from, a.To)
-		d.mu.Unlock()
-	}()
+	defer d.releaseAsk(from, a.To)
 
 	// Register the waiter before storing, so a reply that races the ask's
 	// own publish cannot be missed.
@@ -129,6 +117,27 @@ func (d *Daemon) ask(c *conn, a AskArgs) (any, error) {
 			return nil, proto.Errorf(proto.CodeTimeout, "no reply from %s within %s", a.To, timeout)
 		}
 	}
+}
+
+// checkAsk refuses an ask that would exceed the sender's limit or close a
+// cycle, and records it in the graph.
+func (d *Daemon) checkAsk(from, to store.Address) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.asks.open[from] >= d.maxAsk {
+		return proto.Errorf(proto.CodeAskLimit, "%d asks already open from %s", d.maxAsk, from)
+	}
+	if d.asks.reaches(from, to) {
+		return proto.Errorf(proto.CodeAskCycle, "%s is already waiting on %s", to, from)
+	}
+	d.asks.add(from, to)
+	return nil
+}
+
+func (d *Daemon) releaseAsk(from, to store.Address) {
+	d.mu.Lock()
+	d.asks.remove(from, to)
+	d.mu.Unlock()
 }
 
 func (d *Daemon) unwait(thread string, ch chan store.Message) {

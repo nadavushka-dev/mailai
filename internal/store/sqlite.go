@@ -27,6 +27,11 @@ CREATE TABLE IF NOT EXISTS boxes (
   box     TEXT PRIMARY KEY,
   evicted INTEGER NOT NULL DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS items (
+  id        INTEGER PRIMARY KEY,
+  closed_at INTEGER NOT NULL DEFAULT 0,
+  body      TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS meta (
   key   TEXT PRIMARY KEY,
   value INTEGER NOT NULL
@@ -93,6 +98,43 @@ func (p *SQLite) LoadAll() ([]Message, map[Address]uint64, uint64, error) {
 		return nil, nil, 0, err
 	}
 	return msgs, evicted, last, nil
+}
+
+// LoadItems implements AttentionPersister.
+func (p *SQLite) LoadItems() ([]Item, uint64, error) {
+	rows, err := p.db.Query(`SELECT body FROM items ORDER BY id`)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+	var items []Item
+	var last uint64
+	for rows.Next() {
+		var body string
+		if err := rows.Scan(&body); err != nil {
+			return nil, 0, err
+		}
+		var it Item
+		if err := json.Unmarshal([]byte(body), &it); err != nil {
+			return nil, 0, err
+		}
+		items = append(items, it)
+		if it.ID > last {
+			last = it.ID
+		}
+	}
+	return items, last, rows.Err()
+}
+
+// PutItem inserts or replaces an item.
+func (p *SQLite) PutItem(it *Item) error {
+	body, err := json.Marshal(it)
+	if err != nil {
+		return err
+	}
+	_, err = p.db.Exec(`INSERT INTO items(id, closed_at, body) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET closed_at=excluded.closed_at, body=excluded.body`,
+		it.ID, it.ClosedAt, string(body))
+	return err
 }
 
 func (p *SQLite) Insert(box Address, m *Message) error {

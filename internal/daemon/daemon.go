@@ -153,7 +153,7 @@ func (d *Daemon) serveConn(nc net.Conn) {
 		req := proto.Request{ID: *f.ID, Verb: f.Verb, Args: f.Args}
 		// Blocking verbs run on their own goroutine so the connection stays
 		// responsive; everything else is cheap and runs in order.
-		if req.Verb == "ask" {
+		if req.Verb == "ask" || req.Verb == "ask-human" {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
@@ -236,6 +236,30 @@ func (d *Daemon) handle(c *conn, req proto.Request) (any, error) {
 			return nil, err
 		}
 		return d.ask(c, a)
+	case "ask-human":
+		a, err := decode[AskHumanArgs](req.Args)
+		if err != nil {
+			return nil, err
+		}
+		return d.askHuman(c, a)
+	case "inbox":
+		a, err := decode[InboxArgs](req.Args)
+		if err != nil {
+			return nil, err
+		}
+		return d.inbox(c, a)
+	case "answer":
+		a, err := decode[AnswerArgs](req.Args)
+		if err != nil {
+			return nil, err
+		}
+		return d.answer(c, a)
+	case "dismiss":
+		a, err := decode[DismissArgs](req.Args)
+		if err != nil {
+			return nil, err
+		}
+		return d.dismiss(c, a)
 	case "subscribe":
 		d.mu.Lock()
 		d.subs[c] = true
@@ -348,6 +372,40 @@ func (d *Daemon) publish(m store.Message) {
 		case w <- m:
 		default:
 		}
+	}
+	// An ask to human opened an item; a verified reply may have closed one.
+	if m.To == store.Human && (m.Kind == store.KindAsk || m.Kind == store.KindAskHuman) {
+		for _, it := range d.st.Items(false) {
+			if it.MID == m.MID {
+				d.publishItem(it)
+			}
+		}
+	}
+	if m.Kind == store.KindReply && m.Verified != "" {
+		for _, it := range d.st.Items(true) {
+			if it.Answer == m.MID {
+				d.publishItem(it)
+			}
+		}
+	}
+}
+
+// publishItem tells subscribers an Inbox item opened or closed. It carries
+// no question text: the TUI fetches the list.
+func (d *Daemon) publishItem(it store.Item) {
+	state := "open"
+	if it.ClosedAt != 0 {
+		state = "closed"
+	}
+	data, _ := json.Marshal(map[string]any{"id": it.ID, "kind": it.Kind, "from": it.From, "state": state, "closed_by": it.ClosedBy})
+	d.mu.Lock()
+	subs := make([]*conn, 0, len(d.subs))
+	for c := range d.subs {
+		subs = append(subs, c)
+	}
+	d.mu.Unlock()
+	for _, c := range subs {
+		c.write(proto.Event{Event: "attention", Data: data})
 	}
 }
 

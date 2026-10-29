@@ -51,6 +51,7 @@ type SendRequest struct {
 	Kind        Kind
 	ReplyTo     string
 	Attachments []Attachment
+	Options     []string
 	// Remote says the send arrived over a link; the daemon sets it from the
 	// connection. It picks the rate-limit bucket (SPEC §6).
 	Remote bool
@@ -85,6 +86,7 @@ type Store struct {
 	byMID map[string]*Message
 	lim   *limiter
 	p     Persister
+	att   *attention
 }
 
 type mailbox struct {
@@ -127,6 +129,11 @@ func Load(o Options, p Persister) (*Store, error) {
 		s.nextID = last
 	}
 	s.p = p
+	if ap, ok := p.(AttentionPersister); ok {
+		if err := s.att.load(ap); err != nil {
+			return nil, err
+		}
+	}
 	return s, nil
 }
 
@@ -140,7 +147,7 @@ func newStore(o Options) *Store {
 	if o.MachineID == "" {
 		o.MachineID = "local"
 	}
-	return &Store{now: o.Now, limits: o.Limits, machine: o.MachineID, boxes: map[Address]*mailbox{}, byMID: map[string]*Message{}, lim: newLimiter()}
+	return &Store{now: o.Now, limits: o.Limits, machine: o.MachineID, boxes: map[Address]*mailbox{}, byMID: map[string]*Message{}, lim: newLimiter(), att: newAttention()}
 }
 
 // Send validates a request and stores it in the recipient's mailbox, or the
@@ -197,6 +204,7 @@ func (s *Store) Send(r SendRequest) (Message, error) {
 		Text:        r.Text,
 		ReplyTo:     r.ReplyTo,
 		Attachments: append([]Attachment(nil), r.Attachments...),
+		Options:     append([]string(nil), r.Options...),
 		SentAt:      s.now().UnixNano(),
 		SenderProof: r.Proof,
 		Origin:      r.Origin,
@@ -229,7 +237,29 @@ func (s *Store) Send(r SendRequest) (Message, error) {
 	mb.msgs = append(mb.msgs, m)
 	mb.bytes += m.size()
 	s.byMID[m.MID] = m
+	s.attend(m)
 	return *m, nil
+}
+
+// attend keeps the Inbox in step with a stored message (D13): an ask to
+// human opens an item; a verified reply from human in an item's thread
+// closes it as answered. Plain mail opens nothing.
+func (s *Store) attend(m *Message) {
+	switch {
+	case m.To == Human && (m.Kind == KindAsk || m.Kind == KindAskHuman):
+		kind := ItemAsk
+		if m.Kind == KindAskHuman {
+			kind = ItemAskHuman
+		}
+		s.openItem(Item{Kind: kind, MID: m.MID, ThreadID: m.ThreadID, From: m.From, Session: m.Session,
+			Subject: m.Subject, Question: m.Text, Options: m.Options})
+	case m.Kind == KindReply && m.From == Human && m.Verified != "":
+		for _, it := range s.att.items {
+			if it.ClosedAt == 0 && it.ThreadID == m.ThreadID && it.From == m.To {
+				s.closeItem(it.ID, "answered", m.MID)
+			}
+		}
+	}
 }
 
 // PeekQuery reads without marking read. A peek by the mailbox's own
