@@ -15,9 +15,9 @@ Prior art lives in `reference/tuios/` (TUIOS agent mail, MIT); read `reference/t
 - Token economy (D12): nothing mailai injects into an agent's context may exceed one line, and never sender-chosen text.
 
 ## Trying it by hand
-- Never run a daemon against the real `~/.local/share/mailai` while developing. Use the sandbox:
-  `make sandbox` (or `sandbox/sandbox.sh up`), then `sandbox/sandbox.sh shell` or `sandbox/sandbox.sh run <cmd>`;
-  `make sandbox-down` removes it. It lives in /tmp/mailai-sandbox with its own home and socket.
+- Never run a daemon on this Mac while developing. Use the Docker sandbox: `make sandbox` starts three Linux
+  boxes (s1 s2 s3) with a daemon each; `e2e/sandbox.sh shell s1` for a shell, `e2e/sandbox.sh run s2 mailai unread`
+  for one command, `e2e/sandbox.sh restart` after a code change (mail kept), `make sandbox-down` to remove.
 
 ## Dev workflow (not part of the product)
 - Tasks: tuxedo, `TODO_FILE=$PWD/todo.txt tuxedo ...`

@@ -17,8 +17,8 @@ build:
 hooks:
 	git config core.hooksPath .githooks
 
-sandbox: ## a throwaway daemon in /tmp/mailai-sandbox; never touches your real mailai
-	sandbox/sandbox.sh up
+sandbox: ## three throwaway Linux boxes (s1 s2 s3) running this tree, one daemon each (e2e/sandbox.sh shell s1)
+	e2e/sandbox.sh up
 
 sandbox-down:
-	sandbox/sandbox.sh down
+	e2e/sandbox.sh down
