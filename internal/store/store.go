@@ -51,6 +51,9 @@ type SendRequest struct {
 	Kind        Kind
 	ReplyTo     string
 	Attachments []Attachment
+	// Remote says the send arrived over a link; the daemon sets it from the
+	// connection. It picks the rate-limit bucket (SPEC §6).
+	Remote bool
 }
 
 // ReadQuery selects messages from one mailbox, oldest first.
@@ -74,6 +77,7 @@ type Store struct {
 	boxes   map[Address]*mailbox
 	// byMID finds a message in whatever box holds it, for threads.
 	byMID map[string]*Message
+	lim   *limiter
 }
 
 type mailbox struct {
@@ -93,7 +97,7 @@ func New(o Options) *Store {
 	if o.MachineID == "" {
 		o.MachineID = "local"
 	}
-	return &Store{now: o.Now, limits: o.Limits, machine: o.MachineID, boxes: map[Address]*mailbox{}, byMID: map[string]*Message{}}
+	return &Store{now: o.Now, limits: o.Limits, machine: o.MachineID, boxes: map[Address]*mailbox{}, byMID: map[string]*Message{}, lim: newLimiter()}
 }
 
 // Send validates a request and stores it in the recipient's mailbox, or the
@@ -134,6 +138,9 @@ func (s *Store) Send(r SendRequest) (Message, error) {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := s.lim.take(r.From, r.Remote, s.now()); err != nil {
+		return Message{}, err
+	}
 	s.nextID++
 	m := &Message{
 		ID:          s.nextID,
