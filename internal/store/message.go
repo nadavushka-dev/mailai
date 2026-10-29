@@ -82,6 +82,10 @@ type Message struct {
 	// this copy. ReadAt cannot say it on the call that sets it.
 	WasUnread bool `json:"was_unread,omitempty"`
 	WasSeen   bool `json:"was_seen,omitempty"`
+
+	// box is the mailbox holding this message; set by the store, not stored
+	// in the JSON body (the row has its own column).
+	box Address
 }
 
 // size is what a message costs against a mailbox's byte bound: the bytes

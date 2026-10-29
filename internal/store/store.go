@@ -78,6 +78,7 @@ type Store struct {
 	// byMID finds a message in whatever box holds it, for threads.
 	byMID map[string]*Message
 	lim   *limiter
+	p     Persister
 }
 
 type mailbox struct {
@@ -86,8 +87,44 @@ type mailbox struct {
 	evicted uint64
 }
 
-// New makes an empty Store.
+// New makes an empty, memory-only Store.
 func New(o Options) *Store {
+	s, _ := Load(o, nil)
+	return s
+}
+
+// Load makes a Store that writes through p and starts from what p holds.
+// A nil p is memory only.
+func Load(o Options, p Persister) (*Store, error) {
+	s := newStore(o)
+	if p == nil {
+		return s, nil
+	}
+	msgs, evicted, last, err := p.LoadAll()
+	if err != nil {
+		return nil, err
+	}
+	for i := range msgs {
+		m := msgs[i]
+		mb := s.box(m.box)
+		mb.msgs = append(mb.msgs, &m)
+		mb.bytes += m.size()
+		s.byMID[m.MID] = &m
+		if m.ID > s.nextID {
+			s.nextID = m.ID
+		}
+	}
+	for box, n := range evicted {
+		s.box(box).evicted = n
+	}
+	if last > s.nextID {
+		s.nextID = last
+	}
+	s.p = p
+	return s, nil
+}
+
+func newStore(o Options) *Store {
 	if o.Now == nil {
 		o.Now = time.Now
 	}
@@ -167,10 +204,17 @@ func (s *Store) Send(r SendRequest) (Message, error) {
 			m.ReplyToMissing = true
 		}
 	}
+	m.box = box
 	mb := s.box(box)
-	if err := mb.makeRoom(m.size(), s.limits, s.byMID); err != nil {
+	if err := s.makeRoom(box, mb, m.size()); err != nil {
 		s.nextID--
 		return Message{}, err
+	}
+	if s.p != nil {
+		if err := s.p.Insert(box, m); err != nil {
+			s.nextID--
+			return Message{}, err
+		}
 	}
 	mb.msgs = append(mb.msgs, m)
 	mb.bytes += m.size()
@@ -209,6 +253,9 @@ func (s *Store) Peek(q PeekQuery) ([]Message, error) {
 		if own && m.ReadAt == 0 && m.SeenAt == 0 {
 			m.SeenAt = now
 			c.SeenAt = now
+			if err := s.mark(m); err != nil {
+				return nil, err
+			}
 		}
 		out = append(out, c)
 	}
@@ -295,10 +342,20 @@ func (s *Store) Read(q ReadQuery) ([]Message, error) {
 		if q.Mark && m.ReadAt == 0 {
 			m.ReadAt = now
 			c.ReadAt = now
+			if err := s.mark(m); err != nil {
+				return nil, err
+			}
 		}
 		out = append(out, c)
 	}
 	return out, nil
+}
+
+func (s *Store) mark(m *Message) error {
+	if s.p == nil {
+		return nil
+	}
+	return s.p.Mark(m.MID, m.ReadAt, m.SeenAt)
 }
 
 // Evicted is how many messages a mailbox has dropped to stay within bounds.
@@ -323,7 +380,8 @@ func (s *Store) box(a Address) *mailbox {
 // makeRoom evicts the oldest read messages until a message of n bytes fits.
 // Unread messages are never evicted; if they alone fill the box, the send is
 // refused with ErrMailboxFull (SPEC §6).
-func (mb *mailbox) makeRoom(n int, lim Limits, index map[string]*Message) error {
+func (s *Store) makeRoom(box Address, mb *mailbox, n int) error {
+	lim := s.limits
 	if n > lim.MaxBytes {
 		return ErrMailboxFull
 	}
@@ -341,8 +399,14 @@ func (mb *mailbox) makeRoom(n int, lim Limits, index map[string]*Message) error 
 		if i < 0 {
 			return ErrMailboxFull
 		}
-		mb.bytes -= mb.msgs[i].size()
-		delete(index, mb.msgs[i].MID)
+		victim := mb.msgs[i]
+		if s.p != nil {
+			if err := s.p.Evict(box, victim.MID, mb.evicted+1); err != nil {
+				return err
+			}
+		}
+		mb.bytes -= victim.size()
+		delete(s.byMID, victim.MID)
 		mb.msgs = append(mb.msgs[:i], mb.msgs[i+1:]...)
 		mb.evicted++
 	}
