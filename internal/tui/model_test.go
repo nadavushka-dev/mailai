@@ -108,10 +108,15 @@ func start(f Backend) Model {
 func TestInboxViewListsItemsWithOptionsAndRisky(t *testing.T) {
 	m := start(person())
 	v := m.View()
-	if !strings.Contains(v, "Inbox") || !strings.Contains(v, "#1") || !strings.Contains(v, "Deploy?") || !strings.Contains(v, "[1:yes 2:no]") {
+	if !strings.Contains(v, "Inbox") || !strings.Contains(v, "#1") || !strings.Contains(v, "Deploy?") || !strings.Contains(v, "1 yes") || !strings.Contains(v, "2 no") {
 		t.Fatalf("%s", v)
 	}
-	if !strings.Contains(v, "risky approval") || !strings.Contains(v, "Bash: git push --force") {
+	if !strings.Contains(v, "risky approval") {
+		t.Fatalf("%s", v)
+	}
+	// The detail pane shows the selected item in full.
+	v = press(m, "j").View()
+	if !strings.Contains(v, "git push --force") || !strings.Contains(v, "marked risky") {
 		t.Fatalf("%s", v)
 	}
 	if !strings.Contains(v, "human (outside_pane)") || strings.Contains(v, "browse only") {
@@ -161,12 +166,12 @@ func TestMailViewOpenThreadAndReply(t *testing.T) {
 	f := person()
 	m := start(f)
 	m = press(m, "m")
-	if v := m.View(); !strings.Contains(v, "worker") || !strings.Contains(v, "deploy") || !strings.Contains(v, "msgs") {
+	if v := m.View(); !strings.Contains(v, "worker") || !strings.Contains(v, "deploy") || !strings.Contains(v, "messages") {
 		t.Fatalf("%s", v)
 	}
 	m = press(m, "enter")
 	v := m.View()
-	if !strings.Contains(v, "thread local:1") || !strings.Contains(v, "│ Deploy?") || !strings.Contains(v, "│ really") || !strings.Contains(v, "(pane)") {
+	if !strings.Contains(v, "thread local:1") || !strings.Contains(v, "│ Deploy?") || !strings.Contains(v, "│ really") || !strings.Contains(v, "worker pane") {
 		t.Fatalf("%s", v)
 	}
 	m = press(m, "r", "o", "k", "enter")

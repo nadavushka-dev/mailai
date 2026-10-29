@@ -1,0 +1,380 @@
+package tui
+
+import (
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/charmbracelet/lipgloss"
+
+	"github.com/nadavushka-dev/mailai/internal/daemon"
+	"github.com/nadavushka-dev/mailai/internal/store"
+)
+
+// Layout: a tab bar; a list pane beside a detail pane; the input or the
+// key hints; a status line when something is wrong.
+//
+//  Inbox 3 │ Mail                         human (outside_pane)
+//  ┌ Inbox ───────────────────┐┌ #1 ask_human · worker ──────┐
+//  │ #1 ask_human  worker  …  ││ Deploy to staging?           │
+//  └──────────────────────────┘└──────────────────────────────┘
+//  enter open  r answer  1-8 pick  a allow  d deny  x dismiss  …
+
+func (m Model) View() string {
+	if m.width == 0 {
+		return "starting…"
+	}
+	w, h := m.width, m.height
+	header := m.header(w)
+	footer := m.footer(w)
+	bodyH := h - 3 // header, footer, status
+	if bodyH < 6 {
+		bodyH = 6
+	}
+	listW := w * 55 / 100
+	if w < 90 {
+		listW = w
+	}
+	detailW := w - listW
+	var body string
+	if detailW < 30 {
+		body = box(m.listTitle(), m.listBody(listW-2, bodyH-2), listW, bodyH, m.open == nil)
+	} else {
+		list := box(m.listTitle(), m.listBody(listW-2, bodyH-2), listW, bodyH, m.open == nil)
+		detail := box(m.detailTitle(), m.detailBody(detailW-2, bodyH-2), detailW, bodyH, m.open != nil)
+		body = lipgloss.JoinHorizontal(lipgloss.Top, list, detail)
+	}
+	status := ""
+	if m.status != "" {
+		if m.status == "done" {
+			status = styleOK.Render(" ✓ done")
+		} else {
+			status = styleBad.Render(fit(" "+m.status, w))
+		}
+	}
+	return header + "\n" + body + "\n" + footer + "\n" + fit(status, w)
+}
+
+func (m Model) header(w int) string {
+	open := 0
+	for _, it := range m.items {
+		if it.ClosedAt == 0 {
+			open++
+		}
+	}
+	inbox := "Inbox"
+	if open > 0 {
+		inbox += fmt.Sprintf(" %d", open)
+	}
+	tabs := []string{inbox, "Mail"}
+	var left strings.Builder
+	for i, t := range tabs {
+		if View(i) == m.view {
+			left.WriteString(styleTabOn.Render(t))
+		} else {
+			left.WriteString(styleTab.Render(t))
+		}
+		if i == 0 {
+			left.WriteString(styleDim.Render("│"))
+		}
+	}
+	who := styleDim.Render(fmt.Sprintf("%s (%s)", m.who.Principal, m.who.Proof))
+	if !m.person {
+		who = styleWarn.Render("browse only ") + who
+	}
+	return padBetween(left.String(), who+" ", w)
+}
+
+func (m Model) footer(w int) string {
+	if m.mode != modeNone {
+		return fit(" "+m.input.View(), w)
+	}
+	key := func(k, does string) string { return styleAccent.Render(k) + " " + does }
+	var parts []string
+	switch {
+	case m.open != nil:
+		parts = []string{key("r", "reply"), key("j/k", "scroll"), key("esc", "back")}
+	case m.view == ViewInbox:
+		parts = []string{key("enter", "open"), key("r", "answer"), key("1-8", "pick"), key("a", "allow"), key("d", "deny"), key("x", "dismiss"), key("A", "all")}
+	default:
+		parts = []string{key("enter", "open thread")}
+	}
+	parts = append(parts, key("tab", "view"), key("q", "quit"))
+	return fit(" "+strings.Join(parts, "  "), w)
+}
+
+func (m Model) listTitle() string {
+	if m.view == ViewInbox {
+		if m.showAll {
+			return "Inbox · all"
+		}
+		return "Inbox · waiting on you"
+	}
+	return "Mail · every thread"
+}
+
+func (m Model) listBody(w, h int) string {
+	if m.view == ViewInbox {
+		if len(m.items) == 0 {
+			return center(styleDim.Render("inbox empty: nothing waits on you"), w, h)
+		}
+		var rows []string
+		for i, it := range m.items {
+			rows = append(rows, m.itemRow(it, w, i == m.cursor))
+		}
+		return strings.Join(window(rows, m.cursor, h), "\n")
+	}
+	if len(m.threads) == 0 {
+		return center(styleDim.Render("no mail yet"), w, h)
+	}
+	var rows []string
+	for i, t := range m.threads {
+		rows = append(rows, m.threadRow(t, w, i == m.cursor))
+	}
+	return strings.Join(window(rows, m.cursor, h), "\n")
+}
+
+// window keeps the cursor row visible in h lines.
+func window(rows []string, cursor, h int) []string {
+	if len(rows) <= h || h <= 0 {
+		return rows
+	}
+	top := cursor - h/2
+	if top < 0 {
+		top = 0
+	}
+	if top > len(rows)-h {
+		top = len(rows) - h
+	}
+	return rows[top : top+h]
+}
+
+func (m Model) itemRow(it store.Item, w int, sel bool) string {
+	kind := string(it.Kind)
+	kindStyled := styleDim.Render(fit(kind, 14))
+	if it.Risky {
+		kindStyled = styleBad.Render(fit("risky "+kind, 14))
+	}
+	q := it.Question
+	if it.Kind == store.ItemApproval {
+		q = it.Subject + ": " + it.Question
+	}
+	state := styleWarn.Render("waiting " + ago(m.now(), it.OpenedAt))
+	if it.ClosedAt != 0 {
+		state = styleDim.Render(it.ClosedBy)
+		if it.DecidedBy != "" && it.DecidedBy != "human" {
+			state = styleSuper.Render(it.ClosedBy + " by " + it.DecidedBy)
+		}
+	}
+	left := fmt.Sprintf("%s %s %s ", styleDim.Render(fmt.Sprintf("#%-3d", it.ID)), kindStyled, styleBold.Render(fit(string(it.From), 12)))
+	room := w - lipgloss.Width(left) - lipgloss.Width(state) - 2
+	row := padBetween(left+fit(oneLine(q), room), state, w)
+	if sel {
+		return styleSelected.Render(row)
+	}
+	return row
+}
+
+func (m Model) threadRow(t daemon.ThreadRow, w int, sel bool) string {
+	mark := " "
+	if t.Unread > 0 {
+		mark = styleAccent.Render("●")
+	}
+	subj := t.Subject
+	if subj == "" {
+		subj = t.First
+	}
+	to := string(t.To)
+	if to == "" {
+		to = "session " + t.Session
+	}
+	last := string(t.LastFrom)
+	switch {
+	case t.Verified == "human":
+		last = styleOK.Render(last)
+	case strings.HasPrefix(t.Verified, "supervisor:"):
+		last = styleSuper.Render(last)
+	}
+	right := fmt.Sprintf("%s %s  %s", styleDim.Render(fmt.Sprintf("%d msgs", t.Count)), last, styleDim.Render(ago(m.now(), t.LastAt)))
+	left := fmt.Sprintf("%s %s %s %s ", mark, styleBold.Render(fit(string(t.From), 12)), styleDim.Render("→"), fit(to, 12))
+	room := w - lipgloss.Width(left) - lipgloss.Width(right) - 2
+	if room < 16 {
+		// Tight: keep the subject, drop the count.
+		right = last + "  " + styleDim.Render(ago(m.now(), t.LastAt))
+		room = w - lipgloss.Width(left) - lipgloss.Width(right) - 2
+	}
+	row := padBetween(left+fit(oneLine(subj), room), right, w)
+	if sel {
+		return styleSelected.Render(row)
+	}
+	return row
+}
+
+func (m Model) detailTitle() string {
+	if m.open != nil {
+		return "thread " + m.openID
+	}
+	if it, ok := m.current(); ok {
+		return fmt.Sprintf("#%d %s · %s", it.ID, it.Kind, it.From)
+	}
+	if m.view == ViewMail && m.cursor < len(m.threads) {
+		return "thread"
+	}
+	return "detail"
+}
+
+func (m Model) detailBody(w, h int) string {
+	if m.open != nil {
+		return m.threadBody(w, h)
+	}
+	if m.view == ViewInbox {
+		it, ok := m.current()
+		if !ok {
+			return center(styleDim.Render("nothing selected"), w, h)
+		}
+		var b strings.Builder
+		row := func(k, v string) {
+			if v != "" {
+				fmt.Fprintf(&b, "%s %s\n", styleDim.Render(fit(k, 9)), v)
+			}
+		}
+		row("from", styleBold.Render(string(it.From)))
+		row("kind", string(it.Kind))
+		if it.Risky {
+			row("risk", styleBad.Render("marked risky by "+it.Harness+": waits for you"))
+		}
+		row("session", it.Session)
+		row("asked", ago(m.now(), it.OpenedAt)+" ago")
+		if it.ClosedAt != 0 {
+			who := it.DecidedBy
+			if who == "" {
+				who = "human"
+			}
+			row("closed", fmt.Sprintf("%s by %s", it.ClosedBy, who))
+		}
+		b.WriteString("\n")
+		if it.Kind == store.ItemApproval {
+			b.WriteString(styleBold.Render(it.Subject) + "\n")
+			b.WriteString(wrap(it.Question, w) + "\n\n")
+			b.WriteString(styleOK.Render("a") + " allow   " + styleBad.Render("d") + " deny   " + styleDim.Render("x dismiss") + "\n")
+		} else {
+			b.WriteString(wrap(it.Question, w) + "\n\n")
+			if len(it.Options) > 0 {
+				for i, o := range it.Options {
+					fmt.Fprintf(&b, "  %s %s\n", styleAccent.Render(fmt.Sprintf("%d", i+1)), o)
+				}
+			} else {
+				b.WriteString(styleDim.Render("free text: press r to answer") + "\n")
+			}
+		}
+		return b.String()
+	}
+	if m.cursor < len(m.threads) {
+		t := m.threads[m.cursor]
+		return fmt.Sprintf("%s\n%s → %s\n%d messages, %d unread\n\n%s", styleBold.Render(orFirst(t)), t.From, t.To, t.Count, t.Unread, styleDim.Render("enter opens the thread"))
+	}
+	return center(styleDim.Render("nothing selected"), w, h)
+}
+
+func orFirst(t daemon.ThreadRow) string {
+	if t.Subject != "" {
+		return t.Subject
+	}
+	return t.First
+}
+
+func (m Model) threadBody(w, h int) string {
+	var lines []string
+	for _, x := range m.open {
+		head := styleDim.Render(fmt.Sprintf("#%d ", x.ID)) + styleBold.Render(string(x.From))
+		switch {
+		case x.Verified == "human":
+			head += " " + styleOK.Render("verified human")
+		case strings.HasPrefix(x.Verified, "supervisor:"):
+			head += " " + styleSuper.Render("verified "+strings.ReplaceAll(x.Verified, ":", " "))
+		case x.ClaimedHuman:
+			head += " " + styleWarn.Render("automated reply")
+		default:
+			head += " " + styleDim.Render(string(x.SenderProof))
+		}
+		if x.To != "" {
+			head += styleDim.Render(" → ") + string(x.To)
+		}
+		if x.Subject != "" {
+			head += styleDim.Render(" · ") + x.Subject
+		}
+		lines = append(lines, head)
+		for _, l := range strings.Split(wrap(strings.TrimRight(x.Text, "\n"), w-2), "\n") {
+			lines = append(lines, styleDim.Render("│ ")+l)
+		}
+		for _, a := range x.Attachments {
+			s := "  ⎘ " + a.Path
+			if a.Missing {
+				s += styleBad.Render(" (missing)")
+			}
+			lines = append(lines, s)
+		}
+		lines = append(lines, "")
+	}
+	top := m.openTop
+	if top > len(lines)-h {
+		top = len(lines) - h
+	}
+	if top < 0 {
+		top = 0
+	}
+	end := top + h
+	if end > len(lines) {
+		end = len(lines)
+	}
+	return strings.Join(lines[top:end], "\n")
+}
+
+func oneLine(s string) string {
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		return s[:i] + " …"
+	}
+	return s
+}
+
+// wrap breaks text at spaces to width.
+func wrap(s string, width int) string {
+	if width < 10 {
+		width = 10
+	}
+	var out []string
+	for _, para := range strings.Split(s, "\n") {
+		line := ""
+		for _, word := range strings.Fields(para) {
+			if line == "" {
+				line = word
+			} else if lipgloss.Width(line)+1+lipgloss.Width(word) > width {
+				out = append(out, line)
+				line = word
+			} else {
+				line += " " + word
+			}
+		}
+		out = append(out, line)
+	}
+	return strings.Join(out, "\n")
+}
+
+func ago(now time.Time, ns int64) string {
+	if ns == 0 {
+		return ""
+	}
+	d := now.Sub(time.Unix(0, ns)).Round(time.Second)
+	switch {
+	case d < 0:
+		return "0s"
+	case d < time.Minute:
+		return fmt.Sprintf("%ds", int(d.Seconds()))
+	case d < time.Hour:
+		return fmt.Sprintf("%dm", int(d.Minutes()))
+	case d < 48*time.Hour:
+		return fmt.Sprintf("%dh%02dm", int(d.Hours()), int(d.Minutes())%60)
+	default:
+		return fmt.Sprintf("%dd", int(d.Hours()/24))
+	}
+}
