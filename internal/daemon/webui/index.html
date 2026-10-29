@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>mailai</title>
+<style>
+  :root { --bg:#fff; --fg:#111; --dim:#666; --line:#ddd; --sel:#eef; --ok:#1a7f37; --sup:#8250df; --risky:#cf222e; --wait:#9a6700; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#111; --fg:#eee; --dim:#999; --line:#333; --sel:#223; --ok:#3fb950; --sup:#a371f7; --risky:#f85149; --wait:#d29922; } }
+  body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.45 -apple-system, system-ui, sans-serif; }
+  header { display:flex; gap:8px; align-items:center; padding:12px 16px; border-bottom:1px solid var(--line); position:sticky; top:0; background:var(--bg); }
+  header button { font:inherit; padding:6px 12px; border:1px solid var(--line); background:transparent; color:var(--fg); border-radius:6px; }
+  header button.on { background:var(--sel); }
+  header .who { margin-left:auto; color:var(--dim); font-size:13px; }
+  main { padding: 8px 16px 48px; max-width: 900px; margin: 0 auto; }
+  .row { display:flex; gap:10px; align-items:baseline; padding:10px 8px; border-bottom:1px solid var(--line); flex-wrap:wrap; }
+  .row:hover { background:var(--sel); }
+  .id { color:var(--dim); min-width:3em; }
+  .kind { font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:var(--dim); }
+  .kind.risky { color:var(--risky); font-weight:600; }
+  .from { font-weight:600; }
+  .q { flex:1 1 300px; }
+  .state { color:var(--wait); font-size:13px; }
+  .state.closed { color:var(--dim); }
+  .state.sup { color:var(--sup); }
+  .acts { display:flex; gap:6px; flex-wrap:wrap; }
+  .acts button, .reply button { font:inherit; padding:4px 10px; border:1px solid var(--line); border-radius:6px; background:transparent; color:var(--fg); cursor:pointer; }
+  .acts button.allow { border-color:var(--ok); color:var(--ok); }
+  .acts button.deny { border-color:var(--risky); color:var(--risky); }
+  .empty { color:var(--dim); padding:24px 8px; }
+  pre { white-space:pre-wrap; margin:6px 0 14px; padding:8px 12px; border-left:3px solid var(--line); }
+  .hdr { color:var(--dim); font-size:13px; }
+  .hdr .v { color:var(--ok); }
+  .hdr .s { color:var(--sup); }
+  .reply { display:flex; gap:8px; margin-top:12px; }
+  .reply input { flex:1; font:inherit; padding:6px 10px; border:1px solid var(--line); border-radius:6px; background:transparent; color:var(--fg); }
+  #status { position:fixed; bottom:12px; left:16px; right:16px; color:var(--risky); font-size:13px; }
+  a { color:inherit; }
+</style>
+</head>
+<body>
+<header>
+  <button id="tab-inbox" class="on">Inbox <span id="count"></span></button>
+  <button id="tab-mail">Mail</button>
+  <button id="all" title="show closed items too">all</button>
+  <span class="who" id="who"></span>
+</header>
+<main id="main"></main>
+<div id="status"></div>
+<script>
+(() => {
+  const $ = s => document.querySelector(s);
+  let view = 'inbox', showAll = false, openThread = null;
+  const api = async (path, body) => {
+    const r = await fetch(path, body ? {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)} : {});
+    if (r.status === 401) { location.reload(); return null; }
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || r.statusText);
+    return j;
+  };
+  const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const ago = ns => { const d = Math.max(0, Date.now() - ns/1e6)/1000; return d<60?`${d|0}s`:d<3600?`${d/60|0}m`:`${d/3600|0}h${String((d/60|0)%60).padStart(2,'0')}m`; };
+  const status = m => { $('#status').textContent = m || ''; if (m) setTimeout(() => { if ($('#status').textContent === m) $('#status').textContent=''; }, 4000); };
+  const act = async (path, body) => { try { await api(path, body); await render(); } catch (e) { status(e.message); } };
+
+  async function render() {
+    $('#tab-inbox').classList.toggle('on', view==='inbox'); $('#tab-mail').classList.toggle('on', view==='mail'); $('#all').classList.toggle('on', showAll);
+    const main = $('#main');
+    if (openThread) return renderThread(main);
+    if (view === 'inbox') {
+      const {items} = await api('/api/inbox' + (showAll ? '?all=1' : ''));
+      $('#count').textContent = items.filter(i => !i.closed_at).length || '';
+      if (!items.length) { main.innerHTML = '<div class="empty">inbox empty: nothing waits on you</div>'; return; }
+      main.innerHTML = items.map(it => {
+        const isAppr = it.kind === 'approval';
+        const q = isAppr ? `${esc(it.subject)}: ${esc(it.question)}` : esc(it.question);
+        let state = `<span class="state">waiting ${ago(it.opened_at)}</span>`;
+        if (it.closed_at) state = `<span class="state closed${it.decided_by && it.decided_by!=='human' ? ' sup':''}">${esc(it.closed_by)}${it.decided_by && it.decided_by!=='human' ? ' by '+esc(it.decided_by):''}</span>`;
+        let acts = '';
+        if (!it.closed_at) {
+          if (isAppr) acts = `<button class="allow" data-a="answer" data-id="${it.id}" data-t="allow">allow</button><button class="deny" data-a="deny" data-id="${it.id}">deny</button>`;
+          else if (it.options?.length) acts = it.options.map(o => `<button data-a="answer" data-id="${it.id}" data-t="${esc(o)}">${esc(o)}</button>`).join('');
+          else acts = `<button data-a="free" data-id="${it.id}">answer…</button>`;
+          acts += `<button data-a="dismiss" data-id="${it.id}">dismiss</button>`;
+          if (it.thread_id) acts += `<button data-a="open" data-id="${esc(it.thread_id)}">thread</button>`;
+        }
+        return `<div class="row"><span class="id">#${it.id}</span><span class="kind${it.risky?' risky':''}">${it.risky?'risky ':''}${esc(it.kind)}</span><span class="from">${esc(it.from)}</span><span class="q">${q}</span>${state}<span class="acts">${acts}</span></div>`;
+      }).join('');
+    } else {
+      const {threads} = await api('/api/threads');
+      if (!threads.length) { main.innerHTML = '<div class="empty">no mail yet</div>'; return; }
+      main.innerHTML = threads.map(t => `<div class="row" data-a="open" data-id="${esc(t.thread_id)}" style="cursor:pointer"><span class="id">${t.unread?'*':''}</span><span class="from">${esc(t.from)}</span><span class="kind">→ ${esc(t.to || 'session '+t.session)}</span><span class="q">${esc(t.subject || t.first)}</span><span class="hdr">${t.count} msgs · last ${esc(t.last_from)} <span class="${t.verified==='human'?'v':t.verified?'s':''}">${t.verified?'('+esc(t.verified.replace(':',' '))+')':''}</span> ${ago(t.last_at)}</span></div>`).join('');
+    }
+  }
+  async function renderThread(main) {
+    const {messages} = await api('/api/thread?id=' + encodeURIComponent(openThread));
+    const last = [...messages].reverse().find(m => m.from !== 'human') || messages[0];
+    main.innerHTML = `<p><a href="#" data-a="back">← back</a> &nbsp; <b>thread ${esc(openThread)}</b></p>` + messages.map(m => {
+      const trust = m.verified ? `<span class="${m.verified==='human'?'v':'s'}">verified ${esc(m.verified.replace(':',' '))}</span>` : m.claimed_human ? 'automated reply' : esc(m.sender_proof || 'unplaced');
+      return `<div class="hdr">#${m.id} from <b>${esc(m.from)}</b> (${trust})${m.to?' → '+esc(m.to):''}${m.subject?' · '+esc(m.subject):''}</div><pre>${esc(m.text)}</pre>`;
+    }).join('') + (last ? `<div class="reply"><input id="rtext" placeholder="reply to ${esc(last.from)}"><button data-a="reply" data-mid="${esc(last.mid)}" data-to="${esc(last.from)}">send</button></div>` : '');
+  }
+  document.addEventListener('click', async e => {
+    const b = e.target.closest('[data-a]'); if (!b) return;
+    e.preventDefault();
+    const a = b.dataset.a, id = b.dataset.id;
+    if (a === 'answer') return act('/api/answer', {item: +id, text: b.dataset.t});
+    if (a === 'deny') { const msg = prompt('reason shown to the agent (optional)') ?? ''; return act('/api/answer', {item:+id, text:'deny', message: msg}); }
+    if (a === 'free') { const t = prompt('your answer'); if (t) return act('/api/answer', {item:+id, text:t}); return; }
+    if (a === 'dismiss') return act('/api/dismiss', {item:+id});
+    if (a === 'open') { openThread = id; return render(); }
+    if (a === 'back') { openThread = null; return render(); }
+    if (a === 'reply') { const t = $('#rtext').value.trim(); if (!t) return; return act('/api/reply', {reply_to: b.dataset.mid, to: b.dataset.to, text: t}); }
+  });
+  $('#tab-inbox').onclick = () => { view='inbox'; openThread=null; render(); };
+  $('#tab-mail').onclick = () => { view='mail'; openThread=null; render(); };
+  $('#all').onclick = () => { showAll=!showAll; render(); };
+  api('/api/me').then(m => { if (m) $('#who').textContent = `${m.principal} (${m.proof})`; });
+  const es = new EventSource('/api/events');
+  ['mail','attention','agent_state','wake'].forEach(ev => es.addEventListener(ev, () => render()));
+  es.onerror = () => status('live updates disconnected; reload');
+  render();
+  setInterval(render, 30000);
+})();
+</script>
+</body>
+</html>

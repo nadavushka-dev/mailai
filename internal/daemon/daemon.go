@@ -56,6 +56,8 @@ type Daemon struct {
 	poll    time.Duration
 
 	agents    *agents
+	web       webState
+	webSubs   map[chan proto.Event]bool
 	approvals map[uint64]chan approvalDecision
 	marks     map[store.Address]noticeMark
 	queued    []queued
@@ -90,7 +92,7 @@ func New(o Options) *Daemon {
 		o.PollEvery = 2 * time.Second
 	}
 	return &Daemon{st: o.Store, placer: o.Placer, now: o.Now, log: o.Log, maxAsk: o.MaxAsks, stash: o.Stash, tokens: o.Tokens,
-		adapter: o.Adapter, wake: o.Wake, poll: o.PollEvery, agents: newAgents(), marks: map[store.Address]noticeMark{}, approvals: map[uint64]chan approvalDecision{},
+		adapter: o.Adapter, wake: o.Wake, poll: o.PollEvery, agents: newAgents(), marks: map[store.Address]noticeMark{}, approvals: map[uint64]chan approvalDecision{}, webSubs: map[chan proto.Event]bool{},
 		subs: map[*conn]bool{}, asks: newAskGraph(), waits: map[string][]chan store.Message{}}
 }
 
@@ -123,6 +125,7 @@ func (d *Daemon) Serve(ctx context.Context) error {
 	go func() {
 		<-ctx.Done()
 		d.ln.Close()
+		d.webStop()
 	}()
 	if _, isNone := d.adapter.(adapter.None); !isNone {
 		go d.pollAgents(ctx, d.poll)
@@ -304,6 +307,8 @@ func (d *Daemon) handle(c *conn, req proto.Request) (any, error) {
 		return d.dismiss(c, a)
 	case "threads":
 		return d.threads(c)
+	case "web-start", "web-stop", "web-revoke":
+		return d.webVerb(c, req.Verb, req.Args)
 	case "grant":
 		a, err := decode[GrantArgs](req.Args)
 		if err != nil {
@@ -451,18 +456,12 @@ func (d *Daemon) publish(m store.Message) {
 	ev := MailEvent{MID: m.MID, Kind: m.Kind, Mailbox: box, From: m.From, Thread: m.ThreadID, ReplyTo: m.ReplyTo}
 	data, _ := json.Marshal(ev)
 	d.mu.Lock()
-	subs := make([]*conn, 0, len(d.subs))
-	for c := range d.subs {
-		subs = append(subs, c)
-	}
 	var waiters []chan store.Message
 	if m.Kind == store.KindReply {
 		waiters = d.waits[m.ThreadID]
 	}
 	d.mu.Unlock()
-	for _, c := range subs {
-		c.write(proto.Event{Event: "mail", Data: data})
-	}
+	d.fanout(proto.Event{Event: "mail", Data: data})
 	for _, w := range waiters {
 		select {
 		case w <- m:
@@ -494,15 +493,7 @@ func (d *Daemon) publishItem(it store.Item) {
 		state = "closed"
 	}
 	data, _ := json.Marshal(map[string]any{"id": it.ID, "kind": it.Kind, "from": it.From, "state": state, "closed_by": it.ClosedBy})
-	d.mu.Lock()
-	subs := make([]*conn, 0, len(d.subs))
-	for c := range d.subs {
-		subs = append(subs, c)
-	}
-	d.mu.Unlock()
-	for _, c := range subs {
-		c.write(proto.Event{Event: "attention", Data: data})
-	}
+	d.fanout(proto.Event{Event: "attention", Data: data})
 }
 
 // verifiedFor is the one place "verified" is set (SPEC §9): the person's

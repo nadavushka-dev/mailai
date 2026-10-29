@@ -31,6 +31,7 @@ mail
 
 inbox (the person)
   tui, or plain mailai    the Inbox and Mail views in the terminal
+  web [--port N]          the same Inbox in a browser, on 127.0.0.1; prints a one-time link
   inbox                   everything waiting on you
   answer <item> <text>    answer an item; closes it
   dismiss <item>          close an item without an answer
@@ -107,6 +108,8 @@ func main() {
 		err = cmdWhoami(args)
 	case "tui":
 		err = cmdTUI(args)
+	case "web":
+		err = cmdWeb(args)
 	case "version", "--version", "-V":
 		fmt.Println(buildinfo.Version)
 	case "help", "--help", "-h":

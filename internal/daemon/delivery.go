@@ -266,13 +266,5 @@ func (d *Daemon) publishAgent(r agentRec) {
 
 func (d *Daemon) publishEvent(name string, v any) {
 	data, _ := json.Marshal(v)
-	d.mu.Lock()
-	subs := make([]*conn, 0, len(d.subs))
-	for c := range d.subs {
-		subs = append(subs, c)
-	}
-	d.mu.Unlock()
-	for _, c := range subs {
-		c.write(proto.Event{Event: name, Data: data})
-	}
+	d.fanout(proto.Event{Event: name, Data: data})
 }
