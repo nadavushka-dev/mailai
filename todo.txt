@@ -1,0 +1,19 @@
+(A) 2026-10-29 M1 store: message record, mailbox ring, eviction (read first, unread never by eviction alone), mailbox_full +m1
+(A) 2026-10-29 M1 store: threads (thread_id at send time, reply_to_missing), seen vs read, peek marks own inbox seen +m1
+(A) 2026-10-29 M1 store: rate limit token bucket per claimed sender + overflow bucket +m1
+(A) 2026-10-29 M1 store: SQLite persistence (modernc), survives restart +m1
+(A) 2026-10-29 M1 proto: JSON-lines verbs over unix socket, closed error codes, subscribe stream +m1
+(A) 2026-10-29 M1 daemon: socket server (0700), send/read/reply/ask verbs, ask blocks in connection, ask_cycle +m1
+(A) 2026-10-29 M1 cli: mailai send/read/reply/ask, fence rendering, read --summary, ask prints bare reply, D12 one-line notice test +m1
+(A) 2026-10-29 M1 attachments as references, missing resolved at read; stash put/get/list (local) +m1
+(A) 2026-10-29 M1 daemon run/service foreground, XDG paths, config.toml, buildinfo +m1
+(B) 2026-10-29 M2 identity: peer pid (SO_PEERCRED/LOCAL_PEERPID), outside_pane vs pane via fake proc tree, tokens +m2
+(B) 2026-10-29 M2 human: nonce at attach, verified vs claimed_human, forced peek of human inbox, from human refused from pane +m2
+(B) 2026-10-29 M2 inbox: attention items (asks to human, ask-human, errored), inbox/answer/dismiss verbs and CLI, D13 two views +m2
+(C) 2026-10-29 M3 adapter interface + none adapter; herdr adapter: agents/sessions/state, wake via agent prompt, tty/pid/token placement +m3
+(C) 2026-10-29 M3 harness manifests (TOML), bundled claude-code + codex, mailai hook <harness> <event>, integration install/status, --skill text +m3
+(C) 2026-10-29 M3 delivery: notice once per message, wake 5s/30s rules, rebuilt before typing, queue verb +m3
+(C) 2026-10-29 M4 grants: read/write/respond/admin, scopes, delegation depth 2 narrower only, verified supervisor, held approvals via hook +m4
+(C) 2026-10-29 M5 TUI (bubbletea): Inbox + Mail views, reply signed; web UI on loopback with one-time token, SSE, parity +m5
+(D) 2026-10-29 M6 fleet: copy enigma link/bridge/proto framing/service/machine add; routing, outbox, relay, hold policy, upgrades, doctor +m6
+(D) 2026-10-29 M7 polish: MCP server, selectors/--select, stash across machines, notifications, docker e2e, goreleaser + install.sh +m7

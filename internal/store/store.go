@@ -1,0 +1,235 @@
+package store
+
+import (
+	"errors"
+	"fmt"
+	"strings"
+	"sync"
+	"time"
+)
+
+// Errors are a closed set; the protocol maps each to an error code.
+var (
+	ErrNoSender          = errors.New("no sender")
+	ErrNoRecipient       = errors.New("no recipient and no session for a notice")
+	ErrEmptyText         = errors.New("empty text")
+	ErrSubjectTooLong    = fmt.Errorf("subject longer than %d characters", MaxSubject)
+	ErrSubjectNotOneLine = errors.New("subject must be one line")
+	ErrTextTooLong       = fmt.Errorf("text longer than %d bytes", MaxText)
+	ErrMailboxFull       = errors.New("mailbox_full")
+)
+
+// Limits bound one mailbox (SPEC §6).
+type Limits struct {
+	MaxMessages int
+	MaxBytes    int
+}
+
+// DefaultLimits is the spec's bound: 2,000 messages or 16 MB per mailbox.
+var DefaultLimits = Limits{MaxMessages: 2000, MaxBytes: 16 << 20}
+
+// Options configure a Store.
+type Options struct {
+	// Now is the clock; time.Now when nil.
+	Now func() time.Time
+	// Limits per mailbox; DefaultLimits when zero.
+	Limits Limits
+	// MachineID prefixes every MID; "local" when empty.
+	MachineID string
+}
+
+// SendRequest is what a caller asks for. Trust fields are not here: the
+// daemon sets them on the Message after the store accepts the request.
+type SendRequest struct {
+	From        Address
+	FromLabel   string
+	To          Address
+	Session     string
+	Subject     string
+	Text        string
+	Kind        Kind
+	ReplyTo     string
+	Attachments []Attachment
+}
+
+// ReadQuery selects messages from one mailbox, oldest first.
+type ReadQuery struct {
+	Mailbox Address
+	// Unread returns only messages with ReadAt == 0.
+	Unread bool
+	// IDs restricts to these ids when non-empty.
+	IDs []uint64
+	// Mark stamps ReadAt on what is returned.
+	Mark bool
+}
+
+// Store is every mailbox on this machine.
+type Store struct {
+	mu      sync.Mutex
+	now     func() time.Time
+	limits  Limits
+	machine string
+	nextID  uint64
+	boxes   map[Address]*mailbox
+}
+
+type mailbox struct {
+	msgs    []*Message
+	bytes   int
+	evicted uint64
+}
+
+// New makes an empty Store.
+func New(o Options) *Store {
+	if o.Now == nil {
+		o.Now = time.Now
+	}
+	if o.Limits == (Limits{}) {
+		o.Limits = DefaultLimits
+	}
+	if o.MachineID == "" {
+		o.MachineID = "local"
+	}
+	return &Store{now: o.Now, limits: o.Limits, machine: o.MachineID, boxes: map[Address]*mailbox{}}
+}
+
+// Send validates a request and stores it in the recipient's mailbox, or the
+// session's notice box when there is no recipient. It returns a copy.
+func (s *Store) Send(r SendRequest) (Message, error) {
+	if r.From == "" {
+		return Message{}, ErrNoSender
+	}
+	if strings.TrimSpace(r.Text) == "" {
+		return Message{}, ErrEmptyText
+	}
+	if len(r.Text) > MaxText {
+		return Message{}, ErrTextTooLong
+	}
+	if strings.ContainsAny(r.Subject, "\r\n") {
+		return Message{}, ErrSubjectNotOneLine
+	}
+	if len(r.Subject) > MaxSubject {
+		return Message{}, ErrSubjectTooLong
+	}
+	box := r.To
+	kind := r.Kind
+	if r.To == "" {
+		if r.Session == "" {
+			return Message{}, ErrNoRecipient
+		}
+		box = NoticeBox(r.Session)
+		kind = KindNotice
+	} else if kind == "" {
+		kind = KindMail
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.nextID++
+	m := &Message{
+		ID:          s.nextID,
+		MID:         fmt.Sprintf("%s:%d", s.machine, s.nextID),
+		Kind:        kind,
+		Session:     r.Session,
+		From:        r.From,
+		FromLabel:   r.FromLabel,
+		To:          r.To,
+		Subject:     r.Subject,
+		Text:        r.Text,
+		ReplyTo:     r.ReplyTo,
+		Attachments: append([]Attachment(nil), r.Attachments...),
+		SentAt:      s.now().UnixNano(),
+	}
+	m.ThreadID = m.MID
+	mb := s.box(box)
+	if err := mb.makeRoom(m.size(), s.limits); err != nil {
+		s.nextID--
+		return Message{}, err
+	}
+	mb.msgs = append(mb.msgs, m)
+	mb.bytes += m.size()
+	return *m, nil
+}
+
+// Read returns copies of the messages a query selects, oldest first.
+func (s *Store) Read(q ReadQuery) ([]Message, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	mb, ok := s.boxes[q.Mailbox]
+	if !ok {
+		return nil, nil
+	}
+	var want map[uint64]bool
+	if len(q.IDs) > 0 {
+		want = make(map[uint64]bool, len(q.IDs))
+		for _, id := range q.IDs {
+			want[id] = true
+		}
+	}
+	now := s.now().UnixNano()
+	var out []Message
+	for _, m := range mb.msgs {
+		if want != nil && !want[m.ID] {
+			continue
+		}
+		if q.Unread && m.ReadAt != 0 {
+			continue
+		}
+		c := *m
+		c.WasUnread = m.ReadAt == 0
+		c.WasSeen = m.ReadAt == 0 && m.SeenAt != 0
+		if q.Mark && m.ReadAt == 0 {
+			m.ReadAt = now
+			c.ReadAt = now
+		}
+		out = append(out, c)
+	}
+	return out, nil
+}
+
+// Evicted is how many messages a mailbox has dropped to stay within bounds.
+func (s *Store) Evicted(box Address) uint64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if mb, ok := s.boxes[box]; ok {
+		return mb.evicted
+	}
+	return 0
+}
+
+func (s *Store) box(a Address) *mailbox {
+	mb, ok := s.boxes[a]
+	if !ok {
+		mb = &mailbox{}
+		s.boxes[a] = mb
+	}
+	return mb
+}
+
+// makeRoom evicts the oldest read messages until a message of n bytes fits.
+// Unread messages are never evicted; if they alone fill the box, the send is
+// refused with ErrMailboxFull (SPEC §6).
+func (mb *mailbox) makeRoom(n int, lim Limits) error {
+	if n > lim.MaxBytes {
+		return ErrMailboxFull
+	}
+	fits := func() bool {
+		return len(mb.msgs)+1 <= lim.MaxMessages && mb.bytes+n <= lim.MaxBytes
+	}
+	for !fits() {
+		i := -1
+		for j, m := range mb.msgs {
+			if m.ReadAt != 0 {
+				i = j
+				break
+			}
+		}
+		if i < 0 {
+			return ErrMailboxFull
+		}
+		mb.bytes -= mb.msgs[i].size()
+		mb.msgs = append(mb.msgs[:i], mb.msgs[i+1:]...)
+		mb.evicted++
+	}
+	return nil
+}
