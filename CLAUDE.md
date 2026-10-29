@@ -14,6 +14,11 @@ Prior art lives in `reference/tuios/` (TUIOS agent mail, MIT); read `reference/t
   Code from `../enigma` may be copied in verbatim where it fits (link, bridge, proto framing, fleet, service), never imported.
 - Token economy (D12): nothing mailai injects into an agent's context may exceed one line, and never sender-chosen text.
 
+## Trying it by hand
+- Never run a daemon against the real `~/.local/share/mailai` while developing. Use the sandbox:
+  `make sandbox` (or `sandbox/sandbox.sh up`), then `sandbox/sandbox.sh shell` or `sandbox/sandbox.sh run <cmd>`;
+  `make sandbox-down` removes it. It lives in /tmp/mailai-sandbox with its own home and socket.
+
 ## Dev workflow (not part of the product)
 - Tasks: tuxedo, `TODO_FILE=$PWD/todo.txt tuxedo ...`
 - Review: `tuicr -w` before committing.

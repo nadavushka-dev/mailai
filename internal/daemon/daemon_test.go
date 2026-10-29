@@ -213,8 +213,24 @@ func TestAskBlocksUntilReply(t *testing.T) {
 	}
 }
 
+// waitOpen blocks until from has n asks open in the daemon's graph.
+func waitOpen(t *testing.T, d *Daemon, from store.Address, n int) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		d.mu.Lock()
+		got := d.asks.open[from]
+		d.mu.Unlock()
+		if got == n {
+			return
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	t.Fatalf("%s never had %d asks open", from, n)
+}
+
 func TestAskTimeoutAndCycle(t *testing.T) {
-	sock, _ := startDaemon(t, nil)
+	sock, d := startDaemon(t, nil)
 	a := dial(t, sock)
 	err := a.Call("ask", AskArgs{From: "a", To: "b", Text: "?", TimeoutMS: 30}, nil)
 	if client.Code(err) != proto.CodeTimeout {
@@ -222,31 +238,16 @@ func TestAskTimeoutAndCycle(t *testing.T) {
 	}
 	// a asks b (open). b asking a would close a cycle.
 	go a.Call("ask", AskArgs{From: "a", To: "b", Text: "?", TimeoutMS: 3000}, nil)
+	waitOpen(t, d, "a", 1)
 	b := dial(t, sock)
-	deadline := time.Now().Add(time.Second)
-	var cerr error
-	for time.Now().Before(deadline) {
-		cerr = b.Call("ask", AskArgs{From: "b", To: "a", Text: "?", TimeoutMS: 10}, nil)
-		if client.Code(cerr) == proto.CodeAskCycle {
-			break
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
-	if client.Code(cerr) != proto.CodeAskCycle {
+	if cerr := b.Call("ask", AskArgs{From: "b", To: "a", Text: "?", TimeoutMS: 10}, nil); client.Code(cerr) != proto.CodeAskCycle {
 		t.Fatalf("want ask_cycle, got %v", cerr)
 	}
 	// Transitive: a->b open, b->c open, c->a is a cycle too.
 	go b.Call("ask", AskArgs{From: "b", To: "c", Text: "?", TimeoutMS: 3000}, nil)
+	waitOpen(t, d, "b", 1)
 	cc := dial(t, sock)
-	deadline = time.Now().Add(time.Second)
-	for time.Now().Before(deadline) {
-		cerr = cc.Call("ask", AskArgs{From: "c", To: "a", Text: "?", TimeoutMS: 10}, nil)
-		if client.Code(cerr) == proto.CodeAskCycle {
-			break
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
-	if client.Code(cerr) != proto.CodeAskCycle {
+	if cerr := cc.Call("ask", AskArgs{From: "c", To: "a", Text: "?", TimeoutMS: 10}, nil); client.Code(cerr) != proto.CodeAskCycle {
 		t.Fatalf("want transitive ask_cycle, got %v", cerr)
 	}
 	if err := a.Call("ask", AskArgs{From: "a", To: "a", Text: "?"}, nil); client.Code(err) != proto.CodeAskCycle {
@@ -267,16 +268,7 @@ func TestAskLimit(t *testing.T) {
 	for i := 0; i < 2; i++ {
 		go c.Call("ask", AskArgs{From: "a", To: store.Address("t" + string(rune('0'+i))), Text: "?", TimeoutMS: 3000}, nil)
 	}
-	deadline := time.Now().Add(time.Second)
-	for time.Now().Before(deadline) {
-		d.mu.Lock()
-		n := d.asks.open["a"]
-		d.mu.Unlock()
-		if n == 2 {
-			break
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
+	waitOpen(t, d, "a", 2)
 	err := c.Call("ask", AskArgs{From: "a", To: "t9", Text: "?", TimeoutMS: 10}, nil)
 	if client.Code(err) != proto.CodeAskLimit {
 		t.Fatalf("want ask_limit, got %v", err)

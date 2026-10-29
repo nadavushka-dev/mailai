@@ -1,4 +1,4 @@
-.PHONY: check test build hooks
+.PHONY: check test build hooks sandbox sandbox-down
 
 VERSION ?= v0.0.0-dev.$(shell TZ=UTC git show -s --format=%cd --date=format-local:%Y%m%d%H%M%S HEAD 2>/dev/null || echo 0).$(shell git rev-parse --short=7 HEAD 2>/dev/null || echo 0)
 LDFLAGS := -X github.com/nadavushka-dev/mailai/internal/buildinfo.Version=$(VERSION)
@@ -16,3 +16,9 @@ build:
 
 hooks:
 	git config core.hooksPath .githooks
+
+sandbox: ## a throwaway daemon in /tmp/mailai-sandbox; never touches your real mailai
+	sandbox/sandbox.sh up
+
+sandbox-down:
+	sandbox/sandbox.sh down
