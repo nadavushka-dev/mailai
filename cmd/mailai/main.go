@@ -34,6 +34,11 @@ inbox (the person)
   answer <item> <text>    answer an item; closes it
   dismiss <item>          close an item without an answer
 
+harnesses
+  hook <harness> <event>  what an installed hook runs (payload on stdin)
+  integration install|uninstall|status [harness...]
+  --skill                 the short guide an agent reads to use mailai
+
 daemon
   daemon run              run the daemon in the foreground
   ping                    is the daemon up
@@ -42,6 +47,7 @@ daemon
 
 Every command takes --json. MAILAI_SOCKET points at a daemon elsewhere.
 MAILAI_TOKEN makes this process the agent the token was issued to.
+MAILAI_ADAPTER=herdr|none overrides the adapter the daemon picks.
 `
 
 func main() {
@@ -82,6 +88,12 @@ func main() {
 		err = cmdQueue(args)
 	case "token":
 		err = cmdToken(args)
+	case "hook":
+		err = cmdHook(args)
+	case "integration":
+		err = cmdIntegration(args)
+	case "--skill", "skill":
+		err = cmdSkill(args)
 	case "ping":
 		err = cmdPing(args)
 	case "whoami":

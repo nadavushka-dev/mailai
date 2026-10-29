@@ -55,10 +55,11 @@ type Daemon struct {
 	wake    bool
 	poll    time.Duration
 
-	agents   *agents
-	marks    map[store.Address]noticeMark
-	queued   []queued
-	queueSeq uint64
+	agents    *agents
+	approvals map[uint64]chan approvalDecision
+	marks     map[store.Address]noticeMark
+	queued    []queued
+	queueSeq  uint64
 
 	mu    sync.Mutex
 	subs  map[*conn]bool
@@ -89,7 +90,7 @@ func New(o Options) *Daemon {
 		o.PollEvery = 2 * time.Second
 	}
 	return &Daemon{st: o.Store, placer: o.Placer, now: o.Now, log: o.Log, maxAsk: o.MaxAsks, stash: o.Stash, tokens: o.Tokens,
-		adapter: o.Adapter, wake: o.Wake, poll: o.PollEvery, agents: newAgents(), marks: map[store.Address]noticeMark{},
+		adapter: o.Adapter, wake: o.Wake, poll: o.PollEvery, agents: newAgents(), marks: map[store.Address]noticeMark{}, approvals: map[uint64]chan approvalDecision{},
 		subs: map[*conn]bool{}, asks: newAskGraph(), waits: map[string][]chan store.Message{}}
 }
 
@@ -194,7 +195,7 @@ func (d *Daemon) serveConn(nc net.Conn) {
 		req := proto.Request{ID: *f.ID, Verb: f.Verb, Args: f.Args}
 		// Blocking verbs run on their own goroutine so the connection stays
 		// responsive; everything else is cheap and runs in order.
-		if req.Verb == "ask" || req.Verb == "ask-human" {
+		if req.Verb == "ask" || req.Verb == "ask-human" || req.Verb == "hold-approval" {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
@@ -301,6 +302,12 @@ func (d *Daemon) handle(c *conn, req proto.Request) (any, error) {
 			return nil, err
 		}
 		return d.dismiss(c, a)
+	case "hold-approval":
+		a, err := decode[HoldApprovalArgs](req.Args)
+		if err != nil {
+			return nil, err
+		}
+		return d.holdApproval(c, a)
 	case "notice":
 		a, err := decode[NoticeArgs](req.Args)
 		if err != nil {

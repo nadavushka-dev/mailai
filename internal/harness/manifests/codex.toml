@@ -1,0 +1,28 @@
+# Codex CLI (OpenAI). Its hook configuration could not be confirmed from
+# OpenAI's documentation when this was written (it lives in
+# ~/.codex/config.toml), so install prints the hook commands for you to wire
+# in, and `mailai hook codex <event>` works once you have. Drop a corrected
+# manifest in <config>/harnesses/codex.toml to replace this one.
+name = "codex"
+description = "Codex CLI: hooks in ~/.codex/config.toml (manual wiring)"
+config = "~/.codex/config.toml"
+format = "manual"
+
+[events.SessionStart]
+state = "idle"
+notice = true
+
+[events.UserPromptSubmit]
+state = "working"
+notice = true
+
+[events.PostToolUse]
+state = "working"
+notice = true
+
+[events.Stop]
+state = "done"
+
+[notice]
+stdout_events = ["SessionStart", "UserPromptSubmit"]
+json_field = "additionalContext"

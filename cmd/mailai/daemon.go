@@ -68,6 +68,9 @@ func cmdDaemon(args []string) error {
 // Herdr (HERDR_ENV=1 or a socket path), else none (SPEC §8).
 func chooseAdapter(cfg config.Config) adapter.Adapter {
 	name := cfg.Adapter
+	if env := os.Getenv("MAILAI_ADAPTER"); env != "" {
+		name = env
+	}
 	if name == "" {
 		if os.Getenv("HERDR_ENV") == "1" || os.Getenv("HERDR_SOCKET_PATH") != "" {
 			name = "herdr"

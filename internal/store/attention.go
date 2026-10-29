@@ -17,6 +17,7 @@ const (
 	ItemAsk      ItemKind = "ask"       // an ask addressed to human
 	ItemAskHuman ItemKind = "ask_human" // ask-human: a question with fixed answers
 	ItemErrored  ItemKind = "errored"   // an agent the adapter reports errored (M3)
+	ItemApproval ItemKind = "approval"  // a harness permission request held by its hook
 )
 
 // Item is one entry in the Inbox.
@@ -35,8 +36,14 @@ type Item struct {
 	ClosedAt int64    `json:"closed_at,omitempty"`
 	// ClosedBy says how: "answered", "dismissed", "resolved" (the agent moved on).
 	ClosedBy string `json:"closed_by,omitempty"`
-	// Answer is the mid of the reply that closed it, when answered.
+	// Answer is the mid of the reply that closed it, when answered; for an
+	// approval, the decision ("allow" or "deny").
 	Answer string `json:"answer,omitempty"`
+	// Approval fields (SPEC §8): what the harness said.
+	Harness string `json:"harness,omitempty"`
+	Risky   bool   `json:"risky,omitempty"`
+	// DecidedBy says who answered: human or supervisor:<name> (M4).
+	DecidedBy string `json:"decided_by,omitempty"`
 }
 
 var ErrNoItem = errors.New("no such item")
@@ -102,6 +109,13 @@ func (s *Store) openItem(it Item) (Item, error) {
 		a.byMID[it.MID] = &it
 	}
 	return it, nil
+}
+
+// OpenApproval opens an approval item for a held permission request.
+func (s *Store) OpenApproval(it Item) (Item, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.openItem(it)
 }
 
 // Items returns open items oldest first, or every item when all is set.

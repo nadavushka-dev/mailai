@@ -39,6 +39,8 @@ type InboxResult struct {
 type AnswerArgs struct {
 	Item uint64 `json:"item"`
 	Text string `json:"text"`
+	// Message goes back to the agent with a deny, as the harness shows it.
+	Message string `json:"message,omitempty"`
 }
 
 type DismissArgs struct {
@@ -186,6 +188,13 @@ func (d *Daemon) answer(c *conn, a AnswerArgs) (any, error) {
 	}
 	if a.Text == "" {
 		return nil, proto.Errorf(proto.CodeBadRequest, "an answer needs text")
+	}
+	if it.Kind == store.ItemApproval {
+		closed, err := d.decideApproval(it, a.Text, a.Message, "human")
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"item": closed}, nil
 	}
 	m, err := d.store(c.pl, store.SendRequest{From: store.Human, To: it.From, Text: a.Text, ReplyTo: it.MID,
 		Proof: c.pl.Proof, Verified: "human"})

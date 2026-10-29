@@ -1,0 +1,30 @@
+# Claude Code (Anthropic). Hooks live in ~/.claude/settings.json.
+name = "claude-code"
+description = "Claude Code: hooks in ~/.claude/settings.json"
+config = "~/.claude/settings.json"
+format = "claude-settings-json"
+
+[events.SessionStart]
+state = "idle"
+notice = true
+
+[events.UserPromptSubmit]
+state = "working"
+notice = true
+
+[events.PostToolUse]
+state = "working"
+notice = true
+
+[events.Stop]
+state = "done"
+
+[events.SubagentStop]
+
+[approval]
+event = "PermissionRequest"
+timeout = 600
+
+[notice]
+stdout_events = ["SessionStart", "UserPromptSubmit"]
+json_field = "additionalContext"

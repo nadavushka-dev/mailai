@@ -70,7 +70,7 @@ func startEnv(t *testing.T) *env {
 
 func (e *env) cmd(args ...string) *exec.Cmd {
 	c := exec.Command(bin, args...)
-	c.Env = append(os.Environ(), "MAILAI_HOME="+e.home, "MAILAI_SOCKET="+e.sock)
+	c.Env = append(os.Environ(), "MAILAI_HOME="+e.home, "MAILAI_SOCKET="+e.sock, "MAILAI_ADAPTER=none")
 	return c
 }
 
@@ -341,5 +341,131 @@ func TestCLI_InboxAskHumanAnswerDismiss(t *testing.T) {
 	// An agent may look at the Inbox but not act on it.
 	if o, err := agent("dismiss", "1").CombinedOutput(); err == nil || !strings.Contains(string(o), "not_human") {
 		t.Fatalf("%s %v", o, err)
+	}
+}
+
+// SPEC §8: the hook reports state, prints the notice once in the form the
+// harness takes, and never fails the agent.
+func TestCLI_HookReportsStateAndNoticeOnce(t *testing.T) {
+	e := startEnv(t)
+	tok := strings.TrimSpace(strings.SplitN(e.must("token", "new", "worker"), "\n", 2)[0])
+	hook := func(event, payload string) string {
+		c := e.cmd("hook", "claude-code", event)
+		c.Env = append(c.Env, "MAILAI_TOKEN="+tok)
+		c.Stdin = strings.NewReader(payload)
+		out, err := c.CombinedOutput()
+		if err != nil {
+			t.Fatalf("hook %s: %v %s", event, err, out)
+		}
+		return string(out)
+	}
+	if out := hook("SessionStart", `{"hook_event_name":"SessionStart"}`); out != "" {
+		t.Fatalf("no mail, no output: %q", out)
+	}
+	if out := e.must("agents"); !strings.Contains(out, "worker") || !strings.Contains(out, "idle") || !strings.Contains(out, "claude-code") {
+		t.Fatal(out)
+	}
+	e.must("send", "worker", "--subject", "secret subject", "secret body")
+	// UserPromptSubmit: plain stdout is context.
+	out := hook("UserPromptSubmit", `{"hook_event_name":"UserPromptSubmit","prompt":"hi"}`)
+	if !strings.HasPrefix(out, "You have 1 unread mailai message from human. Read it with: mailai read --unread") || strings.Contains(out, "secret") {
+		t.Fatalf("%q", out)
+	}
+	// Once per message: the next hook adds nothing.
+	if out := hook("PostToolUse", `{"hook_event_name":"PostToolUse","tool_name":"Bash"}`); out != "" {
+		t.Fatalf("announced twice: %q", out)
+	}
+	// New mail on PostToolUse: the JSON form.
+	e.must("send", "worker", "more")
+	out = hook("PostToolUse", `{"hook_event_name":"PostToolUse"}`)
+	if !strings.Contains(out, `"hookEventName":"PostToolUse"`) || !strings.Contains(out, `"additionalContext":"You have 2 unread`) {
+		t.Fatalf("%q", out)
+	}
+	// Stop reports done with the first line of the last message as label.
+	hook("Stop", `{"hook_event_name":"Stop","last_assistant_message":"All green.\nDetails..."}`)
+	out = e.must("agents", "--json")
+	if !strings.Contains(out, `"state": "done"`) || !strings.Contains(out, `"label": "All green."`) {
+		t.Fatal(out)
+	}
+	// Unknown event, unknown harness, no daemon: quiet, exit 0 (never fail the agent).
+	if out := hook("SomethingNew", `{}`); out != "" {
+		t.Fatal(out)
+	}
+	c := e.cmd("hook", "claude-code", "Stop")
+	c.Env = append(c.Env, "MAILAI_SOCKET=/nonexistent/sock")
+	if out, err := c.CombinedOutput(); err != nil || len(out) != 0 {
+		t.Fatalf("%v %q", err, out)
+	}
+}
+
+func TestCLI_HookHoldsApprovalUntilAnswered(t *testing.T) {
+	e := startEnv(t)
+	tok := strings.TrimSpace(strings.SplitN(e.must("token", "new", "worker"), "\n", 2)[0])
+	type res struct {
+		out string
+		err error
+	}
+	got := make(chan res, 1)
+	go func() {
+		c := e.cmd("hook", "claude-code", "PermissionRequest")
+		c.Env = append(c.Env, "MAILAI_TOKEN="+tok)
+		c.Stdin = strings.NewReader(`{"hook_event_name":"PermissionRequest","tool_name":"Bash","tool_input":{"command":"rm -rf node_modules","description":"x"}}`)
+		out, err := c.CombinedOutput()
+		got <- res{string(out), err}
+	}()
+	var out string
+	deadline := time.Now().Add(5 * time.Second)
+	for !strings.Contains(out, "approval") && time.Now().Before(deadline) {
+		out = e.must("inbox")
+		time.Sleep(20 * time.Millisecond)
+	}
+	if !strings.Contains(out, "#1  approval  worker") || !strings.Contains(out, "rm -rf node_modules") {
+		t.Fatalf("%q", out)
+	}
+	e.must("answer", "1", "allow")
+	select {
+	case r := <-got:
+		if r.err != nil || !strings.Contains(r.out, `"behavior":"allow"`) || !strings.Contains(r.out, `"hookEventName":"PermissionRequest"`) {
+			t.Fatalf("%q %v", r.out, r.err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("hook did not return")
+	}
+}
+
+func TestCLI_IntegrationInstallStatusUninstall(t *testing.T) {
+	e := startEnv(t)
+	home := t.TempDir()
+	run := func(args ...string) string {
+		c := e.cmd(args...)
+		c.Env = append(c.Env, "MAILAI_TEST_HOME="+home)
+		out, err := c.CombinedOutput()
+		if err != nil {
+			t.Fatalf("%v %s", err, out)
+		}
+		return string(out)
+	}
+	if out := run("integration", "status", "claude-code"); !strings.Contains(out, "not installed") {
+		t.Fatal(out)
+	}
+	if out := run("integration", "install", "claude-code", "--command", "/opt/mailai"); !strings.Contains(out, "hooks written") {
+		t.Fatal(out)
+	}
+	b, _ := os.ReadFile(filepath.Join(home, ".claude", "settings.json"))
+	if !strings.Contains(string(b), "/opt/mailai hook claude-code PermissionRequest") {
+		t.Fatalf("%s", b)
+	}
+	if out := run("integration", "status", "claude-code", "--command", "/opt/mailai"); !strings.Contains(out, "installed, current") {
+		t.Fatal(out)
+	}
+	// Codex is manual: install explains on stderr and does not fail.
+	if out := run("integration", "install", "codex"); !strings.Contains(out, "mailai hook codex Stop") {
+		t.Fatal(out)
+	}
+	if out := run("integration", "uninstall", "claude-code"); !strings.Contains(out, "hooks removed") {
+		t.Fatal(out)
+	}
+	if out := run("--skill"); !strings.Contains(out, "mailai read --unread") {
+		t.Fatal(out)
 	}
 }
