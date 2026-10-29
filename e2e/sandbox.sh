@@ -9,6 +9,8 @@
 #   e2e/sandbox.sh run s2 mailai unread
 #   e2e/sandbox.sh log s1      s1's daemon log
 #   e2e/sandbox.sh restart     rebuild from the tree and restart every daemon, mail kept
+#   e2e/sandbox.sh seed        fill s1 with agents, mail, questions and held approvals
+#   e2e/sandbox.sh web         start the web UI on s1 and print a URL that works from this Mac
 #   e2e/sandbox.sh down        remove the boxes
 set -eu
 cd "$(dirname "$0")/.."
@@ -19,7 +21,9 @@ boxes="s1 s2 s3"
 
 cname() { echo "mailai-sandbox-$1"; }
 sh_in() { box=$1; shift; docker exec -it -u dev -e HOME=/home/dev -e TERM="${TERM:-xterm-256color}" "$(cname "$box")" "$@"; }
-run() { box=$1; shift; docker exec -u dev -e HOME=/home/dev "$(cname "$box")" "$@"; }
+run() { box=$1; shift; docker exec -i -u dev -e HOME=/home/dev "$(cname "$box")" "$@"; }
+# WEBPORT on this Mac reaches the web UI on s1 (loopback inside the box, forwarded by socat).
+WEBPORT=${MAILAI_SANDBOX_WEBPORT:-8471}
 
 build() {
 	mkdir -p "$dir/bin"
@@ -51,7 +55,10 @@ up() {
 	docker network inspect "$net" >/dev/null 2>&1 || docker network create "$net" >/dev/null
 	for b in $boxes; do
 		docker rm -f "$(cname "$b")" >/dev/null 2>&1 || true
-		docker run -d --name "$(cname "$b")" --hostname "$b" --network "$net" --network-alias "$b" \
+		publish=""
+		[ "$b" = s1 ] && publish="-p 127.0.0.1:$WEBPORT:8472"
+		# shellcheck disable=SC2086
+		docker run -d --name "$(cname "$b")" --hostname "$b" --network "$net" --network-alias "$b" $publish \
 			-v "$dir/bin/mailai:/usr/local/bin/mailai:ro" -v "$dir/keys:/keys:ro" "$image" >/dev/null
 		docker exec "$(cname "$b")" sh -c 'cp /keys/id_ed25519 /home/dev/.ssh/id && chown dev:dev /home/dev/.ssh/id && chmod 600 /home/dev/.ssh/id'
 		start_daemon "$b"
@@ -70,6 +77,19 @@ restart() {
 	echo "daemons restarted on $boxes"
 }
 
+web() {
+	# The daemon serves 127.0.0.1:8471 inside s1; socat exposes it on the box's
+	# eth0 as 8472, which docker publishes to 127.0.0.1:$WEBPORT here. That is
+	# the "your own tunnel" of SPEC §12a, sandbox edition.
+	docker exec -d "$(cname s1)" sh -c 'pgrep -x socat >/dev/null || socat TCP-LISTEN:8472,bind=0.0.0.0,fork,reuseaddr TCP:127.0.0.1:8471'
+	url=$(run s1 mailai web --port 8471 --json | sed -n 's/.*"url": "\([^"]*\)".*/\1/p')
+	[ -n "$url" ] || { echo "could not start the web UI; e2e/sandbox.sh log s1"; exit 1; }
+	echo "open on this Mac (one-time link, session lasts 12 h):"
+	echo "  $(echo "$url" | sed "s#127.0.0.1:8471#127.0.0.1:$WEBPORT#")"
+}
+
+seed() { e2e/seed.sh s1; }
+
 down() {
 	for b in $boxes; do docker rm -f "$(cname "$b")" >/dev/null 2>&1 || true; done
 	docker network rm "$net" >/dev/null 2>&1 || true
@@ -80,8 +100,10 @@ case "${1:-}" in
 up) up ;;
 down) down ;;
 restart) restart ;;
+web) web ;;
+seed) seed ;;
 shell) sh_in "${2:?box}" sh -l ;;
 run) shift; run "$@" ;;
 log) run "${2:?box}" cat /home/dev/mailai.log ;;
-*) sed -n '2,12p' "$0"; exit 2 ;;
+*) sed -n '2,14p' "$0"; exit 2 ;;
 esac

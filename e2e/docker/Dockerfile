@@ -4,7 +4,7 @@
 # changes.
 FROM debian:bookworm-slim
 RUN apt-get update \
- && apt-get install -y --no-install-recommends openssh-server openssh-client procps ca-certificates \
+ && apt-get install -y --no-install-recommends openssh-server openssh-client procps ca-certificates socat curl \
  && rm -rf /var/lib/apt/lists/* \
  && mkdir -p /run/sshd \
  && ssh-keygen -A \
