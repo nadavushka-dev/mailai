@@ -1,10 +1,2 @@
-x 2026-10-29 2026-10-29 M2 identity: peer pid (SO_PEERCRED/LOCAL_PEERPID), outside_pane vs pane via fake proc tree, tokens +m2
-(C) M5 human nonce: attach verb issues a nonce to the TUI/web client; replies carrying it are verified_human; send-keys-driven replies are claimed_human (rest of M2 human task done in M2) +m5
-x 2026-10-29 2026-10-29 M2 inbox: attention items (asks to human, ask-human, errored), inbox/answer/dismiss verbs and CLI, D13 two views +m2
-x 2026-10-29 2026-10-29 M3 adapter interface + none adapter; herdr adapter: agents/sessions/state, wake via agent prompt, tty/pid/token placement +m3
-x 2026-10-29 2026-10-29 M3 harness manifests (TOML), bundled claude-code + codex, mailai hook <harness> <event>, integration install/status, --skill text +m3
-x 2026-10-29 2026-10-29 M3 delivery: notice once per message, wake 5s/30s rules, rebuilt before typing, queue verb +m3
-x 2026-10-29 2026-10-29 M4 grants: read/write/respond/admin, scopes, delegation depth 2 narrower only, verified supervisor, held approvals via hook +m4
-(C) 2026-10-29 M5 TUI (bubbletea): Inbox + Mail views, reply signed; web UI on loopback with one-time token, SSE, parity +m5
 (D) 2026-10-29 M6 fleet: copy enigma link/bridge/proto framing/service/machine add; routing, outbox, relay, hold policy, upgrades, doctor +m6
 (D) 2026-10-29 M7 polish: MCP server, selectors/--select, stash across machines, notifications, docker e2e, goreleaser + install.sh +m7
