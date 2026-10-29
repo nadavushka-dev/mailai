@@ -130,9 +130,14 @@ func TestPlacedPrincipalOverridesClaimAndCannotClearHuman(t *testing.T) {
 	}
 	var sr SendResult
 	pane.Call("send", SendArgs{To: "human", Text: "need help"}, &sr)
-	if sr.Message.From != "w1:p3" {
+	if sr.Message.From != "w1:p3" || sr.Message.SenderProof != store.ProofPane {
 		t.Fatalf("%+v", sr.Message)
 	}
+	person.Call("send", SendArgs{To: "w1:p3", Text: "x"}, &sr)
+	if sr.Message.SenderProof != store.ProofOutsidePane {
+		t.Fatalf("%+v", sr.Message)
+	}
+	pane.Call("read", ReadArgs{}, nil) // clear it so the seen check below sees one message
 	var rr ReadResult
 	if err := pane.Call("read", ReadArgs{Mailbox: "human"}, &rr); err != nil {
 		t.Fatal(err)
@@ -150,8 +155,9 @@ func TestPlacedPrincipalOverridesClaimAndCannotClearHuman(t *testing.T) {
 	pane.Call("read", ReadArgs{Peek: true}, &rr)
 	var own ReadResult
 	pane.Call("read", ReadArgs{}, &own)
-	if own.Messages[0].SeenAt == 0 || !own.Messages[0].WasSeen {
-		t.Fatalf("%+v", own.Messages[0])
+	last := own.Messages[len(own.Messages)-1]
+	if last.Text != "answer" || last.SeenAt == 0 || !last.WasSeen {
+		t.Fatalf("%+v", last)
 	}
 }
 

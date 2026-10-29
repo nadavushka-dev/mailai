@@ -54,6 +54,11 @@ type SendRequest struct {
 	// Remote says the send arrived over a link; the daemon sets it from the
 	// connection. It picks the rate-limit bucket (SPEC §6).
 	Remote bool
+	// Proof, Origin and OriginHost are what the daemon knows about the
+	// connection (SPEC §9); never taken from a client's request.
+	Proof      Proof
+	Origin     string
+	OriginHost string
 }
 
 // ReadQuery selects messages from one mailbox, oldest first.
@@ -192,6 +197,9 @@ func (s *Store) Send(r SendRequest) (Message, error) {
 		ReplyTo:     r.ReplyTo,
 		Attachments: append([]Attachment(nil), r.Attachments...),
 		SentAt:      s.now().UnixNano(),
+		SenderProof: r.Proof,
+		Origin:      r.Origin,
+		OriginHost:  r.OriginHost,
 	}
 	// Thread id is resolved now, not walked at read time: the store is
 	// bounded and forgets, and a thread must answer to one id forever.

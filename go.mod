@@ -2,7 +2,10 @@ module github.com/nadavushka-dev/mailai
 
 go 1.26.4
 
-require modernc.org/sqlite v1.61.0
+require (
+	github.com/BurntSushi/toml v1.6.0
+	modernc.org/sqlite v1.61.0
+)
 
 require (
 	github.com/dustin/go-humanize v1.1.0 // indirect

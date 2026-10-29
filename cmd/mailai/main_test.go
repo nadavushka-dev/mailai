@@ -1,0 +1,197 @@
+package main
+
+import (
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+)
+
+// The CLI is tested as a process: the binary is built once, a daemon runs
+// against a throwaway MAILAI_HOME, and commands are run the way a hook or
+// an agent would run them.
+
+var bin string
+
+func TestMain(m *testing.M) {
+	dir, err := os.MkdirTemp("", "mailai-bin")
+	if err != nil {
+		panic(err)
+	}
+	bin = filepath.Join(dir, "mailai")
+	if out, err := exec.Command("go", "build", "-o", bin, ".").CombinedOutput(); err != nil {
+		panic(string(out))
+	}
+	code := m.Run()
+	os.RemoveAll(dir)
+	os.Exit(code)
+}
+
+type env struct {
+	t    *testing.T
+	home string
+	sock string
+}
+
+func startEnv(t *testing.T) *env {
+	t.Helper()
+	b := make([]byte, 4)
+	rand.Read(b)
+	id := hex.EncodeToString(b)
+	home := t.TempDir()
+	sock := filepath.Join(os.TempDir(), "mailai-cli-"+id+".sock")
+	e := &env{t: t, home: home, sock: sock}
+	cmd := e.cmd("daemon", "run")
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		cmd.Process.Signal(os.Interrupt)
+		cmd.Wait()
+		os.Remove(sock)
+	})
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(sock); err == nil {
+			if _, err := e.run("ping"); err == nil {
+				return e
+			}
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatal("daemon did not come up")
+	return nil
+}
+
+func (e *env) cmd(args ...string) *exec.Cmd {
+	c := exec.Command(bin, args...)
+	c.Env = append(os.Environ(), "MAILAI_HOME="+e.home, "MAILAI_SOCKET="+e.sock)
+	return c
+}
+
+func (e *env) run(args ...string) (string, error) {
+	out, err := e.cmd(args...).CombinedOutput()
+	return string(out), err
+}
+
+func (e *env) must(args ...string) string {
+	e.t.Helper()
+	out, err := e.run(args...)
+	if err != nil {
+		e.t.Fatalf("mailai %s: %v\n%s", strings.Join(args, " "), err, out)
+	}
+	return out
+}
+
+func TestCLI_SendReadNoticeFence(t *testing.T) {
+	e := startEnv(t)
+	out := e.must("whoami")
+	if !strings.Contains(out, "human (outside_pane)") {
+		t.Fatal(out)
+	}
+	e.must("send", "worker", "--subject", "task", "fix the retry loop")
+	c := e.cmd("send", "--from", "worker", "human")
+	c.Stdin = strings.NewReader("on it\nsecond line\n")
+	if out, err := c.CombinedOutput(); err != nil {
+		t.Fatal(string(out))
+	}
+	if out := e.must("unread"); !strings.HasPrefix(out, "1 unread from worker") {
+		t.Fatal(out)
+	}
+	if out := e.must("notice"); strings.TrimSpace(out) != "You have 1 unread mailai message from worker. Read it with: mailai read --unread" {
+		t.Fatal(out)
+	}
+	if out := e.must("read", "--summary"); !strings.HasPrefix(out, "* #2 worker (outside_pane) (no subject)") {
+		t.Fatal(out)
+	}
+	out = e.must("read")
+	want := "── #2 from worker (outside_pane) ──\n│ on it\n│ second line\n── end ──\n"
+	if out != want {
+		t.Fatalf("got %q", out)
+	}
+	if out := e.must("unread"); !strings.HasPrefix(out, "0 unread") {
+		t.Fatal(out)
+	}
+	if out := e.must("notice"); out != "" {
+		t.Fatalf("no mail must print nothing, got %q", out)
+	}
+	// --json everywhere.
+	var msgs struct{ Messages []map[string]any }
+	if err := json.Unmarshal([]byte(e.must("read", "-w", "worker", "--json")), &msgs); err != nil || len(msgs.Messages) != 1 || msgs.Messages[0]["subject"] != "task" {
+		t.Fatal(err, msgs)
+	}
+}
+
+// SPEC §7: ask blocks in the process and prints the reply alone; a timeout
+// exits 2 so a script can tell "no" from "no answer".
+func TestCLI_AskPrintsBareReplyAndTimesOutWithExit2(t *testing.T) {
+	e := startEnv(t)
+	type res struct {
+		out string
+		err error
+	}
+	got := make(chan res, 1)
+	go func() {
+		out, err := e.run("ask", "--from", "worker", "--timeout", "10s", "reviewer", "ok to merge?")
+		got <- res{out, err}
+	}()
+	var mid string
+	deadline := time.Now().Add(5 * time.Second)
+	for mid == "" && time.Now().Before(deadline) {
+		var rr struct{ Messages []struct{ MID, Kind string } }
+		json.Unmarshal([]byte(e.must("read", "-w", "reviewer", "--peek", "--json")), &rr)
+		if len(rr.Messages) == 1 && rr.Messages[0].Kind == "ask" {
+			mid = rr.Messages[0].MID
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if mid == "" {
+		t.Fatal("ask never landed")
+	}
+	e.must("reply", "--from", "reviewer", mid, "yes, merge it")
+	select {
+	case r := <-got:
+		if r.err != nil || r.out != "yes, merge it\n" {
+			t.Fatalf("%q %v", r.out, r.err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("ask did not return")
+	}
+	out, err := e.run("ask", "--from", "worker", "--timeout", "200ms", "nobody", "anyone?")
+	ee, ok := err.(*exec.ExitError)
+	if !ok || ee.ExitCode() != 2 || !strings.Contains(out, "timeout") {
+		t.Fatalf("%v %q", err, out)
+	}
+	out, err = e.run("ask", "--from", "worker", "--timeout", "200ms", "nobody", "x", "--json")
+	if err == nil || !strings.Contains(out, `"error":"timeout"`) {
+		t.Fatalf("%v %q", err, out)
+	}
+}
+
+func TestCLI_NoDaemonIsAClearError(t *testing.T) {
+	e := &env{t: t, home: t.TempDir(), sock: filepath.Join(os.TempDir(), "mailai-none.sock")}
+	out, err := e.run("ping")
+	if err == nil || !strings.Contains(out, "no daemon at") {
+		t.Fatalf("%v %q", err, out)
+	}
+}
+
+func TestParse_FlagsAnywhere(t *testing.T) {
+	fs := newFlags("x")
+	sub := fs.String("subject", "", "")
+	pos := parse(fs, []string{"worker", "--subject", "s", "some", "text", "--json"})
+	if *sub != "s" || !jsonOut || strings.Join(pos, " ") != "worker some text" {
+		t.Fatalf("%q %q %v", *sub, pos, jsonOut)
+	}
+	jsonOut = false
+	fs = newFlags("y")
+	pos = parse(fs, []string{"to", "--", "--not-a-flag", "x"})
+	if strings.Join(pos, " ") != "to --not-a-flag x" {
+		t.Fatalf("%q", pos)
+	}
+}

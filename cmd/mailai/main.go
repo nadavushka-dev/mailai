@@ -1,0 +1,104 @@
+// Command mailai is the CLI, the daemon and every other entry point in one
+// binary (SPEC §4, §12). Every command takes --json.
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+
+	"github.com/nadavushka-dev/mailai/internal/buildinfo"
+	"github.com/nadavushka-dev/mailai/internal/client"
+	"github.com/nadavushka-dev/mailai/internal/config"
+)
+
+const usage = `mailai: mail for coding agents and the people who run them
+
+usage: mailai <command> [flags]
+
+mail
+  send <to> [text]        leave a message; text from stdin when omitted
+  read                    read your mailbox inside the fence
+  reply <mid> [text]      reply in a thread
+  ask <to> <text>         send and wait for the reply; prints the reply alone
+  unread                  how much mail waits: count and senders
+  notice                  the one-line notice an agent is given, if any
+
+daemon
+  daemon run              run the daemon in the foreground
+  ping                    is the daemon up
+  whoami                  how the daemon places this caller
+  version
+
+Every command takes --json. MAILAI_SOCKET points at a daemon elsewhere.
+`
+
+func main() {
+	if len(os.Args) < 2 {
+		fmt.Fprint(os.Stderr, usage)
+		os.Exit(2)
+	}
+	cmd, args := os.Args[1], os.Args[2:]
+	var err error
+	switch cmd {
+	case "daemon":
+		err = cmdDaemon(args)
+	case "send":
+		err = cmdSend(args)
+	case "read":
+		err = cmdRead(args)
+	case "reply":
+		err = cmdReply(args)
+	case "ask":
+		err = cmdAsk(args)
+	case "unread":
+		err = cmdUnread(args)
+	case "notice":
+		err = cmdNotice(args)
+	case "ping":
+		err = cmdPing(args)
+	case "whoami":
+		err = cmdWhoami(args)
+	case "version", "--version", "-V":
+		fmt.Println(buildinfo.Version)
+	case "help", "--help", "-h":
+		fmt.Print(usage)
+	default:
+		fmt.Fprintf(os.Stderr, "mailai: unknown command %q\n\n%s", cmd, usage)
+		os.Exit(2)
+	}
+	if err != nil {
+		exit(err)
+	}
+}
+
+// exit reports an error the way scripts and agents can branch on: the
+// protocol code on stderr as JSON when --json, else one line; exit 1.
+// An ask that got no reply exits 2 so a script can tell "no" from "nothing".
+func exit(err error) {
+	if jsonOut {
+		json.NewEncoder(os.Stderr).Encode(map[string]string{"error": string(client.Code(err)), "hint": err.Error()})
+	} else {
+		fmt.Fprintln(os.Stderr, "mailai:", err)
+	}
+	if client.Code(err) == "timeout" {
+		os.Exit(2)
+	}
+	os.Exit(1)
+}
+
+var jsonOut bool
+
+func connect() (*client.Client, error) {
+	p, err := config.DefaultPaths()
+	if err != nil {
+		return nil, err
+	}
+	return client.Dial(p.Socket())
+}
+
+func printJSON(v any) error {
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+	return enc.Encode(v)
+}

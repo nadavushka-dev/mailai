@@ -246,6 +246,7 @@ func (d *Daemon) send(c *conn, a SendArgs) (any, error) {
 	m, err := d.store(c.pl, store.SendRequest{
 		From: from, FromLabel: a.FromLabel, To: a.To, Session: a.Session,
 		Subject: a.Subject, Text: a.Text, ReplyTo: a.ReplyTo, Attachments: a.Attachments,
+		Proof: c.pl.Proof,
 	})
 	if err != nil {
 		return nil, err
