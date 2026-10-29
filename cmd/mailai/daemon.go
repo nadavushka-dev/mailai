@@ -11,6 +11,7 @@ import (
 	"github.com/nadavushka-dev/mailai/internal/buildinfo"
 	"github.com/nadavushka-dev/mailai/internal/config"
 	"github.com/nadavushka-dev/mailai/internal/daemon"
+	"github.com/nadavushka-dev/mailai/internal/stash"
 	"github.com/nadavushka-dev/mailai/internal/store"
 )
 
@@ -40,7 +41,7 @@ func cmdDaemon(args []string) error {
 		return err
 	}
 	logger := log.New(os.Stderr, "mailai ", log.LstdFlags)
-	d := daemon.New(daemon.Options{Store: st, Log: logger})
+	d := daemon.New(daemon.Options{Store: st, Log: logger, Stash: stash.New(p.Stash())})
 	if err := d.Listen(p.Socket()); err != nil {
 		return err
 	}

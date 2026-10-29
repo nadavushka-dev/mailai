@@ -46,6 +46,7 @@ func (p Paths) Socket() string {
 }
 
 func (p Paths) StoreDB() string    { return filepath.Join(p.Data, "store.db") }
+func (p Paths) Stash() string      { return filepath.Join(p.Data, "stash") }
 func (p Paths) Identity() string   { return filepath.Join(p.Data, "identity.toml") }
 func (p Paths) ConfigFile() string { return filepath.Join(p.Config, "config.toml") }
 func (p Paths) Log() string        { return filepath.Join(p.Data, "daemon.log") }

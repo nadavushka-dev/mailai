@@ -23,6 +23,7 @@ mail
   ask <to> <text>         send and wait for the reply; prints the reply alone
   unread                  how much mail waits: count and senders
   notice                  the one-line notice an agent is given, if any
+  stash put|get|list      keep a file for the session so a reader finds it later
 
 daemon
   daemon run              run the daemon in the foreground
@@ -55,6 +56,8 @@ func main() {
 		err = cmdUnread(args)
 	case "notice":
 		err = cmdNotice(args)
+	case "stash":
+		err = cmdStash(args)
 	case "ping":
 		err = cmdPing(args)
 	case "whoami":

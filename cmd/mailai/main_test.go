@@ -195,3 +195,28 @@ func TestParse_FlagsAnywhere(t *testing.T) {
 		t.Fatalf("%q", pos)
 	}
 }
+
+func TestCLI_AttachAndStash(t *testing.T) {
+	e := startEnv(t)
+	dir := t.TempDir()
+	src := filepath.Join(dir, "plan.md")
+	os.WriteFile(src, []byte("plan"), 0o644)
+	stored := strings.TrimSpace(e.must("stash", "put", src))
+	if !strings.HasSuffix(stored, "-plan.md") {
+		t.Fatal(stored)
+	}
+	e.must("send", "worker", "--attach", stored, "--attach", src, "here you go")
+	os.Remove(src)
+	out := e.must("read", "-w", "worker")
+	if !strings.Contains(out, "attachments:\n  "+stored+" (4 B)\n  "+src+" (missing)\n") {
+		t.Fatalf("%q", out)
+	}
+	if out := e.must("stash", "list"); !strings.HasPrefix(out, "plan.md\t4\t") {
+		t.Fatal(out)
+	}
+	dest := filepath.Join(dir, "back.md")
+	e.must("stash", "get", stored, dest)
+	if b, _ := os.ReadFile(dest); string(b) != "plan" {
+		t.Fatal(string(b))
+	}
+}

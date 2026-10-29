@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/nadavushka-dev/mailai/internal/proto"
+	"github.com/nadavushka-dev/mailai/internal/stash"
 	"github.com/nadavushka-dev/mailai/internal/store"
 )
 
@@ -27,6 +28,8 @@ type Options struct {
 	Log    *log.Logger
 	// MaxAsks is the bound on concurrent asks per sender (SPEC §7).
 	MaxAsks int
+	// Stash holds session files; nil disables the stash verbs.
+	Stash *stash.Stash
 }
 
 // Daemon serves one machine.
@@ -36,6 +39,7 @@ type Daemon struct {
 	now    func() time.Time
 	log    *log.Logger
 	maxAsk int
+	stash  *stash.Stash
 
 	mu    sync.Mutex
 	subs  map[*conn]bool
@@ -59,7 +63,7 @@ func New(o Options) *Daemon {
 	if o.MaxAsks == 0 {
 		o.MaxAsks = 16
 	}
-	return &Daemon{st: o.Store, placer: o.Placer, now: o.Now, log: o.Log, maxAsk: o.MaxAsks,
+	return &Daemon{st: o.Store, placer: o.Placer, now: o.Now, log: o.Log, maxAsk: o.MaxAsks, stash: o.Stash,
 		subs: map[*conn]bool{}, asks: newAskGraph(), waits: map[string][]chan store.Message{}}
 }
 
@@ -226,6 +230,8 @@ func (d *Daemon) handle(c *conn, req proto.Request) (any, error) {
 		d.subs[c] = true
 		d.mu.Unlock()
 		return map[string]bool{"subscribed": true}, nil
+	case "stash-put", "stash-get", "stash-list":
+		return d.stashVerb(req.Verb, req.Args)
 	}
 	return nil, proto.Errorf(proto.CodeUnknownVerb, "%q", req.Verb)
 }
@@ -243,9 +249,13 @@ func (d *Daemon) send(c *conn, a SendArgs) (any, error) {
 	if err != nil {
 		return nil, err
 	}
+	atts, err := d.prepareAttachments(a.Attachments)
+	if err != nil {
+		return nil, err
+	}
 	m, err := d.store(c.pl, store.SendRequest{
 		From: from, FromLabel: a.FromLabel, To: a.To, Session: a.Session,
-		Subject: a.Subject, Text: a.Text, ReplyTo: a.ReplyTo, Attachments: a.Attachments,
+		Subject: a.Subject, Text: a.Text, ReplyTo: a.ReplyTo, Attachments: atts,
 		Proof: c.pl.Proof,
 	})
 	if err != nil {
@@ -270,7 +280,12 @@ func (d *Daemon) read(c *conn, a ReadArgs) (any, error) {
 		box = d.own(c.pl)
 	}
 	if a.Thread != "" {
-		return ReadResult{Messages: d.st.Thread(a.Thread)}, nil
+		msgs := d.st.Thread(a.Thread)
+		resolveMissing(msgs)
+		if msgs == nil {
+			msgs = []store.Message{}
+		}
+		return ReadResult{Messages: msgs}, nil
 	}
 	peekForced := false
 	// SPEC §9: a pane reading the person's inbox never clears it.
@@ -288,6 +303,7 @@ func (d *Daemon) read(c *conn, a ReadArgs) (any, error) {
 	if err != nil {
 		return nil, err
 	}
+	resolveMissing(msgs)
 	if msgs == nil {
 		msgs = []store.Message{}
 	}
