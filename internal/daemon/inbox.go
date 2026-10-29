@@ -158,9 +158,11 @@ func (d *Daemon) askHumanClosed(it store.Item) (any, error) {
 }
 
 func (d *Daemon) inbox(c *conn, a InboxArgs) (any, error) {
-	items := d.st.Items(a.All)
-	if items == nil {
-		items = []store.Item{}
+	items := []store.Item{}
+	for _, it := range d.st.Items(a.All) {
+		if d.canSee(c, it) {
+			items = append(items, it)
+		}
 	}
 	return InboxResult{Items: items}, nil
 }
@@ -168,12 +170,13 @@ func (d *Daemon) inbox(c *conn, a InboxArgs) (any, error) {
 // answer is the person replying to an item: a verified reply into the thread
 // addressed to the asker, which the store closes as answered.
 func (d *Daemon) answer(c *conn, a AnswerArgs) (any, error) {
-	if !isPerson(c.pl) {
-		return nil, proto.Errorf(proto.CodeNotHuman, "only the person answers the Inbox")
-	}
 	it, ok := d.st.Item(a.Item)
 	if !ok || it.ClosedAt != 0 {
 		return nil, proto.Errorf(proto.CodeNotFound, "no open item #%d", a.Item)
+	}
+	by, grant, err := d.responder(c, it)
+	if err != nil {
+		return nil, err
 	}
 	if len(it.Options) > 0 {
 		ok := false
@@ -190,29 +193,42 @@ func (d *Daemon) answer(c *conn, a AnswerArgs) (any, error) {
 		return nil, proto.Errorf(proto.CodeBadRequest, "an answer needs text")
 	}
 	if it.Kind == store.ItemApproval {
-		closed, err := d.decideApproval(it, a.Text, a.Message, "human")
+		closed, err := d.decideApproval(it, a.Text, a.Message, by)
 		if err != nil {
 			return nil, err
 		}
+		d.spend(grant)
 		return map[string]any{"item": closed}, nil
 	}
-	m, err := d.store(c.pl, store.SendRequest{From: store.Human, To: it.From, Text: a.Text, ReplyTo: it.MID,
-		Proof: c.pl.Proof, Verified: "human"})
+	from := store.Human
+	if by != "human" {
+		from = c.pl.Principal
+	}
+	m, err := d.store(c.pl, store.SendRequest{From: from, To: it.From, Text: a.Text, ReplyTo: it.MID,
+		Proof: c.pl.Proof, Verified: by})
 	if err != nil {
 		return nil, err
 	}
+	d.spend(grant)
 	closed, _ := d.st.Item(it.ID)
 	return map[string]any{"item": closed, "reply": m}, nil
 }
 
 func (d *Daemon) dismiss(c *conn, a DismissArgs) (any, error) {
-	if !isPerson(c.pl) {
-		return nil, proto.Errorf(proto.CodeNotHuman, "only the person dismisses Inbox items")
+	open, ok := d.st.Item(a.Item)
+	if !ok || open.ClosedAt != 0 {
+		return nil, proto.Errorf(proto.CodeNotFound, "no open item #%d", a.Item)
+	}
+	by, grant, err := d.responder(c, open)
+	if err != nil {
+		return nil, err
 	}
 	it, err := d.st.CloseItem(a.Item, "dismissed", "")
 	if err != nil {
 		return nil, proto.Errorf(proto.CodeNotFound, "no open item #%d", a.Item)
 	}
+	it.DecidedBy = by
+	d.spend(grant)
 	d.publishItem(it)
 	return map[string]any{"item": it}, nil
 }

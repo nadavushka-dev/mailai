@@ -33,6 +33,7 @@ inbox (the person)
   inbox                   everything waiting on you
   answer <item> <text>    answer an item; closes it
   dismiss <item>          close an item without an answer
+  grant <agent> <rights>  make a supervisor: read,respond over --scope (person; holders delegate narrower)
 
 harnesses
   hook <harness> <event>  what an installed hook runs (payload on stdin)
@@ -88,6 +89,8 @@ func main() {
 		err = cmdQueue(args)
 	case "token":
 		err = cmdToken(args)
+	case "grant":
+		err = cmdGrant(args)
 	case "hook":
 		err = cmdHook(args)
 	case "integration":

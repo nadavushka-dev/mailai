@@ -15,10 +15,11 @@ import (
 
 // fakeAdapter records what gets typed and answers states from a map.
 type fakeAdapter struct {
-	mu     sync.Mutex
-	states map[store.Address]adapter.State
-	typed  []string // "principal: line"
-	fail   bool
+	mu       sync.Mutex
+	states   map[store.Address]adapter.State
+	sessions map[store.Address]string // "ws1" when unset
+	typed    []string                 // "principal: line"
+	fail     bool
 }
 
 func (f *fakeAdapter) Name() string { return "fake" }
@@ -27,7 +28,11 @@ func (f *fakeAdapter) Agents(context.Context) ([]adapter.Agent, error) {
 	defer f.mu.Unlock()
 	var out []adapter.Agent
 	for p, s := range f.states {
-		out = append(out, adapter.Agent{Principal: p, State: s, Session: "ws1", Harness: "claude"})
+		ses := f.sessions[p]
+		if ses == "" {
+			ses = "ws1"
+		}
+		out = append(out, adapter.Agent{Principal: p, State: s, Session: ses, Harness: "claude"})
 	}
 	return out, nil
 }

@@ -84,10 +84,11 @@ type Store struct {
 	nextID  uint64
 	boxes   map[Address]*mailbox
 	// byMID finds a message in whatever box holds it, for threads.
-	byMID map[string]*Message
-	lim   *limiter
-	p     Persister
-	att   *attention
+	byMID  map[string]*Message
+	lim    *limiter
+	p      Persister
+	att    *attention
+	grants *grants
 }
 
 type mailbox struct {
@@ -135,6 +136,11 @@ func Load(o Options, p Persister) (*Store, error) {
 			return nil, err
 		}
 	}
+	if gp, ok := p.(GrantPersister); ok {
+		if err := s.grants.load(gp); err != nil {
+			return nil, err
+		}
+	}
 	return s, nil
 }
 
@@ -148,7 +154,7 @@ func newStore(o Options) *Store {
 	if o.MachineID == "" {
 		o.MachineID = "local"
 	}
-	return &Store{now: o.Now, limits: o.Limits, machine: o.MachineID, boxes: map[Address]*mailbox{}, byMID: map[string]*Message{}, lim: newLimiter(), att: newAttention()}
+	return &Store{now: o.Now, limits: o.Limits, machine: o.MachineID, boxes: map[Address]*mailbox{}, byMID: map[string]*Message{}, lim: newLimiter(), att: newAttention(), grants: newGrants()}
 }
 
 // Send validates a request and stores it in the recipient's mailbox, or the
@@ -254,7 +260,8 @@ func (s *Store) attend(m *Message) {
 		}
 		s.openItem(Item{Kind: kind, MID: m.MID, ThreadID: m.ThreadID, From: m.From, Session: m.Session,
 			Subject: m.Subject, Question: m.Text, Options: m.Options})
-	case m.Kind == KindReply && m.From == Human && m.Verified != "":
+	case m.Kind == KindReply && m.Verified != "":
+		// A verified answer (the person, or a supervisor) closes the item.
 		for _, it := range s.att.items {
 			if it.ClosedAt == 0 && it.ThreadID == m.ThreadID && it.From == m.To {
 				s.closeItem(it.ID, "answered", m.MID)

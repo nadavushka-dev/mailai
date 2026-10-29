@@ -32,6 +32,10 @@ CREATE TABLE IF NOT EXISTS items (
   closed_at INTEGER NOT NULL DEFAULT 0,
   body      TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS grants (
+  id   INTEGER PRIMARY KEY,
+  body TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS meta (
   key   TEXT PRIMARY KEY,
   value INTEGER NOT NULL
@@ -98,6 +102,46 @@ func (p *SQLite) LoadAll() ([]Message, map[Address]uint64, uint64, error) {
 		return nil, nil, 0, err
 	}
 	return msgs, evicted, last, nil
+}
+
+// LoadGrants implements GrantPersister.
+func (p *SQLite) LoadGrants() ([]Grant, uint64, error) {
+	rows, err := p.db.Query(`SELECT body FROM grants ORDER BY id`)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+	var out []Grant
+	var last uint64
+	for rows.Next() {
+		var body string
+		if err := rows.Scan(&body); err != nil {
+			return nil, 0, err
+		}
+		var g Grant
+		if err := json.Unmarshal([]byte(body), &g); err != nil {
+			return nil, 0, err
+		}
+		out = append(out, g)
+		if g.ID > last {
+			last = g.ID
+		}
+	}
+	return out, last, rows.Err()
+}
+
+func (p *SQLite) PutGrant(g *Grant) error {
+	body, err := json.Marshal(g)
+	if err != nil {
+		return err
+	}
+	_, err = p.db.Exec(`INSERT INTO grants(id, body) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET body=excluded.body`, g.ID, string(body))
+	return err
+}
+
+func (p *SQLite) DeleteGrant(id uint64) error {
+	_, err := p.db.Exec(`DELETE FROM grants WHERE id=?`, id)
+	return err
 }
 
 // LoadItems implements AttentionPersister.

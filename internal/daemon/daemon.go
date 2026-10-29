@@ -302,6 +302,24 @@ func (d *Daemon) handle(c *conn, req proto.Request) (any, error) {
 			return nil, err
 		}
 		return d.dismiss(c, a)
+	case "grant":
+		a, err := decode[GrantArgs](req.Args)
+		if err != nil {
+			return nil, err
+		}
+		return d.grant(c, a)
+	case "grant-list":
+		gs := d.st.Grants()
+		if gs == nil {
+			gs = []store.Grant{}
+		}
+		return GrantListResult{Grants: gs}, nil
+	case "grant-rm":
+		a, err := decode[GrantRmArgs](req.Args)
+		if err != nil {
+			return nil, err
+		}
+		return d.grantRm(c, a)
 	case "hold-approval":
 		a, err := decode[HoldApprovalArgs](req.Args)
 		if err != nil {

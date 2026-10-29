@@ -313,6 +313,10 @@ func TestCLI_InboxAskHumanAnswerDismiss(t *testing.T) {
 	if o, err := e.run("answer", "1", "maybe"); err == nil || !strings.Contains(o, "must be one of") {
 		t.Fatalf("%q %v", o, err)
 	}
+	// An agent may look at the Inbox but not act on it.
+	if o, err := agent("dismiss", "1").CombinedOutput(); err == nil || !strings.Contains(string(o), "not_human") {
+		t.Fatalf("%s %v", o, err)
+	}
 	e.must("answer", "#1", "yes")
 	select {
 	case r := <-got:
@@ -336,10 +340,6 @@ func TestCLI_InboxAskHumanAnswerDismiss(t *testing.T) {
 	e.must("dismiss", "2")
 	o, err := agent("ask-human", "--wait-for", "2").CombinedOutput()
 	if err == nil || !strings.Contains(string(o), "without an answer") {
-		t.Fatalf("%s %v", o, err)
-	}
-	// An agent may look at the Inbox but not act on it.
-	if o, err := agent("dismiss", "1").CombinedOutput(); err == nil || !strings.Contains(string(o), "not_human") {
 		t.Fatalf("%s %v", o, err)
 	}
 }
