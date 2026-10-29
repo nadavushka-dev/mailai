@@ -55,7 +55,8 @@ func startEnv(t *testing.T) *env {
 		cmd.Wait()
 		os.Remove(sock)
 	})
-	deadline := time.Now().Add(10 * time.Second)
+	// Generous: under a race-detector test load the daemon can take a while.
+	deadline := time.Now().Add(60 * time.Second)
 	for time.Now().Before(deadline) {
 		if _, err := os.Stat(sock); err == nil {
 			if _, err := e.run("ping"); err == nil {

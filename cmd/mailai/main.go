@@ -30,6 +30,7 @@ mail
   token new|ls|revoke     agent tokens, for an agent with no pane (person only)
 
 inbox (the person)
+  tui, or plain mailai    the Inbox and Mail views in the terminal
   inbox                   everything waiting on you
   answer <item> <text>    answer an item; closes it
   dismiss <item>          close an item without an answer
@@ -53,8 +54,11 @@ MAILAI_ADAPTER=herdr|none overrides the adapter the daemon picks.
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprint(os.Stderr, usage)
-		os.Exit(2)
+		// Plain `mailai` is the TUI, like `enigma`.
+		if err := cmdTUI(nil); err != nil {
+			exit(err)
+		}
+		return
 	}
 	cmd, args := os.Args[1], os.Args[2:]
 	var err error
@@ -101,6 +105,8 @@ func main() {
 		err = cmdPing(args)
 	case "whoami":
 		err = cmdWhoami(args)
+	case "tui":
+		err = cmdTUI(args)
 	case "version", "--version", "-V":
 		fmt.Println(buildinfo.Version)
 	case "help", "--help", "-h":

@@ -302,6 +302,8 @@ func (d *Daemon) handle(c *conn, req proto.Request) (any, error) {
 			return nil, err
 		}
 		return d.dismiss(c, a)
+	case "threads":
+		return d.threads(c)
 	case "grant":
 		a, err := decode[GrantArgs](req.Args)
 		if err != nil {
