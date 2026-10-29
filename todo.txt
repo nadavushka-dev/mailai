@@ -1,6 +1,6 @@
 x 2026-10-29 2026-10-29 M2 identity: peer pid (SO_PEERCRED/LOCAL_PEERPID), outside_pane vs pane via fake proc tree, tokens +m2
-(B) 2026-10-29 M2 human: nonce at attach, verified vs claimed_human, forced peek of human inbox, from human refused from pane +m2
-(B) 2026-10-29 M2 inbox: attention items (asks to human, ask-human, errored), inbox/answer/dismiss verbs and CLI, D13 two views +m2
+(C) M5 human nonce: attach verb issues a nonce to the TUI/web client; replies carrying it are verified_human; send-keys-driven replies are claimed_human (rest of M2 human task done in M2) +m5
+x 2026-10-29 2026-10-29 M2 inbox: attention items (asks to human, ask-human, errored), inbox/answer/dismiss verbs and CLI, D13 two views +m2
 (C) 2026-10-29 M3 adapter interface + none adapter; herdr adapter: agents/sessions/state, wake via agent prompt, tty/pid/token placement +m3
 (C) 2026-10-29 M3 harness manifests (TOML), bundled claude-code + codex, mailai hook <harness> <event>, integration install/status, --skill text +m3
 (C) 2026-10-29 M3 delivery: notice once per message, wake 5s/30s rules, rebuilt before typing, queue verb +m3

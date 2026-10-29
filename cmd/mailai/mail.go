@@ -250,20 +250,20 @@ func cmdNotice(args []string) error {
 		return err
 	}
 	defer c.Close()
-	var ur daemon.UnreadResult
-	if err := c.Call("unread", daemon.UnreadArgs{Mailbox: store.Address(*mailbox)}, &ur); err != nil {
-		return err
-	}
 	flags := ""
 	if *mailbox != "" {
 		flags = "-w " + *mailbox
 	}
-	line := render.Notice(ur.Count, ur.From, flags)
-	if jsonOut {
-		return printJSON(map[string]any{"count": ur.Count, "from": ur.From, "line": line})
+	var nr daemon.NoticeResult
+	if err := c.Call("notice", daemon.NoticeArgs{Mailbox: store.Address(*mailbox), Flags: flags}, &nr); err != nil {
+		return err
 	}
-	if line != "" {
-		fmt.Println(line)
+	if jsonOut {
+		return printJSON(nr)
+	}
+	// Once per message: a line only when something is new (D12).
+	if nr.New && nr.Line != "" {
+		fmt.Println(nr.Line)
 	}
 	return nil
 }

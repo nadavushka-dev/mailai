@@ -3,6 +3,7 @@ package store
 import (
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -396,6 +397,20 @@ func (s *Store) mark(m *Message) error {
 		return nil
 	}
 	return s.p.Mark(m.MID, m.ReadAt, m.SeenAt)
+}
+
+// Mailboxes lists every mailbox that holds at least one message.
+func (s *Store) Mailboxes() []Address {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]Address, 0, len(s.boxes))
+	for a, mb := range s.boxes {
+		if len(mb.msgs) > 0 {
+			out = append(out, a)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
+	return out
 }
 
 // Evicted is how many messages a mailbox has dropped to stay within bounds.

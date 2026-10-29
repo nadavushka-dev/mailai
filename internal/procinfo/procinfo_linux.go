@@ -32,6 +32,16 @@ func PeerPID(conn net.Conn) int {
 	return pid
 }
 
+// EnvVar reads one variable of the environment process pid was started with.
+// /proc/<pid>/environ is readable only for a process of the same user.
+func EnvVar(pid int, name string) (string, bool) {
+	data, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/environ")
+	if err != nil {
+		return "", false
+	}
+	return EnvironVar(data, name)
+}
+
 // ParentPID returns a process's parent pid, field 4 of /proc/<pid>/stat.
 func ParentPID(pid int) (int, bool) {
 	if pid <= 0 {

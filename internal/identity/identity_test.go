@@ -18,6 +18,7 @@ func (f fakeProc) ParentPID(pid int) (int, bool) {
 	p, ok := f.parent[pid]
 	return p, ok
 }
+func (f fakeProc) EnvVar(int, string) (string, bool) { return "", false }
 
 type fakePanes map[int]store.Address
 

@@ -7,7 +7,6 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-	"sync"
 	"testing"
 	"time"
 
@@ -26,28 +25,51 @@ func shortSock(t *testing.T) string {
 	return filepath.Join(dir, "s")
 }
 
-// fakePlacer places by a per-connection script: the first N connections get
-// the given placements, the rest are outside_pane.
+// fakePlacer places by the token a connection says hello with: connections
+// are placed concurrently, so order would not do. No token is outside_pane.
 type fakePlacer struct {
-	mu   sync.Mutex
-	next []Placement
+	byToken map[string]Placement
 }
 
-func (f *fakePlacer) Place(net.Conn, string) Placement {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if len(f.next) == 0 {
-		return Placement{Proof: store.ProofOutsidePane}
+func (f *fakePlacer) Place(_ net.Conn, token string) Placement {
+	if p, ok := f.byToken[token]; ok {
+		return p
 	}
-	p := f.next[0]
-	f.next = f.next[1:]
-	return p
+	return Placement{Proof: store.ProofOutsidePane}
+}
+
+// placed is a placer with one token "t-<principal>" per placement.
+func placed(ps ...Placement) *fakePlacer {
+	f := &fakePlacer{byToken: map[string]Placement{}}
+	for _, p := range ps {
+		f.byToken["t-"+string(p.Principal)] = p
+	}
+	return f
+}
+
+// dialAs connects and says hello as a placed principal.
+func dialAs(t *testing.T, sock string, principal store.Address) *client.Client {
+	t.Helper()
+	c, err := client.Dial(sock, "t-"+string(principal))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { c.Close() })
+	return c
 }
 
 func startDaemon(t *testing.T, pl Placer) (string, *Daemon) {
+	return startDaemonWith(t, Options{Placer: pl})
+}
+
+// startDaemonWith serves a daemon built from o (Store filled in when nil).
+func startDaemonWith(t *testing.T, o Options) (string, *Daemon) {
 	t.Helper()
 	sock := shortSock(t)
-	d := New(Options{Store: store.New(store.Options{}), Placer: pl})
+	if o.Store == nil {
+		o.Store = store.New(store.Options{})
+	}
+	d := New(o)
 	if err := d.Listen(sock); err != nil {
 		t.Fatal(err)
 	}
@@ -114,9 +136,9 @@ func TestSendAndReadFromOutsidePane(t *testing.T) {
 // SPEC §9: a placed principal is the sender whatever --from says, and a pane
 // reading the person's inbox is served a peek.
 func TestPlacedPrincipalOverridesClaimAndCannotClearHuman(t *testing.T) {
-	pl := &fakePlacer{next: []Placement{{Proof: store.ProofPane, Principal: "w1:p3", PID: 42}}}
+	pl := placed(Placement{Proof: store.ProofPane, Principal: "w1:p3", PID: 42})
 	sock, _ := startDaemon(t, pl)
-	pane := dial(t, sock)
+	pane := dialAs(t, sock, "w1:p3")
 	person := dial(t, sock)
 
 	var who WhoamiResult

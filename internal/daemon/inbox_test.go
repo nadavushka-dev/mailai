@@ -12,9 +12,9 @@ import (
 // SPEC §7, D13: ask-human blocks until the person answers from the Inbox;
 // the item closes as answered; the answer must be one of the options.
 func TestAskHuman_BlocksUntilAnsweredFromInbox(t *testing.T) {
-	pl := &fakePlacer{next: []Placement{{Proof: store.ProofToken, Principal: "worker"}}}
+	pl := placed(Placement{Proof: store.ProofToken, Principal: "worker"})
 	sock, _ := startDaemon(t, pl)
-	worker := dial(t, sock)
+	worker := dialAs(t, sock, "worker")
 	person := dial(t, sock)
 
 	type res struct {
@@ -72,9 +72,9 @@ func TestAskHuman_BlocksUntilAnsweredFromInbox(t *testing.T) {
 }
 
 func TestAskHuman_NoWaitThenWaitForAndDismiss(t *testing.T) {
-	pl := &fakePlacer{next: []Placement{{Proof: store.ProofToken, Principal: "worker"}}}
+	pl := placed(Placement{Proof: store.ProofToken, Principal: "worker"})
 	sock, _ := startDaemon(t, pl)
-	worker := dial(t, sock)
+	worker := dialAs(t, sock, "worker")
 	person := dial(t, sock)
 	var r AskHumanResult
 	if err := worker.Call("ask-human", AskHumanArgs{Text: "Which region?", Options: []string{"us", "eu"}, NoWait: true}, &r); err != nil {
@@ -117,9 +117,9 @@ func TestAskHuman_NoWaitThenWaitForAndDismiss(t *testing.T) {
 
 // A plain ask addressed to human is also an Inbox item, answered the same way.
 func TestAskToHumanIsAnItem(t *testing.T) {
-	pl := &fakePlacer{next: []Placement{{Proof: store.ProofToken, Principal: "worker"}}}
+	pl := placed(Placement{Proof: store.ProofToken, Principal: "worker"})
 	sock, _ := startDaemon(t, pl)
-	worker := dial(t, sock)
+	worker := dialAs(t, sock, "worker")
 	person := dial(t, sock)
 	go worker.Call("ask", AskArgs{To: "human", Text: "free text question", TimeoutMS: 5000}, nil)
 	var inbox InboxResult

@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nadavushka-dev/mailai/internal/adapter"
 	"github.com/nadavushka-dev/mailai/internal/proto"
 	"github.com/nadavushka-dev/mailai/internal/stash"
 	"github.com/nadavushka-dev/mailai/internal/store"
@@ -33,17 +34,31 @@ type Options struct {
 	Stash *stash.Stash
 	// Tokens is the token file; nil disables the token verbs.
 	Tokens *tokens.Tokens
+	// Adapter says which agents exist and types at them; None when nil.
+	Adapter adapter.Adapter
+	// Wake enables typing the notice at resting agents ([mail] wake).
+	Wake bool
+	// PollEvery is how often the adapter is asked; 2 s when zero.
+	PollEvery time.Duration
 }
 
 // Daemon serves one machine.
 type Daemon struct {
-	st     *store.Store
-	placer Placer
-	now    func() time.Time
-	log    *log.Logger
-	maxAsk int
-	stash  *stash.Stash
-	tokens *tokens.Tokens
+	st      *store.Store
+	placer  Placer
+	now     func() time.Time
+	log     *log.Logger
+	maxAsk  int
+	stash   *stash.Stash
+	tokens  *tokens.Tokens
+	adapter adapter.Adapter
+	wake    bool
+	poll    time.Duration
+
+	agents   *agents
+	marks    map[store.Address]noticeMark
+	queued   []queued
+	queueSeq uint64
 
 	mu    sync.Mutex
 	subs  map[*conn]bool
@@ -67,7 +82,14 @@ func New(o Options) *Daemon {
 	if o.MaxAsks == 0 {
 		o.MaxAsks = 16
 	}
+	if o.Adapter == nil {
+		o.Adapter = adapter.None{}
+	}
+	if o.PollEvery == 0 {
+		o.PollEvery = 2 * time.Second
+	}
 	return &Daemon{st: o.Store, placer: o.Placer, now: o.Now, log: o.Log, maxAsk: o.MaxAsks, stash: o.Stash, tokens: o.Tokens,
+		adapter: o.Adapter, wake: o.Wake, poll: o.PollEvery, agents: newAgents(), marks: map[store.Address]noticeMark{},
 		subs: map[*conn]bool{}, asks: newAskGraph(), waits: map[string][]chan store.Message{}}
 }
 
@@ -92,11 +114,30 @@ func (d *Daemon) Listen(path string) error {
 	return nil
 }
 
-// Serve accepts connections until ctx ends or the listener closes.
+// Serve accepts connections until ctx ends or the listener closes, and runs
+// the adapter poll, wakes and queue delivery meanwhile.
 func (d *Daemon) Serve(ctx context.Context) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	go func() {
 		<-ctx.Done()
 		d.ln.Close()
+	}()
+	if _, isNone := d.adapter.(adapter.None); !isNone {
+		go d.pollAgents(ctx, d.poll)
+	}
+	go d.runWakes(ctx)
+	go func() {
+		t := time.NewTicker(wakeTick)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				d.deliverQueued(ctx)
+			}
+		}
 	}()
 	for {
 		c, err := d.ln.Accept()
@@ -260,6 +301,34 @@ func (d *Daemon) handle(c *conn, req proto.Request) (any, error) {
 			return nil, err
 		}
 		return d.dismiss(c, a)
+	case "notice":
+		a, err := decode[NoticeArgs](req.Args)
+		if err != nil {
+			return nil, err
+		}
+		return d.notice(c, a)
+	case "report-state":
+		a, err := decode[ReportStateArgs](req.Args)
+		if err != nil {
+			return nil, err
+		}
+		return d.reportState(c, a)
+	case "agents":
+		return d.listAgents(), nil
+	case "queue":
+		a, err := decode[QueueArgs](req.Args)
+		if err != nil {
+			return nil, err
+		}
+		return d.queue(c, a)
+	case "queue-list":
+		return d.queueList(), nil
+	case "queue-rm":
+		a, err := decode[QueueRmArgs](req.Args)
+		if err != nil {
+			return nil, err
+		}
+		return d.queueRm(c, a)
 	case "subscribe":
 		d.mu.Lock()
 		d.subs[c] = true

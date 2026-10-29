@@ -29,6 +29,17 @@ func PeerPID(conn net.Conn) int {
 	return pid
 }
 
+// EnvVar reads one variable of the environment process pid was started with,
+// from kern.procargs2, which the kernel gives only for a process of the same
+// user. A refusal reads as absent.
+func EnvVar(pid int, name string) (string, bool) {
+	buf, err := unix.SysctlRaw("kern.procargs2", pid)
+	if err != nil {
+		return "", false
+	}
+	return ProcargsEnvVar(buf, name)
+}
+
 // ParentPID returns a process's parent pid from its kinfo_proc.
 func ParentPID(pid int) (int, bool) {
 	if pid <= 0 {

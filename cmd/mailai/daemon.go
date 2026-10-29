@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/nadavushka-dev/mailai/internal/adapter"
 	"github.com/nadavushka-dev/mailai/internal/buildinfo"
 	"github.com/nadavushka-dev/mailai/internal/config"
 	"github.com/nadavushka-dev/mailai/internal/daemon"
@@ -28,7 +29,8 @@ func cmdDaemon(args []string) error {
 	if err != nil {
 		return err
 	}
-	if _, err := config.Load(p.ConfigFile()); err != nil {
+	cfg, err := config.Load(p.ConfigFile())
+	if err != nil {
 		return err
 	}
 	if err := os.MkdirAll(p.Data, 0o700); err != nil {
@@ -48,9 +50,11 @@ func cmdDaemon(args []string) error {
 		return err
 	}
 	logger := log.New(os.Stderr, "mailai ", log.LstdFlags)
-	// Panes come from the adapter (milestone 3); until then nothing is a pane.
-	placer := &identity.Placer{Proc: procinfo.Kernel{}, Tokens: tk, SelfPID: os.Getpid()}
-	d := daemon.New(daemon.Options{Store: st, Log: logger, Stash: stash.New(p.Stash()), Tokens: tk, Placer: placer})
+	ad := chooseAdapter(cfg)
+	placer := &identity.Placer{Proc: procinfo.Kernel{}, Tokens: tk, Panes: ad, SelfPID: os.Getpid()}
+	d := daemon.New(daemon.Options{Store: st, Log: logger, Stash: stash.New(p.Stash()), Tokens: tk, Placer: placer,
+		Adapter: ad, Wake: cfg.Wake()})
+	logger.Printf("adapter %s, wake %v", ad.Name(), cfg.Wake())
 	if err := d.Listen(p.Socket()); err != nil {
 		return err
 	}
@@ -58,4 +62,23 @@ func cmdDaemon(args []string) error {
 	defer stop()
 	logger.Printf("%s listening on %s", buildinfo.Version, p.Socket())
 	return d.Serve(ctx)
+}
+
+// chooseAdapter picks by config, else by whether this daemon runs under
+// Herdr (HERDR_ENV=1 or a socket path), else none (SPEC §8).
+func chooseAdapter(cfg config.Config) adapter.Adapter {
+	name := cfg.Adapter
+	if name == "" {
+		if os.Getenv("HERDR_ENV") == "1" || os.Getenv("HERDR_SOCKET_PATH") != "" {
+			name = "herdr"
+		} else {
+			name = "none"
+		}
+	}
+	switch name {
+	case "herdr":
+		return &adapter.Herdr{Run: adapter.ExecRunner{}, Proc: procinfo.Kernel{}}
+	default:
+		return adapter.None{}
+	}
 }

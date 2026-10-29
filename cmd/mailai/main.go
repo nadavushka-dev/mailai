@@ -23,7 +23,9 @@ mail
   ask <to> <text>         send and wait for the reply; prints the reply alone
   ask-human <text> -o A   put a question with fixed answers in the person's Inbox
   unread                  how much mail waits: count and senders
-  notice                  the one-line notice an agent is given, if any
+  notice                  the one-line notice an agent is given, if any (marks it announced)
+  queue <to> <text>       typed as the agent's next prompt when it comes to rest
+  agents                  what the adapter and hooks know about live agents
   stash put|get|list      keep a file for the session so a reader finds it later
   token new|ls|revoke     agent tokens, for an agent with no pane (person only)
 
@@ -74,6 +76,10 @@ func main() {
 		err = cmdNotice(args)
 	case "stash":
 		err = cmdStash(args)
+	case "agents":
+		err = cmdAgents(args)
+	case "queue":
+		err = cmdQueue(args)
 	case "token":
 		err = cmdToken(args)
 	case "ping":
