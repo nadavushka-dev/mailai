@@ -44,6 +44,20 @@ start_daemon() {
 
 stop_daemon() { run "$1" sh -c 'pkill -INT -x mailai 2>/dev/null || true'; }
 
+# ensure brings stopped boxes back (Docker restarted, machine rebooted) with
+# their mail kept, and their daemons with them. Missing boxes need `up`.
+ensure() {
+	for b in $boxes; do
+		state=$(docker inspect -f '{{.State.Running}}' "$(cname "$b")" 2>/dev/null) || { echo "no sandbox: e2e/sandbox.sh up" >&2; exit 1; }
+		if [ "$state" != true ]; then
+			docker start "$(cname "$b")" >/dev/null
+			start_daemon "$b"
+		elif ! run "$b" mailai ping >/dev/null 2>&1; then
+			start_daemon "$b"
+		fi
+	done
+}
+
 up() {
 	docker image inspect "$image" >/dev/null 2>&1 || docker build -q -t "$image" e2e/docker
 	mkdir -p "$dir/keys"
@@ -70,6 +84,7 @@ up() {
 }
 
 restart() {
+	ensure
 	build
 	for b in $boxes; do stop_daemon "$b"; done
 	sleep 0.3
@@ -78,6 +93,7 @@ restart() {
 }
 
 web() {
+	ensure
 	# The daemon serves 127.0.0.1:8471 inside s1; socat exposes it on the box's
 	# eth0 as 8472, which docker publishes to 127.0.0.1:$WEBPORT here. That is
 	# the "your own tunnel" of SPEC §12a, sandbox edition.
@@ -88,7 +104,7 @@ web() {
 	echo "  $(echo "$url" | sed "s#127.0.0.1:8471#127.0.0.1:$WEBPORT#")"
 }
 
-seed() { e2e/seed.sh s1; }
+seed() { ensure; e2e/seed.sh s1; }
 
 down() {
 	for b in $boxes; do docker rm -f "$(cname "$b")" >/dev/null 2>&1 || true; done
@@ -102,8 +118,8 @@ down) down ;;
 restart) restart ;;
 web) web ;;
 seed) seed ;;
-shell) sh_in "${2:?box}" sh -l ;;
-run) shift; run "$@" ;;
+shell) ensure; sh_in "${2:?box}" sh -l ;;
+run) shift; ensure; run "$@" ;;
 log) run "${2:?box}" cat /home/dev/mailai.log ;;
 *) sed -n '2,14p' "$0"; exit 2 ;;
 esac
