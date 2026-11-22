@@ -108,12 +108,19 @@ type Daemon struct {
 	up          *client.Client    // spoke: the link, nil when down
 	hubName     string
 
-	mu    sync.Mutex
-	subs  map[*conn]bool
-	asks  *askGraph
-	waits map[string][]chan store.Message // thread id -> waiting asks
-	ln    net.Listener
-	wg    sync.WaitGroup
+	mu   sync.Mutex
+	subs map[*conn]bool
+	// live is every open connection, closed on shutdown; stopping says the
+	// daemon closed them, so a dropped connection is not the client going
+	// away (§7a).
+	live     map[*conn]bool
+	stopping atomic.Bool
+	quit     chan struct{} // closed on shutdown
+	quitOnce sync.Once
+	asks     *askGraph
+	waits    map[string][]chan store.Message // thread id -> waiting asks
+	ln       net.Listener
+	wg       sync.WaitGroup
 
 	// linkAsks are spokes' asks held in the graph, by thread (SPEC §13a).
 	linkAsks map[string][]*linkAsk
@@ -212,7 +219,17 @@ func (d *Daemon) Serve(ctx context.Context) error {
 	defer cancel()
 	go func() {
 		<-ctx.Done()
+		d.stopping.Store(true)
+		d.quitOnce.Do(func() { close(d.quitCh()) })
 		d.ln.Close()
+		// Blocked clients (an ask waiting on the person, a held approval)
+		// never end on their own: end their connections; their items stay
+		// open for the next daemon.
+		d.mu.Lock()
+		for c := range d.live {
+			c.Conn.Close()
+		}
+		d.mu.Unlock()
 		d.webStop()
 		if d.alerts != nil {
 			d.alerts.stop()
@@ -271,20 +288,54 @@ func (c *conn) write(v any) error {
 	return proto.Write(c.Conn, v)
 }
 
+// quitCh is closed when the daemon shuts down.
+func (d *Daemon) quitCh() chan struct{} {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.quit == nil {
+		d.quit = make(chan struct{})
+	}
+	return d.quit
+}
+
 func (d *Daemon) serveConn(nc net.Conn) {
 	c := &conn{Conn: nc, pl: d.placer.Place(nc, ""), gone: make(chan struct{})}
+	d.mu.Lock()
+	if d.live == nil {
+		d.live = map[*conn]bool{}
+	}
+	d.live[c] = true
+	d.mu.Unlock()
+	if d.stopping.Load() {
+		nc.Close()
+	}
 	defer func() {
 		d.mu.Lock()
 		delete(d.subs, c)
+		delete(d.live, c)
 		d.mu.Unlock()
 		d.dropLink(c)
 		nc.Close()
 	}()
 	r := proto.NewReader(nc)
 	var wg sync.WaitGroup
-	defer wg.Wait()
-	// Runs before the wait: blocking verbs learn their client is gone.
-	defer close(c.gone)
+	defer func() {
+		// Shutting down: blocked verbs are left to end with the process,
+		// and are not told their client went away.
+		if d.stopping.Load() {
+			return
+		}
+		// Blocking verbs learn their client is gone, then are waited for;
+		// one that outlives its client on purpose (a link's hold runs to
+		// its timeout) is not waited for by a shutdown.
+		close(c.gone)
+		done := make(chan struct{})
+		go func() { wg.Wait(); close(done) }()
+		select {
+		case <-done:
+		case <-d.quitCh():
+		}
+	}()
 	for {
 		f, err := r.Next()
 		if err != nil {

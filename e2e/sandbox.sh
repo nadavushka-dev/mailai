@@ -85,7 +85,9 @@ ensure() {
 		if [ "$state" != true ]; then
 			docker start "$(cname "$b")" >/dev/null
 			start_daemon "$b"
-		elif ! run "$b" mailai ping >/dev/null 2>&1; then
+		# </dev/null: run uses docker exec -i, which would eat the stdin
+		# meant for the command after ensure (a hook's payload).
+		elif ! run "$b" mailai ping </dev/null >/dev/null 2>&1; then
 			start_daemon "$b"
 		fi
 	done

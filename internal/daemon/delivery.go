@@ -136,6 +136,13 @@ func (d *Daemon) wakeOnce(ctx context.Context) {
 		}
 		line := render.Notice(n, from, "")
 		if err := d.adapter.Type(ctx, box, line); err != nil {
+			// A failed wake waits the spacing too: no retry (or log line)
+			// on every tick. The mail stays unannounced, so it goes later.
+			d.mu.Lock()
+			mk = d.marks[box]
+			mk.lastWake = now
+			d.marks[box] = mk
+			d.mu.Unlock()
 			d.log.Printf("wake %s: %v", box, err)
 			continue
 		}
