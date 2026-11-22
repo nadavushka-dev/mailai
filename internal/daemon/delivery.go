@@ -47,9 +47,9 @@ type NoticeResult struct {
 // Only the mailbox's own principal, or the person, marks; anyone else gets
 // the line without moving the mark.
 func (d *Daemon) notice(c *conn, a NoticeArgs) (any, error) {
-	box := a.Mailbox
-	if box == "" {
-		box = d.own(c.pl)
+	box, err := d.box(c, a.Mailbox)
+	if err != nil {
+		return nil, err
 	}
 	n, from := d.st.Unread(box)
 	line := render.Notice(n, from, a.Flags)
@@ -185,6 +185,10 @@ func (d *Daemon) queue(c *conn, a QueueArgs) (any, error) {
 	if a.To == "" || a.To == store.Human {
 		return nil, proto.Errorf(proto.CodeBadRequest, "queue needs an agent to type at")
 	}
+	if _, host := splitAddr(d.localize(a.To)); host != "" {
+		return nil, proto.Errorf(proto.CodeBadRequest, "queue does not cross machines")
+	}
+	a.To = d.localize(a.To)
 	if len(a.Text) == 0 || len(a.Text) > store.MaxText {
 		return nil, proto.Errorf(proto.CodeBadRequest, "text is 1 to %d bytes", store.MaxText)
 	}

@@ -6,9 +6,11 @@ set -eu
 cd "$(dirname "$0")/.."
 box=${1:-s1}
 R() { e2e/sandbox.sh run "$box" "$@"; }
-tok() { R mailai token new "$1" 2>/dev/null; }
+# P runs as the person: at a terminal, outside every pane (SPEC §9).
+P() { e2e/sandbox.sh person "$box" "$@" | tr -d '\r'; }
+tok() { P mailai token new "$1" 2>/dev/null; }
 W=$(tok worker); V=$(tok reviewer); G=$(tok gemini-cli)
-R mailai grant reviewer read,respond >/dev/null 2>&1 || true
+P mailai grant reviewer read,respond >/dev/null 2>&1 || true
 
 # States, as the hooks would report them.
 echo '{"hook_event_name":"UserPromptSubmit"}' | R env MAILAI_TOKEN="$W" mailai hook claude-code UserPromptSubmit >/dev/null
@@ -16,7 +18,7 @@ echo '{"hook_event_name":"Stop","last_assistant_message":"Review posted: one nit
 echo '{"hook_event_name":"SessionStart"}' | R env MAILAI_TOKEN="$G" mailai hook claude-code SessionStart >/dev/null
 
 # Mail.
-R mailai send worker --subject "retry loop" "The retry loop in api/retry.go never backs off. Please add exponential backoff with jitter." >/dev/null
+P mailai send worker --subject "retry loop" "The retry loop in api/retry.go never backs off. Please add exponential backoff with jitter." >/dev/null
 R env MAILAI_TOKEN="$W" mailai send human --subject "retry loop" "Done: backoff 100ms..5s with jitter, tests in retry_test.go." >/dev/null
 R env MAILAI_TOKEN="$W" mailai send reviewer --subject "please review" "PR 42 is ready: api/retry.go, retry_test.go." >/dev/null
 R env MAILAI_TOKEN="$V" mailai send worker --subject "please review" "Looks good. One nit: log the attempt number in the warn line." >/dev/null
@@ -29,6 +31,6 @@ R env MAILAI_TOKEN="$V" mailai ask human "Should the backoff cap stay at 5s or g
 echo '{"tool_name":"Bash","tool_input":{"command":"rm -rf node_modules && npm ci"}}' | R env MAILAI_TOKEN="$W" mailai hook claude-code PermissionRequest >/dev/null 2>&1 &
 echo '{"tool_name":"Bash","tool_input":{"command":"git push --force origin main"}}' | R env MAILAI_TOKEN="$G" mailai hook claude-code PermissionRequest >/dev/null 2>&1 &
 sleep 2
-R mailai inbox
+P mailai inbox
 echo
 echo "a supervisor token for reviewer (read,respond): MAILAI_TOKEN=$V"

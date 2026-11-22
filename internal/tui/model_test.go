@@ -49,7 +49,7 @@ func itoa(n uint64) string { return strings.TrimSpace(strings.Repeat(" ", 0) + s
 func person() *fake {
 	return &fake{who: daemon.WhoamiResult{Principal: "human", Proof: store.ProofOutsidePane},
 		items: []store.Item{
-			{ID: 1, Kind: store.ItemAskHuman, From: "worker", Question: "Deploy?", Options: []string{"yes", "no"}, ThreadID: "local:1", MID: "local:1"},
+			{ID: 1, Kind: store.ItemAskHuman, From: "worker", Session: "api", Question: "Deploy?", Options: []string{"yes", "no"}, ThreadID: "local:1", MID: "local:1"},
 			{ID: 2, Kind: store.ItemApproval, From: "w1:p3", Subject: "Bash", Question: "git push --force", Risky: true},
 		},
 		threads: []daemon.ThreadRow{{ThreadID: "local:1", From: "worker", To: "human", Subject: "deploy", Count: 1, Unread: 1, LastFrom: "worker"}},
@@ -110,6 +110,10 @@ func TestInboxViewListsItemsWithOptionsAndRisky(t *testing.T) {
 	v := m.View()
 	if !strings.Contains(v, "Inbox") || !strings.Contains(v, "#1") || !strings.Contains(v, "Deploy?") || !strings.Contains(v, "1 yes") || !strings.Contains(v, "2 no") {
 		t.Fatalf("%s", v)
+	}
+	// SPEC §12: the row says where the ask is waiting, not only who.
+	if !strings.Contains(v, "api") {
+		t.Fatalf("session missing: %s", v)
 	}
 	if !strings.Contains(v, "risky approval") {
 		t.Fatalf("%s", v)
@@ -181,6 +185,68 @@ func TestMailViewOpenThreadAndReply(t *testing.T) {
 	m = press(m, "esc")
 	if m.open != nil {
 		t.Fatal("esc should close the thread")
+	}
+}
+
+// SPEC §12: o jumps to the oldest Inbox item, including out of an open thread.
+func TestOJumpsToOldestAndClosesThread(t *testing.T) {
+	m := start(person())
+	m = press(m, "enter")
+	if m.open == nil {
+		t.Fatal("thread not open")
+	}
+	m = press(m, "o")
+	if m.open != nil || m.view != ViewInbox || m.cursor != 0 {
+		t.Fatalf("open=%v view=%v cursor=%d", m.open != nil, m.view, m.cursor)
+	}
+	if !strings.Contains(m.View(), "Deploy?") {
+		t.Fatal(m.View())
+	}
+}
+
+// r from the mail list replies; the person should not have to know enter first.
+func TestReplyFromMailList(t *testing.T) {
+	f := person()
+	m := start(f)
+	m = press(m, "m", "r", "o", "k", "enter")
+	if len(f.replied) != 1 || f.replied[0] != "local:1 worker ok" {
+		t.Fatalf("%v", f.replied)
+	}
+}
+
+// SPEC §12: Mail filters by session, machine, principal and unread.
+func TestMailFilters(t *testing.T) {
+	f := person()
+	f.threads = []daemon.ThreadRow{
+		{ThreadID: "local:1", From: "worker", To: "human", Subject: "deploy", Session: "api", Count: 1, Unread: 1, LastFrom: "worker"},
+		{ThreadID: "local:2", From: "reviewer", To: "worker", Subject: "nit", Session: "docs", Count: 2, Unread: 0, LastFrom: "reviewer"},
+		{ThreadID: "local:3", From: "gemini@s2", To: "human", Subject: "nightly", Count: 1, Unread: 1, LastFrom: "gemini@s2"},
+	}
+	m := start(f)
+	m = press(m, "m", "u")
+	v := m.View()
+	if strings.Contains(v, "nit") || !strings.Contains(v, "deploy") || !strings.Contains(v, "nightly") {
+		t.Fatalf("unread filter: %s", v)
+	}
+	m = press(m, "f", "r", "e", "v", "i", "e", "w", "e", "r", "enter")
+	v = m.View()
+	if strings.Contains(v, "deploy") || strings.Contains(v, "nightly") || strings.Contains(v, "nit") {
+		t.Fatalf("principal+unread: %s", v)
+	}
+	m = press(m, "u")
+	v = m.View()
+	if !strings.Contains(v, "nit") || strings.Contains(v, "deploy") {
+		t.Fatalf("principal only: %s", v)
+	}
+	m = press(m, "f", "s", "e", "s", "s", "i", "o", "n", ":", "a", "p", "i", "enter")
+	v = m.View()
+	if !strings.Contains(v, "deploy") || strings.Contains(v, "nit") {
+		t.Fatalf("session: %s", v)
+	}
+	m = press(m, "f", "m", "a", "c", "h", "i", "n", "e", ":", "s", "2", "enter")
+	v = m.View()
+	if !strings.Contains(v, "nightly") || strings.Contains(v, "deploy") {
+		t.Fatalf("machine: %s", v)
 	}
 }
 

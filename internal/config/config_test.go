@@ -24,7 +24,7 @@ func TestPathsFromMailaiHomeAndSocketOverride(t *testing.T) {
 
 func TestLoadMissingIsDefaultAndWakeParses(t *testing.T) {
 	c, err := Load(filepath.Join(t.TempDir(), "none.toml"))
-	if err != nil || !c.Wake() {
+	if err != nil || !c.Wake() || !c.RequireTerminal() {
 		t.Fatal(err, c)
 	}
 	f := filepath.Join(t.TempDir(), "c.toml")
@@ -32,6 +32,18 @@ func TestLoadMissingIsDefaultAndWakeParses(t *testing.T) {
 	c, err = Load(f)
 	if err != nil || c.Adapter != "herdr" || c.Wake() {
 		t.Fatal(err, c)
+	}
+	os.WriteFile(f, []byte("[fleet]\nname = \"s2\"\ninbox = \"dev@s1\"\n"), 0o600)
+	c, err = Load(f)
+	if err != nil || c.MachineName() != "s2" || c.Fleet.Inbox != "dev@s1" {
+		t.Fatal(err, c)
+	}
+	os.WriteFile(f, []byte("[identity]\nrequire_terminal = false\n"), 0o600)
+	if c, _ = Load(f); c.RequireTerminal() {
+		t.Fatal("require_terminal = false must turn it off")
+	}
+	if (Config{}).MachineName() == "" {
+		t.Fatal("default machine name is empty")
 	}
 	os.WriteFile(f, []byte("adapter = [\n"), 0o600)
 	if _, err := Load(f); err == nil {

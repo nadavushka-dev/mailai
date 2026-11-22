@@ -235,6 +235,84 @@ func TestAskBlocksUntilReply(t *testing.T) {
 	}
 }
 
+// SPEC §7: a reply pushed down a waiting ask is the delivery. It must not
+// stay unread, or the next hook notice spends another turn on text the
+// asker already has.
+func TestAskReplyIsConsumedSoNoNotice(t *testing.T) {
+	sock, _ := startDaemon(t, placed(
+		Placement{Proof: store.ProofToken, Principal: "worker"},
+		Placement{Proof: store.ProofToken, Principal: "reviewer"},
+	))
+	asker := dialAs(t, sock, "worker")
+	answerer := dialAs(t, sock, "reviewer")
+	done := make(chan AskResult, 1)
+	go func() {
+		var r AskResult
+		if err := asker.Call("ask", AskArgs{To: "reviewer", Text: "ship?", TimeoutMS: 5000}, &r); err != nil {
+			t.Errorf("ask: %v", err)
+			done <- AskResult{}
+			return
+		}
+		done <- r
+	}()
+	var rr ReadResult
+	deadline := time.Now().Add(2 * time.Second)
+	for len(rr.Messages) == 0 && time.Now().Before(deadline) {
+		answerer.Call("read", ReadArgs{Mailbox: "reviewer", Peek: true}, &rr)
+		time.Sleep(5 * time.Millisecond)
+	}
+	if len(rr.Messages) != 1 {
+		t.Fatal("ask not stored")
+	}
+	if err := answerer.Call("send", SendArgs{To: "worker", Text: "yes", ReplyTo: rr.Messages[0].MID}, nil); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case r := <-done:
+		if r.Reply.Text != "yes" {
+			t.Fatalf("%+v", r)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("ask did not return")
+	}
+	var ur UnreadResult
+	if err := asker.Call("unread", UnreadArgs{}, &ur); err != nil {
+		t.Fatal(err)
+	}
+	if ur.Count != 0 {
+		t.Fatalf("delivered reply stayed unread: %+v", ur)
+	}
+	var nr NoticeResult
+	if err := asker.Call("notice", NoticeArgs{}, &nr); err != nil {
+		t.Fatal(err)
+	}
+	if nr.New || nr.Line != "" {
+		t.Fatalf("notice after a delivered ask reply: %+v", nr)
+	}
+}
+
+// A name@otherhost is another machine. Until a fleet link exists, storing
+// it in a local mailbox and saying "sent" is a lie (SPEC §13).
+func TestSendToOtherMachineIsOffline(t *testing.T) {
+	sock, _ := startDaemon(t, nil)
+	c := dial(t, sock)
+	err := c.Call("send", SendArgs{To: "reviewer@s2", Text: "hi"}, nil)
+	if client.Code(err) != proto.CodeOffline {
+		t.Fatalf("want offline, got %v", err)
+	}
+	var rr ReadResult
+	if err := c.Call("read", ReadArgs{Mailbox: "reviewer@s2"}, &rr); err != nil {
+		t.Fatal(err)
+	}
+	if len(rr.Messages) != 0 {
+		t.Fatalf("stored a remote send locally: %+v", rr.Messages)
+	}
+	err = c.Call("ask", AskArgs{To: "reviewer@s2", Text: "?", TimeoutMS: 50}, nil)
+	if client.Code(err) != proto.CodeOffline {
+		t.Fatalf("ask want offline, got %v", err)
+	}
+}
+
 // waitOpen blocks until from has n asks open in the daemon's graph.
 func waitOpen(t *testing.T, d *Daemon, from store.Address, n int) {
 	t.Helper()

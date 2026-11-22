@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/BurntSushi/toml"
 )
@@ -51,6 +52,7 @@ func (p Paths) Tokens() string     { return filepath.Join(p.Data, "tokens.json")
 func (p Paths) Identity() string   { return filepath.Join(p.Data, "identity.toml") }
 func (p Paths) ConfigFile() string { return filepath.Join(p.Config, "config.toml") }
 func (p Paths) Log() string        { return filepath.Join(p.Data, "daemon.log") }
+func (p Paths) Machines() string   { return filepath.Join(p.Data, "machines.json") }
 
 // Config is config.toml.
 type Config struct {
@@ -61,10 +63,43 @@ type Config struct {
 	Notify struct {
 		Enabled *bool `toml:"enabled"`
 	} `toml:"notify"`
+	Identity struct {
+		RequireTerminal *bool `toml:"require_terminal"`
+	} `toml:"identity"`
+	// Fleet places this machine in the star (SPEC §13a).
+	Fleet struct {
+		// Name is this machine's name; the short hostname when empty.
+		Name string `toml:"name"`
+		// Inbox is the inbox machine's ssh target; empty on the inbox machine.
+		Inbox string `toml:"inbox"`
+		// Command is mailai on the inbox machine ("mailai").
+		Command string `toml:"command"`
+	} `toml:"fleet"`
+}
+
+// MachineName is [fleet] name, else the short hostname.
+func (c Config) MachineName() string {
+	if c.Fleet.Name != "" {
+		return c.Fleet.Name
+	}
+	h, _ := os.Hostname()
+	if i := strings.IndexByte(h, '.'); i > 0 {
+		h = h[:i]
+	}
+	if h == "" {
+		h = "local"
+	}
+	return h
 }
 
 // Wake says whether resting agents are woken (default true).
 func (c Config) Wake() bool { return c.Mail.Wake == nil || *c.Mail.Wake }
+
+// RequireTerminal says only a caller at a terminal is the person (§9);
+// on unless [identity] require_terminal = false (test rigs).
+func (c Config) RequireTerminal() bool {
+	return c.Identity.RequireTerminal == nil || *c.Identity.RequireTerminal
+}
 
 // Load reads config.toml; a missing file is the default config.
 func Load(path string) (Config, error) {

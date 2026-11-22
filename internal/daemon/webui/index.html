@@ -5,52 +5,207 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>mailai</title>
 <style>
-  :root { --bg:#fff; --fg:#111; --dim:#666; --line:#ddd; --sel:#eef; --ok:#1a7f37; --sup:#8250df; --risky:#cf222e; --wait:#9a6700; }
-  @media (prefers-color-scheme: dark) { :root { --bg:#111; --fg:#eee; --dim:#999; --line:#333; --sel:#223; --ok:#3fb950; --sup:#a371f7; --risky:#f85149; --wait:#d29922; } }
-  body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.45 -apple-system, system-ui, sans-serif; }
-  header { display:flex; gap:8px; align-items:center; padding:12px 16px; border-bottom:1px solid var(--line); position:sticky; top:0; background:var(--bg); }
-  header button { font:inherit; padding:6px 12px; border:1px solid var(--line); background:transparent; color:var(--fg); border-radius:6px; }
-  header button.on { background:var(--sel); }
-  header .who { margin-left:auto; color:var(--dim); font-size:13px; }
-  main { padding: 8px 16px 48px; max-width: 900px; margin: 0 auto; }
-  .row { display:flex; gap:10px; align-items:baseline; padding:10px 8px; border-bottom:1px solid var(--line); flex-wrap:wrap; }
-  .row:hover { background:var(--sel); }
-  .id { color:var(--dim); min-width:3em; }
-  .kind { font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:var(--dim); }
-  .kind.risky { color:var(--risky); font-weight:600; }
-  .from { font-weight:600; }
-  .q { flex:1 1 300px; }
-  .state { color:var(--wait); font-size:13px; }
-  .state.closed { color:var(--dim); }
-  .state.sup { color:var(--sup); }
-  .acts { display:flex; gap:6px; flex-wrap:wrap; }
-  .acts button, .reply button { font:inherit; padding:4px 10px; border:1px solid var(--line); border-radius:6px; background:transparent; color:var(--fg); cursor:pointer; }
-  .acts button.allow { border-color:var(--ok); color:var(--ok); }
-  .acts button.deny { border-color:var(--risky); color:var(--risky); }
-  .empty { color:var(--dim); padding:24px 8px; }
-  pre { white-space:pre-wrap; margin:6px 0 14px; padding:8px 12px; border-left:3px solid var(--line); }
-  .hdr { color:var(--dim); font-size:13px; }
-  .hdr .v { color:var(--ok); }
-  .hdr .s { color:var(--sup); }
-  .reply { display:flex; gap:8px; margin-top:12px; }
-  .reply input { flex:1; font:inherit; padding:6px 10px; border:1px solid var(--line); border-radius:6px; background:transparent; color:var(--fg); }
-  #status { position:fixed; bottom:12px; left:16px; right:16px; color:var(--risky); font-size:13px; }
-  a { color:inherit; }
+  :root {
+    color-scheme: dark;
+    --bg: #100f0c;
+    --panel: #18170f;
+    --panel-2: #211f16;
+    --line: #322f26;
+    --fg: #f4f0e6;
+    --dim: #9c9688;
+    --brass: #e0b15a;
+    --brass-ink: #2a220f;
+    --ok: #9dcc86;
+    --bad: #e48b7a;
+    --super: #d2b0f0;
+    --sel: #2a2618;
+    --sans: ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+    --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background:
+      radial-gradient(1200px 500px at 10% -10%, #2a2418 0%, transparent 55%),
+      var(--bg);
+    color: var(--fg);
+    font: 15px/1.45 var(--sans);
+    display: grid;
+    grid-template-rows: auto auto 1fr auto;
+    min-height: 100%;
+  }
+  header, .filters, footer {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    padding: 10px 18px;
+    border-bottom: 1px solid var(--line);
+    background: rgba(16, 15, 12, .86);
+    backdrop-filter: blur(10px);
+  }
+  footer { border-bottom: 0; border-top: 1px solid var(--line); color: var(--dim); font-size: 12px; gap: 14px; flex-wrap: wrap; }
+  .brand {
+    font-family: var(--serif);
+    font-weight: 600;
+    letter-spacing: .01em;
+    font-size: 18px;
+  }
+  .brand span { color: var(--brass); }
+  nav { display: flex; gap: 4px; }
+  button, input, textarea {
+    font: inherit;
+    color: var(--fg);
+    background: transparent;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+  }
+  header button, .filters button {
+    padding: 6px 12px;
+    cursor: pointer;
+  }
+  header button.on, .chip.on {
+    background: var(--sel);
+    border-color: #5c5130;
+    color: var(--brass);
+  }
+  button:focus-visible, input:focus-visible, textarea:focus-visible, .row:focus-visible {
+    outline: 2px solid var(--brass);
+    outline-offset: 2px;
+  }
+  .who { margin-left: auto; color: var(--dim); font-size: 13px; }
+  .live { display: inline-flex; align-items: center; gap: 6px; color: var(--dim); font-size: 12px; }
+  .live i {
+    width: 7px; height: 7px; border-radius: 50%; background: var(--ok); display: block;
+  }
+  .live.off i { background: var(--bad); }
+  .filters { gap: 14px; flex-wrap: wrap; padding-top: 8px; padding-bottom: 8px; }
+  .filters label { display: flex; align-items: center; gap: 6px; color: var(--dim); font-size: 12px; letter-spacing: .04em; text-transform: uppercase; }
+  .filters input[type="text"] { padding: 5px 8px; min-width: 9em; background: var(--panel); }
+  .filters input[type="checkbox"] { accent-color: var(--brass); }
+  .split { display: grid; grid-template-columns: minmax(280px, 38%) 1fr; min-height: 0; }
+  #list, #read { min-height: 0; overflow: auto; }
+  #list { border-right: 1px solid var(--line); }
+  .row {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 8px 10px;
+    width: 100%;
+    text-align: left;
+    padding: 12px 16px;
+    border: 0;
+    border-bottom: 1px solid var(--line);
+    border-radius: 0;
+    cursor: pointer;
+    background: transparent;
+  }
+  .row:hover { background: #1e1c15; }
+  .row.on { background: var(--sel); box-shadow: inset 3px 0 0 var(--brass); }
+  .kind { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); }
+  .kind.risky { color: var(--bad); }
+  .from { font-weight: 650; }
+  .q { grid-column: 1 / -1; color: var(--fg); }
+  .meta { color: var(--dim); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .dot { color: var(--brass); }
+  #read { display: flex; flex-direction: column; background: linear-gradient(180deg, #1c1a13 0%, #14130f 28%); }
+  #detail { padding: 28px 32px 12px; flex: 1; }
+  #detail h2 {
+    font-family: var(--serif);
+    font-weight: 560;
+    font-size: 28px;
+    line-height: 1.25;
+    margin: 8px 0 12px;
+    letter-spacing: -.01em;
+  }
+  .eyebrow { color: var(--dim); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; }
+  .acts { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 18px; }
+  .acts button, #composer button { padding: 8px 14px; cursor: pointer; }
+  .acts button.allow, #composer button[type="submit"] { background: var(--brass); color: var(--brass-ink); border-color: var(--brass); font-weight: 650; }
+  .acts button.deny, #composer-deny { border-color: var(--bad); color: var(--bad); }
+  pre {
+    white-space: pre-wrap;
+    margin: 0 0 16px;
+    padding: 0 0 0 12px;
+    border-left: 2px solid var(--line);
+    font-family: var(--sans);
+  }
+  .msg-h { color: var(--dim); font-size: 13px; margin-bottom: 4px; }
+  .msg-h b { color: var(--fg); }
+  .v { color: var(--ok); }
+  .s { color: var(--super); }
+  .empty { color: var(--dim); padding: 48px 20px; text-align: center; }
+  .empty strong { display: block; color: var(--fg); font-family: var(--serif); font-size: 22px; font-weight: 560; margin-bottom: 6px; }
+  #composer {
+    margin: 0 32px 24px;
+    padding: 12px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--panel);
+    display: grid;
+    gap: 8px;
+  }
+  #composer[hidden] { display: none; }
+  #composer-label { color: var(--dim); font-size: 12px; }
+  #composer-text { width: 100%; min-height: 72px; resize: vertical; padding: 8px 10px; background: var(--bg); border-radius: 8px; }
+  .composer-acts { display: flex; gap: 8px; justify-content: flex-end; }
+  #status {
+    position: fixed; bottom: 44px; left: 18px; right: 18px;
+    color: var(--bad); font-size: 13px; pointer-events: none;
+  }
+  kbd { font-family: var(--mono); font-size: 11px; color: var(--fg); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; }
+  @media (max-width: 800px) {
+    .split { grid-template-columns: 1fr; }
+    #list.hide-sm { display: none; }
+    #read.hide-sm { display: none; }
+    #detail { padding: 20px 16px 8px; }
+    #composer { margin: 0 16px 16px; }
+    #detail h2 { font-size: 24px; }
+  }
 </style>
 </head>
 <body>
 <header>
-  <button id="tab-inbox" class="on">Inbox <span id="count"></span></button>
-  <button id="tab-mail">Mail</button>
-  <button id="all" title="show closed items too">all</button>
+  <div class="brand">mail<span>ai</span></div>
+  <nav aria-label="Views">
+    <button id="tab-inbox" class="on" type="button" aria-pressed="true">Inbox <span id="count"></span></button>
+    <button id="tab-mail" type="button" aria-pressed="false">Mail</button>
+  </nav>
+  <button id="all" type="button" title="Show closed items too">Closed</button>
+  <span class="live" id="live"><i></i> live</span>
   <span class="who" id="who"></span>
 </header>
-<main id="main"></main>
-<div id="status"></div>
+<div class="filters" role="search">
+  <label>Unread <input id="f-unread" type="checkbox"></label>
+  <label>Person <input id="f-who" type="text" placeholder="name" autocomplete="off"></label>
+  <label>Session <input id="f-session" type="text" placeholder="session" autocomplete="off"></label>
+  <label>Machine <input id="f-machine" type="text" placeholder="host" autocomplete="off"></label>
+</div>
+<div class="split">
+  <section id="list" role="listbox" aria-label="Waiting"></section>
+  <section id="read">
+    <div id="detail"></div>
+    <form id="composer" hidden>
+      <label id="composer-label" for="composer-text">Reply</label>
+      <textarea id="composer-text" placeholder="Write the reply"></textarea>
+      <div class="composer-acts">
+        <button type="button" id="composer-deny" hidden>Deny</button>
+        <button type="submit" id="composer-send">Send</button>
+      </div>
+    </form>
+  </section>
+</div>
+<footer id="keys"></footer>
+<div id="status" role="status"></div>
 <script>
 (() => {
   const $ = s => document.querySelector(s);
-  let view = 'inbox', showAll = false, openThread = null;
+  let view = 'inbox', showAll = false, openThread = null, selected = 0;
+  let items = [], threads = [];
+  const typing = () => {
+    const a = document.activeElement;
+    return a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA');
+  };
   const api = async (path, body) => {
     const r = await fetch(path, body ? {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)} : {});
     if (r.status === 401) { location.reload(); return null; }
@@ -61,64 +216,243 @@
   const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
   const ago = ns => { const d = Math.max(0, Date.now() - ns/1e6)/1000; return d<60?`${d|0}s`:d<3600?`${d/60|0}m`:`${d/3600|0}h${String((d/60|0)%60).padStart(2,'0')}m`; };
   const status = m => { $('#status').textContent = m || ''; if (m) setTimeout(() => { if ($('#status').textContent === m) $('#status').textContent=''; }, 4000); };
-  const act = async (path, body) => { try { await api(path, body); await render(); } catch (e) { status(e.message); } };
+  const localName = a => String(a||'').split('@')[0];
+  const hostOf = a => { const s = String(a||''); const i = s.indexOf('@'); return i<0 ? '' : s.slice(i+1); };
+  const filters = () => ({
+    unread: $('#f-unread').checked,
+    who: $('#f-who').value.trim().toLowerCase(),
+    session: $('#f-session').value.trim().toLowerCase(),
+    machine: $('#f-machine').value.trim().toLowerCase(),
+  });
+  const matchWho = (addrs, who) => !who || addrs.some(a => localName(a).toLowerCase() === who);
+  const matchHost = (addrs, host) => !host || addrs.some(a => hostOf(a).toLowerCase() === host);
+  const visibleThreads = () => {
+    const f = filters();
+    return threads.filter(t => {
+      if (f.unread && !t.unread) return false;
+      if (!matchWho([t.from, t.to, t.last_from], f.who)) return false;
+      if (f.session && String(t.session||'').toLowerCase() !== f.session) return false;
+      if (!matchHost([t.from, t.to, t.last_from], f.machine)) return false;
+      return true;
+    });
+  };
+  const visibleItems = () => {
+    const f = filters();
+    return items.filter(it => {
+      if (!matchWho([it.from], f.who)) return false;
+      if (f.session && String(it.session||'').toLowerCase() !== f.session) return false;
+      return true;
+    });
+  };
+  const rows = () => view === 'inbox' && !openThread ? visibleItems() : visibleThreads();
+  const hideComposer = () => { $('#composer').hidden = true; $('#composer-deny').hidden = true; $('#composer-send').hidden = false; };
+  const showComposer = (label, placeholder, deny) => {
+    const form = $('#composer');
+    form.hidden = false;
+    $('#composer-label').textContent = label;
+    $('#composer-text').placeholder = placeholder;
+    $('#composer-deny').hidden = !deny;
+    $('#composer-send').hidden = !!deny;
+  };
+  const keys = () => {
+    const k = (key, does) => `<kbd>${key}</kbd> ${does}`;
+    let parts;
+    if (openThread) parts = [k('r','reply'), k('esc','back'), k('o','oldest')];
+    else if (view === 'inbox') parts = [k('j/k','move'), k('r','answer'), k('1–8','pick'), k('a','allow'), k('d','deny'), k('x','dismiss'), k('o','oldest')];
+    else parts = [k('j/k','move'), k('enter','open'), k('r','reply'), k('u','unread'), k('/','filter')];
+    $('#keys').innerHTML = parts.join('  ') + `  ${k('i','inbox')}  ${k('m','mail')}`;
+  };
+
+  function renderList() {
+    const list = $('#list');
+    const data = view === 'inbox' ? visibleItems() : visibleThreads();
+    if (selected >= data.length) selected = Math.max(0, data.length - 1);
+    $('#tab-inbox').classList.toggle('on', view==='inbox');
+    $('#tab-mail').classList.toggle('on', view==='mail');
+    $('#tab-inbox').setAttribute('aria-pressed', view==='inbox');
+    $('#tab-mail').setAttribute('aria-pressed', view==='mail');
+    $('#all').classList.toggle('on', showAll);
+    const openN = items.filter(i => !i.closed_at).length;
+    $('#count').textContent = openN || '';
+    if (!data.length) {
+      const title = view==='inbox' ? 'Nothing is waiting' : (threads.length ? 'No threads match' : 'No mail yet');
+      const sub = view==='inbox' ? 'Asks, approvals and errors land here. Plain mail stays in Mail.' : 'Adjust the filters, or wait for the next message.';
+      list.innerHTML = `<div class="empty"><strong>${title}</strong>${sub}</div>`;
+      return;
+    }
+    list.innerHTML = data.map((row, i) => {
+      if (view === 'inbox') {
+        const it = row;
+        const q = it.kind === 'approval' ? `${it.subject||''}: ${it.question}` : it.question;
+        const where = it.session ? ` · ${esc(it.session)}` : '';
+        const state = it.closed_at ? esc(it.closed_by || 'closed') : `waiting ${ago(it.opened_at)}`;
+        return `<button class="row${i===selected?' on':''}" role="option" aria-selected="${i===selected}" data-i="${i}"><span class="kind${it.risky?' risky':''}">${it.risky?'risky ':''}${esc(it.kind)}</span><span class="from">${esc(it.from)}${where}</span><span class="meta">${state}</span><span class="q">${esc(q)}</span></button>`;
+      }
+      const t = row;
+      const subj = t.subject || t.first || '(no subject)';
+      const mark = t.unread ? '<span class="dot">●</span> ' : '';
+      return `<button class="row${i===selected?' on':''}" role="option" aria-selected="${i===selected}" data-i="${i}"><span class="from">${mark}${esc(t.from)}</span><span class="meta">→ ${esc(t.to||'session '+(t.session||''))}</span><span class="meta">${ago(t.last_at)}</span><span class="q">${esc(subj)}</span></button>`;
+    }).join('');
+    const on = list.querySelector('.row.on');
+    if (on) on.scrollIntoView({block:'nearest'});
+  }
+
+  function renderDetail() {
+    const detail = $('#detail');
+    keys();
+    if (openThread) { hideComposer(); return; }
+    if (view === 'inbox') {
+      const it = visibleItems()[selected];
+      if (!it) { hideComposer(); detail.innerHTML = '<div class="empty"><strong>Inbox clear</strong>Nothing waits on you.</div>'; return; }
+      const where = [it.session && `session ${esc(it.session)}`, `waiting ${ago(it.opened_at)}`].filter(Boolean).join(' · ');
+      let acts = '';
+      hideComposer();
+      if (!it.closed_at) {
+        if (it.kind === 'approval') {
+          acts = `<button class="allow" data-a="answer" data-id="${it.id}" data-t="allow">Allow</button><button class="deny" data-a="deny" data-id="${it.id}">Deny</button>`;
+        } else if (it.options?.length) {
+          acts = it.options.map((o, n) => `<button data-a="answer" data-id="${it.id}" data-t="${esc(o)}"><kbd>${n+1}</kbd> ${esc(o)}</button>`).join('');
+        } else {
+          showComposer('Your answer', 'Write the answer. Enter sends.');
+          $('#composer').dataset.mode = 'answer';
+          $('#composer').dataset.id = it.id;
+        }
+        acts += `<button data-a="dismiss" data-id="${it.id}">Dismiss</button>`;
+        if (it.thread_id) acts += `<button data-a="open" data-id="${esc(it.thread_id)}">Thread</button>`;
+      }
+      const q = it.kind === 'approval' ? `${it.subject||''}: ${it.question}` : it.question;
+      detail.innerHTML = `<div class="eyebrow">${it.risky?'risky ':''}${esc(it.kind)} · ${esc(it.from)}</div><h2>${esc(q)}</h2><div class="meta">${where}${it.closed_at ? ' · '+esc(it.closed_by||'closed') : ''}</div><div class="acts">${acts}</div>`;
+      return;
+    }
+    const t = visibleThreads()[selected];
+    if (!t) { hideComposer(); detail.innerHTML = '<div class="empty"><strong>No thread</strong>Nothing matches these filters.</div>'; return; }
+    hideComposer();
+    detail.innerHTML = `<div class="eyebrow">${esc(t.from)} → ${esc(t.to||'session')}</div><h2>${esc(t.subject||t.first||'(no subject)')}</h2><div class="meta">${t.count} messages · ${t.unread} unread${t.session?' · session '+esc(t.session):''}</div><div class="acts"><button data-a="open" data-id="${esc(t.thread_id)}">Open thread</button></div>`;
+  }
+
+  async function renderThread() {
+    const {messages} = await api('/api/thread?id=' + encodeURIComponent(openThread));
+    const last = [...(messages||[])].reverse().find(m => m.from !== 'human') || (messages||[])[0];
+    $('#detail').innerHTML = `<p><button type="button" data-a="back">← Back</button></p><div class="eyebrow">thread ${esc(openThread)}</div>` + (messages||[]).map(m => {
+      const trust = m.verified ? `<span class="${m.verified==='human'?'v':'s'}">verified ${esc(String(m.verified).replace(':',' '))}</span>` : m.claimed_human ? 'automated reply' : esc(m.sender_proof || 'unplaced');
+      return `<div class="msg-h">#${m.id} from <b>${esc(m.from)}</b> (${trust})${m.to?' → '+esc(m.to):''}${m.subject?' · '+esc(m.subject):''}</div><pre>${esc(m.text)}</pre>`;
+    }).join('');
+    if (last) {
+      showComposer('Reply to ' + last.from, 'Signed as you. Enter sends.');
+      const form = $('#composer');
+      form.dataset.mode = 'reply';
+      form.dataset.mid = last.mid;
+      form.dataset.to = last.from;
+    } else hideComposer();
+    keys();
+  }
 
   async function render() {
-    $('#tab-inbox').classList.toggle('on', view==='inbox'); $('#tab-mail').classList.toggle('on', view==='mail'); $('#all').classList.toggle('on', showAll);
-    const main = $('#main');
-    if (openThread) return renderThread(main);
-    if (view === 'inbox') {
-      const {items} = await api('/api/inbox' + (showAll ? '?all=1' : ''));
-      $('#count').textContent = items.filter(i => !i.closed_at).length || '';
-      if (!items.length) { main.innerHTML = '<div class="empty">inbox empty: nothing waits on you</div>'; return; }
-      main.innerHTML = items.map(it => {
-        const isAppr = it.kind === 'approval';
-        const q = isAppr ? `${esc(it.subject)}: ${esc(it.question)}` : esc(it.question);
-        let state = `<span class="state">waiting ${ago(it.opened_at)}</span>`;
-        if (it.closed_at) state = `<span class="state closed${it.decided_by && it.decided_by!=='human' ? ' sup':''}">${esc(it.closed_by)}${it.decided_by && it.decided_by!=='human' ? ' by '+esc(it.decided_by):''}</span>`;
-        let acts = '';
-        if (!it.closed_at) {
-          if (isAppr) acts = `<button class="allow" data-a="answer" data-id="${it.id}" data-t="allow">allow</button><button class="deny" data-a="deny" data-id="${it.id}">deny</button>`;
-          else if (it.options?.length) acts = it.options.map(o => `<button data-a="answer" data-id="${it.id}" data-t="${esc(o)}">${esc(o)}</button>`).join('');
-          else acts = `<button data-a="free" data-id="${it.id}">answer…</button>`;
-          acts += `<button data-a="dismiss" data-id="${it.id}">dismiss</button>`;
-          if (it.thread_id) acts += `<button data-a="open" data-id="${esc(it.thread_id)}">thread</button>`;
-        }
-        return `<div class="row"><span class="id">#${it.id}</span><span class="kind${it.risky?' risky':''}">${it.risky?'risky ':''}${esc(it.kind)}</span><span class="from">${esc(it.from)}</span><span class="q">${q}</span>${state}<span class="acts">${acts}</span></div>`;
-      }).join('');
-    } else {
-      const {threads} = await api('/api/threads');
-      if (!threads.length) { main.innerHTML = '<div class="empty">no mail yet</div>'; return; }
-      main.innerHTML = threads.map(t => `<div class="row" data-a="open" data-id="${esc(t.thread_id)}" style="cursor:pointer"><span class="id">${t.unread?'*':''}</span><span class="from">${esc(t.from)}</span><span class="kind">→ ${esc(t.to || 'session '+t.session)}</span><span class="q">${esc(t.subject || t.first)}</span><span class="hdr">${t.count} msgs · last ${esc(t.last_from)} <span class="${t.verified==='human'?'v':t.verified?'s':''}">${t.verified?'('+esc(t.verified.replace(':',' '))+')':''}</span> ${ago(t.last_at)}</span></div>`).join('');
-    }
+    if (typing()) { render.pending = true; return; }
+    try {
+      const inbox = await api('/api/inbox' + (showAll ? '?all=1' : ''));
+      const mail = await api('/api/threads');
+      if (!inbox || !mail) return;
+      items = inbox.items || [];
+      threads = mail.threads || [];
+      renderList();
+      if (openThread) await renderThread();
+      else renderDetail();
+      const sm = window.matchMedia('(max-width: 800px)').matches;
+      $('#list').classList.toggle('hide-sm', sm && !!openThread);
+      $('#read').classList.toggle('hide-sm', sm && !openThread && view==='inbox' && false);
+    } catch (e) { status(e.message); }
   }
-  async function renderThread(main) {
-    const {messages} = await api('/api/thread?id=' + encodeURIComponent(openThread));
-    const last = [...messages].reverse().find(m => m.from !== 'human') || messages[0];
-    main.innerHTML = `<p><a href="#" data-a="back">← back</a> &nbsp; <b>thread ${esc(openThread)}</b></p>` + messages.map(m => {
-      const trust = m.verified ? `<span class="${m.verified==='human'?'v':'s'}">verified ${esc(m.verified.replace(':',' '))}</span>` : m.claimed_human ? 'automated reply' : esc(m.sender_proof || 'unplaced');
-      return `<div class="hdr">#${m.id} from <b>${esc(m.from)}</b> (${trust})${m.to?' → '+esc(m.to):''}${m.subject?' · '+esc(m.subject):''}</div><pre>${esc(m.text)}</pre>`;
-    }).join('') + (last ? `<div class="reply"><input id="rtext" placeholder="reply to ${esc(last.from)}"><button data-a="reply" data-mid="${esc(last.mid)}" data-to="${esc(last.from)}">send</button></div>` : '');
-  }
+
+  const act = async (path, body) => { try { await api(path, body); await render(); } catch (e) { status(e.message); } };
   document.addEventListener('click', async e => {
+    const row = e.target.closest('.row');
+    if (row) {
+      selected = +row.dataset.i;
+      if (view === 'mail') { openThread = visibleThreads()[selected]?.thread_id || null; }
+      renderList();
+      if (openThread) await renderThread();
+      else renderDetail();
+      return;
+    }
     const b = e.target.closest('[data-a]'); if (!b) return;
-    e.preventDefault();
     const a = b.dataset.a, id = b.dataset.id;
     if (a === 'answer') return act('/api/answer', {item: +id, text: b.dataset.t});
-    if (a === 'deny') { const msg = prompt('reason shown to the agent (optional)') ?? ''; return act('/api/answer', {item:+id, text:'deny', message: msg}); }
-    if (a === 'free') { const t = prompt('your answer'); if (t) return act('/api/answer', {item:+id, text:t}); return; }
+    if (a === 'deny') {
+      const it = visibleItems().find(x => String(x.id) === id);
+      selected = visibleItems().indexOf(it);
+      showComposer('Reason shown to the agent', 'Optional. Leave empty to deny with no note.', true);
+      const form = $('#composer');
+      form.dataset.mode = 'deny';
+      form.dataset.id = id;
+      $('#composer-text').focus();
+      return;
+    }
     if (a === 'dismiss') return act('/api/dismiss', {item:+id});
-    if (a === 'open') { openThread = id; return render(); }
-    if (a === 'back') { openThread = null; return render(); }
-    if (a === 'reply') { const t = $('#rtext').value.trim(); if (!t) return; return act('/api/reply', {reply_to: b.dataset.mid, to: b.dataset.to, text: t}); }
+    if (a === 'open') { openThread = id; selected = Math.max(0, visibleThreads().findIndex(t => t.thread_id === id)); await renderThread(); return; }
+    if (a === 'back') { openThread = null; renderList(); renderDetail(); }
   });
-  $('#tab-inbox').onclick = () => { view='inbox'; openThread=null; render(); };
-  $('#tab-mail').onclick = () => { view='mail'; openThread=null; render(); };
+  $('#composer').addEventListener('submit', e => {
+    e.preventDefault();
+    const form = $('#composer');
+    const text = $('#composer-text').value.trim();
+    $('#composer-text').value = '';
+    if (form.dataset.mode === 'answer') { if (!text) return; return act('/api/answer', {item:+form.dataset.id, text}); }
+    if (form.dataset.mode === 'reply') { if (!text) return; return act('/api/reply', {reply_to: form.dataset.mid, to: form.dataset.to, text}); }
+    if (form.dataset.mode === 'deny') return act('/api/answer', {item:+form.dataset.id, text:'deny', message: text});
+  });
+  $('#composer-deny').addEventListener('click', () => $('#composer').requestSubmit());
+  $('#tab-inbox').onclick = () => { view='inbox'; openThread=null; selected=0; render(); };
+  $('#tab-mail').onclick = () => { view='mail'; openThread=null; selected=0; render(); };
   $('#all').onclick = () => { showAll=!showAll; render(); };
-  api('/api/me').then(m => { if (m) $('#who').textContent = `${m.principal} (${m.proof})`; });
+  ['f-unread','f-who','f-session','f-machine'].forEach(id => {
+    $( '#'+id ).addEventListener('input', () => { selected = 0; renderList(); if (!openThread) renderDetail(); });
+  });
+  document.addEventListener('focusout', () => { if (render.pending && !typing()) { render.pending = false; render(); } });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') {
+      if (typing()) { e.target.blur(); return; }
+      if (openThread) { openThread = null; renderList(); renderDetail(); }
+      return;
+    }
+    if (typing()) return;
+    const data = view === 'inbox' ? visibleItems() : visibleThreads();
+    const cur = view === 'inbox' ? visibleItems()[selected] : null;
+    if (e.key === 'j' || e.key === 'ArrowDown') { selected = Math.min(data.length-1, selected+1); renderList(); if (!openThread) renderDetail(); e.preventDefault(); }
+    if (e.key === 'k' || e.key === 'ArrowUp') { selected = Math.max(0, selected-1); renderList(); if (!openThread) renderDetail(); e.preventDefault(); }
+    if (e.key === 'i') { view='inbox'; openThread=null; render(); }
+    if (e.key === 'm') { view='mail'; openThread=null; render(); }
+    if (e.key === 'o') { view='inbox'; openThread=null; selected=0; render(); }
+    if (e.key === 'u' && view === 'mail') { $('#f-unread').checked = !$('#f-unread').checked; selected=0; renderList(); renderDetail(); }
+    if (e.key === '/') { e.preventDefault(); $('#f-who').focus(); }
+    if (e.key === 'A') { showAll=!showAll; render(); }
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (view === 'mail') { const t = visibleThreads()[selected]; if (t) { openThread = t.thread_id; renderThread(); } }
+      else if (cur?.thread_id) { openThread = cur.thread_id; renderThread(); }
+    }
+    if (e.key === 'r') {
+      if (openThread) { $('#composer-text').focus(); return; }
+      if (view === 'mail') { const t = visibleThreads()[selected]; if (t) { openThread = t.thread_id; renderThread().then(() => $('#composer-text').focus()); } return; }
+      if (cur && cur.kind !== 'approval' && !cur.options?.length) { showComposer('Your answer', 'Write the answer. Enter sends.'); $('#composer').dataset.mode='answer'; $('#composer').dataset.id=cur.id; $('#composer-text').focus(); }
+    }
+    if (e.key === 'x' && cur && !cur.closed_at) act('/api/dismiss', {item: cur.id});
+    if (e.key === 'a' && cur && cur.kind === 'approval') act('/api/answer', {item: cur.id, text: 'allow'});
+    if (e.key === 'd' && cur && cur.kind === 'approval') {
+      showComposer('Reason shown to the agent', 'Optional. Leave empty to deny with no note.', true);
+      $('#composer').dataset.mode = 'deny'; $('#composer').dataset.id = cur.id; $('#composer-text').focus();
+    }
+    if (/^[1-8]$/.test(e.key) && cur?.options) {
+      const opt = cur.options[+e.key - 1];
+      if (opt) act('/api/answer', {item: cur.id, text: opt});
+    }
+  });
+  api('/api/me').then(m => { if (m) $('#who').textContent = `${m.principal} · ${m.proof}`; });
   const es = new EventSource('/api/events');
+  const live = on => $('#live').classList.toggle('off', !on);
   ['mail','attention','agent_state','wake'].forEach(ev => es.addEventListener(ev, () => render()));
-  es.onerror = () => status('live updates disconnected; reload');
+  es.onopen = () => live(true);
+  es.onerror = () => { live(false); status('live updates disconnected; still refreshing'); };
   render();
   setInterval(render, 30000);
 })();

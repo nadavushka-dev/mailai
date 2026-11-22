@@ -12,10 +12,12 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/nadavushka-dev/mailai/internal/adapter"
+	"github.com/nadavushka-dev/mailai/internal/client"
 	"github.com/nadavushka-dev/mailai/internal/proto"
 	"github.com/nadavushka-dev/mailai/internal/stash"
 	"github.com/nadavushka-dev/mailai/internal/store"
@@ -40,6 +42,19 @@ type Options struct {
 	Wake bool
 	// PollEvery is how often the adapter is asked; 2 s when zero.
 	PollEvery time.Duration
+
+	// Name is this machine's name in the star (SPEC §13a).
+	Name string
+	// Inbox names the inbox machine (its ssh target) on a spoke; Dial opens
+	// the link to it. Both empty on the inbox machine.
+	Inbox string
+	Dial  func(ctx context.Context) (io.ReadWriteCloser, error)
+	// LinkRetry is the first reconnect wait (1 s), Heartbeat the link
+	// heartbeat (15 s).
+	LinkRetry time.Duration
+	Heartbeat time.Duration
+	// MachinesFile remembers which spokes have linked; memory only when "".
+	MachinesFile string
 }
 
 // Daemon serves one machine.
@@ -62,6 +77,18 @@ type Daemon struct {
 	marks     map[store.Address]noticeMark
 	queued    []queued
 	queueSeq  uint64
+
+	// The star (SPEC §13a).
+	name        string
+	inboxTarget string
+	dial        func(ctx context.Context) (io.ReadWriteCloser, error)
+	linkRetry   time.Duration
+	heartbeat   time.Duration
+	knownFile   string
+	links       map[string]*conn // inbox machine: spoke -> its link
+	known       map[string]bool  // inbox machine: spokes that ever linked
+	up          *client.Client   // spoke: the link, nil when down
+	hubName     string
 
 	mu    sync.Mutex
 	subs  map[*conn]bool
@@ -91,9 +118,19 @@ func New(o Options) *Daemon {
 	if o.PollEvery == 0 {
 		o.PollEvery = 2 * time.Second
 	}
-	return &Daemon{st: o.Store, placer: o.Placer, now: o.Now, log: o.Log, maxAsk: o.MaxAsks, stash: o.Stash, tokens: o.Tokens,
+	if o.LinkRetry == 0 {
+		o.LinkRetry = time.Second
+	}
+	if o.Heartbeat == 0 {
+		o.Heartbeat = 15 * time.Second
+	}
+	d := &Daemon{st: o.Store, placer: o.Placer, now: o.Now, log: o.Log, maxAsk: o.MaxAsks, stash: o.Stash, tokens: o.Tokens,
 		adapter: o.Adapter, wake: o.Wake, poll: o.PollEvery, agents: newAgents(), marks: map[store.Address]noticeMark{}, approvals: map[uint64]chan approvalDecision{}, webSubs: map[chan proto.Event]bool{},
-		subs: map[*conn]bool{}, asks: newAskGraph(), waits: map[string][]chan store.Message{}}
+		subs: map[*conn]bool{}, asks: newAskGraph(), waits: map[string][]chan store.Message{},
+		name: o.Name, inboxTarget: o.Inbox, dial: o.Dial, linkRetry: o.LinkRetry, heartbeat: o.Heartbeat, knownFile: o.MachinesFile,
+		links: map[string]*conn{}, known: map[string]bool{}}
+	d.loadKnown()
+	return d
 }
 
 // Listen binds the socket (its directory 0700, stale socket removed).
@@ -131,6 +168,9 @@ func (d *Daemon) Serve(ctx context.Context) error {
 		go d.pollAgents(ctx, d.poll)
 	}
 	go d.runWakes(ctx)
+	if d.isSpoke() {
+		go d.runUplink(ctx)
+	}
 	go func() {
 		t := time.NewTicker(wakeTick)
 		defer t.Stop()
@@ -164,6 +204,8 @@ type conn struct {
 	net.Conn
 	wmu sync.Mutex
 	pl  Placement
+	// link is the spoke's machine name once this connection said link-hello.
+	link string
 }
 
 func (c *conn) write(v any) error {
@@ -178,6 +220,7 @@ func (d *Daemon) serveConn(nc net.Conn) {
 		d.mu.Lock()
 		delete(d.subs, c)
 		d.mu.Unlock()
+		d.dropLink(c)
 		nc.Close()
 	}()
 	r := proto.NewReader(nc)
@@ -198,7 +241,7 @@ func (d *Daemon) serveConn(nc net.Conn) {
 		req := proto.Request{ID: *f.ID, Verb: f.Verb, Args: f.Args}
 		// Blocking verbs run on their own goroutine so the connection stays
 		// responsive; everything else is cheap and runs in order.
-		if req.Verb == "ask" || req.Verb == "ask-human" || req.Verb == "hold-approval" {
+		if req.Verb == "ask" || req.Verb == "ask-human" || req.Verb == "hold-approval" || req.Verb == "link-hold" {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
@@ -240,9 +283,47 @@ func decode[T any](raw json.RawMessage) (T, error) {
 }
 
 func (d *Daemon) handle(c *conn, req proto.Request) (any, error) {
+	// A link carries a spoke's agents, never the person (SPEC §13a): it
+	// may only use the link verbs.
+	if c.link != "" {
+		switch req.Verb {
+		case "ping", "link-send", "link-ack", "link-hold", "link-flush":
+		default:
+			return nil, errForbidden("a link may only use link verbs, not %q", req.Verb)
+		}
+	} else if strings.HasPrefix(req.Verb, "link-") && req.Verb != "link-hello" {
+		return nil, errForbidden("%s needs a link", req.Verb)
+	}
 	switch req.Verb {
 	case "ping":
-		return map[string]string{"pong": d.now().UTC().Format(time.RFC3339)}, nil
+		return PingResult{Pong: d.now().UTC().Format(time.RFC3339), LinkStatus: d.linkStatus()}, nil
+	case "link-hello":
+		a, err := decode[LinkHelloArgs](req.Args)
+		if err != nil {
+			return nil, err
+		}
+		return d.linkHello(c, a)
+	case "link-send":
+		a, err := decode[LinkSendArgs](req.Args)
+		if err != nil {
+			return nil, err
+		}
+		return d.linkSend(c, a)
+	case "link-ack":
+		a, err := decode[LinkAckArgs](req.Args)
+		if err != nil {
+			return nil, err
+		}
+		return d.linkAck(c, a)
+	case "link-hold":
+		a, err := decode[LinkHoldArgs](req.Args)
+		if err != nil {
+			return nil, err
+		}
+		return d.linkHold(c, a)
+	case "link-flush":
+		go d.flushTo(c.link)
+		return map[string]bool{"ok": true}, nil
 	case "hello":
 		a, err := decode[HelloArgs](req.Args)
 		if err != nil {
@@ -269,9 +350,9 @@ func (d *Daemon) handle(c *conn, req proto.Request) (any, error) {
 		if err != nil {
 			return nil, err
 		}
-		box := a.Mailbox
-		if box == "" {
-			box = d.own(c.pl)
+		box, err := d.box(c, a.Mailbox)
+		if err != nil {
+			return nil, err
 		}
 		n, from := d.st.Unread(box)
 		return UnreadResult{Count: n, From: from}, nil
@@ -379,12 +460,47 @@ func (d *Daemon) own(pl Placement) store.Address {
 	if pl.Principal != "" {
 		return pl.Principal
 	}
+	if !isPerson(pl) {
+		// detached or a link: nobody, so no mailbox of its own (§9).
+		return ""
+	}
 	return store.Human
+}
+
+// box is the mailbox a request means: the one named, else the caller's own.
+func (d *Daemon) box(c *conn, named store.Address) (store.Address, error) {
+	if named != "" {
+		return named, nil
+	}
+	if own := d.own(c.pl); own != "" {
+		return own, nil
+	}
+	return "", errForbidden("this caller has no mailbox of its own; pass --mailbox")
+}
+
+// PingResult is ping's answer: the time, and the machine's place in the star.
+type PingResult struct {
+	Pong string `json:"pong"`
+	LinkStatus
 }
 
 func (d *Daemon) send(c *conn, a SendArgs) (any, error) {
 	from, err := resolveFrom(c.pl, a.From)
 	if err != nil {
+		return nil, err
+	}
+	a.To = d.localize(a.To)
+	if d.isSpoke() && d.offMachine(a.To) {
+		if len(a.Attachments) > 0 {
+			return nil, proto.Errorf(proto.CodeBadRequest, "attachments do not cross machines yet")
+		}
+		r, err := d.relay(LinkSendArgs{From: from, To: a.To, Subject: a.Subject, Text: a.Text, ReplyTo: a.ReplyTo})
+		if err != nil {
+			return nil, err
+		}
+		return SendResult{Message: r.Message}, nil
+	}
+	if err := d.checkRoute(a.To); err != nil {
 		return nil, err
 	}
 	atts, err := d.prepareAttachments(a.Attachments)
@@ -413,9 +529,9 @@ func (d *Daemon) store(pl Placement, r store.SendRequest) (store.Message, error)
 }
 
 func (d *Daemon) read(c *conn, a ReadArgs) (any, error) {
-	box := a.Mailbox
-	if box == "" {
-		box = d.own(c.pl)
+	box, err := d.box(c, a.Mailbox)
+	if err != nil && a.Thread == "" {
+		return nil, err
 	}
 	if a.Thread != "" {
 		msgs := d.st.Thread(a.Thread)
@@ -432,7 +548,6 @@ func (d *Daemon) read(c *conn, a ReadArgs) (any, error) {
 		peekForced = true
 	}
 	var msgs []store.Message
-	var err error
 	if a.Peek {
 		msgs, err = d.st.Peek(store.PeekQuery{Mailbox: box, By: d.own(c.pl), Unread: a.Unread})
 	} else {
@@ -483,6 +598,8 @@ func (d *Daemon) publish(m store.Message) {
 			}
 		}
 	}
+	// Mail for another machine's agent goes down its link (SPEC §13a).
+	d.route(m)
 }
 
 // publishItem tells subscribers an Inbox item opened or closed. It carries

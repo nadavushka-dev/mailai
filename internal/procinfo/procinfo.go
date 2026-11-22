@@ -24,3 +24,4 @@ type Kernel struct{}
 func (Kernel) PeerPID(conn net.Conn) int                  { return PeerPID(conn) }
 func (Kernel) ParentPID(pid int) (int, bool)              { return ParentPID(pid) }
 func (Kernel) EnvVar(pid int, name string) (string, bool) { return EnvVar(pid, name) }
+func (Kernel) HasTTY(pid int) bool                        { return HasTTY(pid) }

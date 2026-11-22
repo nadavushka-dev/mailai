@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/signal"
@@ -13,6 +14,7 @@ import (
 	"github.com/nadavushka-dev/mailai/internal/config"
 	"github.com/nadavushka-dev/mailai/internal/daemon"
 	"github.com/nadavushka-dev/mailai/internal/identity"
+	"github.com/nadavushka-dev/mailai/internal/link"
 	"github.com/nadavushka-dev/mailai/internal/procinfo"
 	"github.com/nadavushka-dev/mailai/internal/stash"
 	"github.com/nadavushka-dev/mailai/internal/store"
@@ -41,7 +43,8 @@ func cmdDaemon(args []string) error {
 		return err
 	}
 	defer db.Close()
-	st, err := store.Load(store.Options{}, db)
+	name := cfg.MachineName()
+	st, err := store.Load(store.Options{MachineID: name}, db)
 	if err != nil {
 		return err
 	}
@@ -52,9 +55,22 @@ func cmdDaemon(args []string) error {
 	logger := log.New(os.Stderr, "mailai ", log.LstdFlags)
 	ad := chooseAdapter(cfg)
 	placer := &identity.Placer{Proc: procinfo.Kernel{}, Tokens: tk, Panes: ad, SelfPID: os.Getpid()}
-	d := daemon.New(daemon.Options{Store: st, Log: logger, Stash: stash.New(p.Stash()), Tokens: tk, Placer: placer,
-		Adapter: ad, Wake: cfg.Wake()})
-	logger.Printf("adapter %s, wake %v", ad.Name(), cfg.Wake())
+	if cfg.RequireTerminal() {
+		placer.TTY = procinfo.Kernel{}
+	}
+	opts := daemon.Options{Store: st, Log: logger, Stash: stash.New(p.Stash()), Tokens: tk, Placer: placer,
+		Adapter: ad, Wake: cfg.Wake(), Name: name, MachinesFile: p.Machines()}
+	if target := cfg.Fleet.Inbox; target != "" {
+		remote := cfg.Fleet.Command
+		opts.Inbox = target
+		opts.Dial = func(ctx context.Context) (io.ReadWriteCloser, error) { return link.Dial(ctx, target, remote) }
+	}
+	d := daemon.New(opts)
+	role := "inbox machine"
+	if cfg.Fleet.Inbox != "" {
+		role = "spoke of " + cfg.Fleet.Inbox
+	}
+	logger.Printf("machine %s (%s), adapter %s, wake %v", name, role, ad.Name(), cfg.Wake())
 	if err := d.Listen(p.Socket()); err != nil {
 		return err
 	}
@@ -62,6 +78,18 @@ func cmdDaemon(args []string) error {
 	defer stop()
 	logger.Printf("%s listening on %s", buildinfo.Version, p.Socket())
 	return d.Serve(ctx)
+}
+
+// cmdBridge is what a spoke runs over ssh (SPEC §13a): it copies the ssh
+// session's stdio to this machine's daemon socket. Nothing listens on the
+// network.
+func cmdBridge(args []string) error {
+	parse(newFlags("bridge"), args)
+	p, err := config.DefaultPaths()
+	if err != nil {
+		return err
+	}
+	return link.Bridge(os.Stdin, os.Stdout, p.Socket())
 }
 
 // chooseAdapter picks by config, else by whether this daemon runs under

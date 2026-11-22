@@ -42,6 +42,15 @@ type Placer struct {
 	SelfPID int
 	// MaxDepth bounds the ancestry walk; 64 when zero.
 	MaxDepth int
+	// TTY, when set, says whether a process has a controlling terminal.
+	// Outside every pane, only a caller at a terminal is the person; one
+	// without is detached (§9). nil keeps every outside caller the person.
+	TTY Terminals
+}
+
+// Terminals is what the kernel says about a process's controlling terminal.
+type Terminals interface {
+	HasTTY(pid int) bool
 }
 
 // Place decides for one connection. The order is the trust order: a pane
@@ -60,6 +69,9 @@ func (p *Placer) Place(conn net.Conn, token string) Placement {
 		if name, ok := p.Tokens.Lookup(token); ok {
 			return Placement{Proof: store.ProofToken, Principal: name, PID: pid}
 		}
+	}
+	if p.TTY != nil && (pid <= 0 || !p.TTY.HasTTY(pid)) {
+		return Placement{Proof: store.ProofDetached, PID: pid}
 	}
 	return Placement{Proof: store.ProofOutsidePane, PID: pid}
 }

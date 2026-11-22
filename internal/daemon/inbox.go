@@ -61,6 +61,12 @@ func (d *Daemon) askHuman(c *conn, a AskHumanArgs) (any, error) {
 	if from == store.Human {
 		return nil, proto.Errorf(proto.CodeBadRequest, "the person cannot ask-human")
 	}
+	if d.isSpoke() {
+		if err := validAskHuman(a); err != nil {
+			return nil, err
+		}
+		return d.askHumanRemote(from, a)
+	}
 	timeout := time.Duration(a.TimeoutMS) * time.Millisecond
 
 	var item store.Item
@@ -74,16 +80,8 @@ func (d *Daemon) askHuman(c *conn, a AskHumanArgs) (any, error) {
 			return d.askHumanClosed(it)
 		}
 	} else {
-		if len(a.Text) > MaxQuestion {
-			return nil, proto.Errorf(proto.CodeBadRequest, "a question is one line of at most %d bytes; put details in mail first", MaxQuestion)
-		}
-		if len(a.Options) > MaxOptions {
-			return nil, proto.Errorf(proto.CodeBadRequest, "at most %d options", MaxOptions)
-		}
-		for _, o := range a.Options {
-			if o == "" || len(o) > 40 {
-				return nil, proto.Errorf(proto.CodeBadRequest, "an option is 1 to 40 characters")
-			}
+		if err := validAskHuman(a); err != nil {
+			return nil, err
 		}
 		if err := d.checkAsk(from, store.Human); err != nil {
 			return nil, err
@@ -122,6 +120,21 @@ func (d *Daemon) askHuman(c *conn, a AskHumanArgs) (any, error) {
 		return d.askHumanClosed(it)
 	}
 	return d.waitReply(ch, from, item, timeout)
+}
+
+func validAskHuman(a AskHumanArgs) error {
+	if len(a.Text) > MaxQuestion {
+		return proto.Errorf(proto.CodeBadRequest, "a question is one line of at most %d bytes; put details in mail first", MaxQuestion)
+	}
+	if len(a.Options) > MaxOptions {
+		return proto.Errorf(proto.CodeBadRequest, "at most %d options", MaxOptions)
+	}
+	for _, o := range a.Options {
+		if o == "" || len(o) > 40 {
+			return proto.Errorf(proto.CodeBadRequest, "an option is 1 to 40 characters")
+		}
+	}
+	return nil
 }
 
 func (d *Daemon) waitReply(ch chan store.Message, from store.Address, item store.Item, timeout time.Duration) (any, error) {

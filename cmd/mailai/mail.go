@@ -275,14 +275,24 @@ func cmdPing(args []string) error {
 		return err
 	}
 	defer c.Close()
-	var r map[string]string
+	var r daemon.PingResult
 	if err := c.Call("ping", nil, &r); err != nil {
 		return err
 	}
 	if jsonOut {
 		return printJSON(r)
 	}
-	fmt.Println("pong", r["pong"])
+	fmt.Println("pong", r.Pong)
+	switch {
+	case r.Inbox != "":
+		fmt.Printf("machine %s, spoke: link to inbox machine %s is %s\n", r.Machine, r.Inbox, r.Link)
+	case r.Machine != "":
+		links := "none"
+		if len(r.Links) > 0 {
+			links = strings.Join(r.Links, ", ")
+		}
+		fmt.Printf("machine %s, inbox machine: spokes linked: %s\n", r.Machine, links)
+	}
 	return nil
 }
 
@@ -299,6 +309,10 @@ func cmdWhoami(args []string) error {
 	}
 	if jsonOut {
 		return printJSON(w)
+	}
+	if w.Principal == "" {
+		fmt.Printf("nobody (%s: no terminal and no token, so not the person; pass --from)\n", w.Proof)
+		return nil
 	}
 	fmt.Printf("%s (%s)\n", w.Principal, w.Proof)
 	return nil

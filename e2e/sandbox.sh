@@ -1,7 +1,8 @@
 #!/bin/sh
 # Sandbox: three throwaway Linux machines (s1 s2 s3) running the mailai
 # built from this working tree, each with its own daemon, reachable from
-# each other over real ssh (for the fleet, milestone 6). Nothing on this
+# each other over real ssh. s1 is the inbox machine; s2 and s3 are spokes
+# linked to it (SPEC §13a). Nothing on this
 # Mac is touched: no daemon, no ~/.local/share/mailai.
 #
 #   e2e/sandbox.sh up          build, start the boxes and their daemons
@@ -21,7 +22,20 @@ boxes="s1 s2 s3"
 
 cname() { echo "mailai-sandbox-$1"; }
 sh_in() { box=$1; shift; docker exec -it -u dev -e HOME=/home/dev -e TERM="${TERM:-xterm-256color}" "$(cname "$box")" "$@"; }
-run() { box=$1; shift; docker exec -i -u dev -e HOME=/home/dev "$(cname "$box")" "$@"; }
+# run gives the command a terminal when it has one: outside a pane, only a
+# caller at a terminal is the person (SPEC §9). Scripts with no terminal
+# can use `run_as_person`, which wraps the command in script(1).
+run() {
+	box=$1; shift
+	if [ -t 0 ] && [ -t 1 ]; then docker exec -it -u dev -e HOME=/home/dev "$(cname "$box")" "$@"
+	else docker exec -i -u dev -e HOME=/home/dev "$(cname "$box")" "$@"; fi
+}
+run_as_person() {
+	box=$1; shift
+	cmd=""
+	for a in "$@"; do cmd="$cmd '$(printf '%s' "$a" | sed "s/'/'\\\\''/g")'"; done
+	docker exec -i -u dev -e HOME=/home/dev "$(cname "$box")" script -qec "$cmd" /dev/null </dev/null
+}
 # WEBPORT on this Mac reaches the web UI on s1 (loopback inside the box, forwarded by socat).
 WEBPORT=${MAILAI_SANDBOX_WEBPORT:-8471}
 
@@ -31,8 +45,25 @@ build() {
 	arch=$(docker info --format '{{.Architecture}}' | sed 's/x86_64/amd64/; s/aarch64/arm64/')
 	echo "building $version for linux/$arch"
 	CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -ldflags "-X github.com/nadavushka-dev/mailai/internal/buildinfo.Version=$version" -o "$dir/bin/mailai.new" ./cmd/mailai
-	# The boxes bind-mount the file, so write into the same inode: cp, not rename.
+}
+
+# install puts the new binary in place. The boxes bind-mount the file, so it
+# must be the same inode (cp, not rename), and nothing may run from it while
+# it is overwritten: a running daemon would crash.
+install_bin() {
 	cp "$dir/bin/mailai.new" "$dir/bin/mailai" && rm -f "$dir/bin/mailai.new"
+}
+
+# fleet_config makes s1 the inbox machine and s2, s3 its spokes (SPEC §13a):
+# each spoke links to s1 over real ssh and runs `mailai bridge` there.
+fleet_config() {
+	for b in $boxes; do
+		if [ "$b" = s1 ]; then
+			run "$b" sh -c 'mkdir -p ~/.config/mailai && printf "[fleet]\nname = \"s1\"\n" > ~/.config/mailai/config.toml'
+		else
+			run "$b" sh -c "mkdir -p ~/.config/mailai && printf '[fleet]\nname = \"$b\"\ninbox = \"s1\"\n' > ~/.config/mailai/config.toml"
+		fi
+	done
 }
 
 start_daemon() {
@@ -66,6 +97,8 @@ up() {
 		cp "$dir/keys/id_ed25519.pub" "$dir/keys/authorized_keys"
 	fi
 	build
+	for b in $boxes; do docker rm -f "$(cname "$b")" >/dev/null 2>&1 || true; done
+	install_bin
 	docker network inspect "$net" >/dev/null 2>&1 || docker network create "$net" >/dev/null
 	for b in $boxes; do
 		docker rm -f "$(cname "$b")" >/dev/null 2>&1 || true
@@ -75,8 +108,9 @@ up() {
 		docker run -d --name "$(cname "$b")" --hostname "$b" --network "$net" --network-alias "$b" $publish \
 			-v "$dir/bin/mailai:/usr/local/bin/mailai:ro" -v "$dir/keys:/keys:ro" "$image" >/dev/null
 		docker exec "$(cname "$b")" sh -c 'cp /keys/id_ed25519 /home/dev/.ssh/id && chown dev:dev /home/dev/.ssh/id && chmod 600 /home/dev/.ssh/id'
-		start_daemon "$b"
 	done
+	fleet_config
+	for b in $boxes; do start_daemon "$b"; done
 	echo
 	echo "sandbox is up: $boxes, one mailai daemon each. try:"
 	echo "  e2e/sandbox.sh shell s1      # then: mailai whoami; mailai send worker hi; mailai read -w worker"
@@ -87,7 +121,9 @@ restart() {
 	ensure
 	build
 	for b in $boxes; do stop_daemon "$b"; done
-	sleep 0.3
+	for b in $boxes; do run "$b" sh -c 'while pgrep -x mailai >/dev/null; do sleep 0.1; done'; done
+	install_bin
+	fleet_config
 	for b in $boxes; do start_daemon "$b"; done
 	echo "daemons restarted on $boxes"
 }
@@ -120,6 +156,7 @@ web) web ;;
 seed) seed ;;
 shell) ensure; sh_in "${2:?box}" sh -l ;;
 run) shift; ensure; run "$@" ;;
+person) shift; ensure; run_as_person "$@" ;;
 log) run "${2:?box}" cat /home/dev/mailai.log ;;
 *) sed -n '2,14p' "$0"; exit 2 ;;
 esac

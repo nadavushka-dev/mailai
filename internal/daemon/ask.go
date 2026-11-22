@@ -74,6 +74,16 @@ func (d *Daemon) ask(c *conn, a AskArgs) (any, error) {
 	if a.To == "" {
 		return nil, proto.Errorf(proto.CodeBadRequest, "ask needs a recipient")
 	}
+	a.To = d.localize(a.To)
+	if a.To == from {
+		return nil, proto.Errorf(proto.CodeAskCycle, "cannot ask yourself")
+	}
+	if d.isSpoke() && d.offMachine(a.To) {
+		return d.askRemote(from, a)
+	}
+	if err := d.checkRoute(a.To); err != nil {
+		return nil, err
+	}
 	if a.To == from {
 		return nil, proto.Errorf(proto.CodeAskCycle, "cannot ask yourself")
 	}
@@ -111,6 +121,11 @@ func (d *Daemon) ask(c *conn, a AskArgs) (any, error) {
 			// Only a reply addressed to the asker ends the wait; a reply
 			// the recipient sends to someone else in the thread does not.
 			if r.To == from {
+				// SPEC §7: pushed down this connection, so it is not also
+				// an unread notice. Mark before the RPC returns.
+				if _, err := d.st.Read(store.ReadQuery{Mailbox: from, IDs: []uint64{r.ID}, Mark: true}); err != nil {
+					return nil, err
+				}
 				return AskResult{Ask: m, Reply: r}, nil
 			}
 		case <-timer:

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"sync"
 	"time"
@@ -15,7 +16,7 @@ import (
 
 // Client is one connection.
 type Client struct {
-	c      net.Conn
+	c      io.ReadWriteCloser
 	r      *proto.Reader
 	wmu    sync.Mutex
 	mu     sync.Mutex
@@ -33,7 +34,13 @@ func Dial(path string, token string) (*Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("no daemon at %s: %w", path, err)
 	}
-	cl := &Client{c: c, r: proto.NewReader(c), pend: map[uint64]chan proto.Frame{}, events: make(chan proto.Frame, 64), done: make(chan struct{})}
+	return New(c, token)
+}
+
+// New speaks the protocol over any stream: a socket, or an ssh session to
+// another machine's bridge (SPEC §13a).
+func New(c io.ReadWriteCloser, token string) (*Client, error) {
+	cl := &Client{c: c, r: proto.NewReader(c), pend: map[uint64]chan proto.Frame{}, events: make(chan proto.Frame, 256), done: make(chan struct{})}
 	go cl.readLoop()
 	if token != "" {
 		if err := cl.Call("hello", map[string]string{"token": token}, nil); err != nil {

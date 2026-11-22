@@ -47,7 +47,7 @@ Two advantages, both design goals (D12):
 | D3 | Delivery | Mail never types into an agent. An agent learns of mail through a one-line notice holding only a count and a read command, and reads the body itself. Bodies print inside an untrusted fence. (TUIOS, kept.) |
 | D4 | Identity | The daemon decides who sent a message from the connection, never from the request. `from` is a claim shown as one. (TUIOS, kept.) |
 | D5 | Answering | The person answers from the Inbox. A **supervisor** is an agent given a `respond` grant over a scope; its answers are stored and shown as `verified_supervisor:<name>`, distinct from `verified_human`. No pane can grant itself. (New.) |
-| D6 | Multi-machine | mailai machines form their own fleet, linked over ssh, every machine equal, messages relayed through a third machine when two can't reach each other, offline catch-up on reconnect. The pattern is Enigma's. Code from Enigma (link, bridge, proto framing, fleet records, service install, machine add, upgrade) is copied into this repo verbatim where it fits and adapted where it doesn't. Copied, never imported: the two tools share no module and evolve apart. |
+| D6 | Multi-machine | **v1 is a star (§13a, decided 2026-11-19):** a daemon on every machine, one of them the *inbox machine*, every other machine linked to it over ssh. The person answers only there. The full mesh below is deferred. mailai machines form their own fleet, linked over ssh, every machine equal, messages relayed through a third machine when two can't reach each other, offline catch-up on reconnect. The pattern is Enigma's. Code from Enigma (link, bridge, proto framing, fleet records, service install, machine add, upgrade) is copied into this repo verbatim where it fits and adapted where it doesn't. Copied, never imported: the two tools share no module and evolve apart. |
 | D7 | Interface | A CLI for everything, usable by agents and scripts, plus a TUI Inbox. Every command takes `--json`. |
 | D8 | Harnesses | Claude Code and Codex first, through their hook systems; Herdr's agent state when inside Herdr. Others later. |
 | D9 | Language | Go. Dependencies: stdlib, bubbletea/bubbles/lipgloss, BurntSushi/toml, fsnotify, modernc.org/sqlite. Anything else needs approval. |
@@ -292,10 +292,16 @@ derives `sender_proof`:
 - **`token`:** the caller presents a per-agent token the daemon issued at
   spawn (`mailai token new <name>`, exported into the agent's environment by
   whoever starts it). Used with the `none` adapter and for headless agents.
-- **`outside_pane`:** same user, outside every known pane, no token. On a
+- **`outside_pane`:** same user, outside every known pane, no token, **at a
+  controlling terminal** (the kernel's `tty_nr` / `e_tdev`). On a
   single-user machine this is, as far as mailai can tell, the person. It is
   what `--from human` from a shell needs; an agent cannot get here from a
   pane except through the out-of-scope routes below.
+- **`detached`** (decided 2026-11-19): outside every pane, no token and **no
+  controlling terminal**: cron, launchd/systemd, a `setsid`/daemonized child
+  an agent left behind, the ssh bridge. It must say `--from <name>` (a
+  claim, never `human`), is never verified, and has none of the person's
+  rights (answer, grant, tokens, web). It may carry a link (§13a).
 - **`link`:** the send arrived over a fleet link. The remote daemon's own
   proof is carried along and shown (`pane@devbox`), but is a claim here.
 
@@ -440,6 +446,45 @@ Pattern and, where it fits, code from Enigma (`internal/link`, `internal/proto` 
 - **Hold policy:** `[hosts] hold_mail = ["build"]` puts mail from that machine into the person's Inbox instead of the recipient's, until released (`mailai release <mid>`). What one machine's agents may do to another's is said per host: `write`, `queue`, `respond`, with `queue` and `respond` off by default across machines.
 - **Setup:** `mailai machine add <ssh-alias>` detects the platform, copies the binary, runs `mailai join`, installs the service and reports which peers it could link to. Same-version-everywhere upgrade over the link, as Enigma does.
 - **Trust:** joining a fleet means trusting every member with code on this machine. Only add machines you control.
+
+## 13a. The star (v1 fleet, decided 2026-11-19)
+
+§13 is the eventual design. v1 ships a cut of it, because the person runs
+many machines but answers from one.
+
+- **Shape.** Every machine runs its own daemon, so asks, hooks, notices and
+  wakes stay local to the agent. One machine is the **inbox machine**. Each
+  other machine (a **spoke**) holds one link to it:
+  `ssh -T -o BatchMode=yes ... <inbox> mailai bridge`, the bridge copying
+  stdio to the inbox daemon's socket. Nothing listens on the network.
+- **Config.** `[fleet] name` is this machine's name (short hostname by
+  default) and prefixes every mid. A spoke sets `[fleet] inbox = "<ssh target>"`.
+  A machine with no `inbox` is an inbox machine and accepts links.
+- **Addresses.** Local agents are bare names. Another machine's agent is
+  `name@machine`. A spoke sends `human`, and every `name@other`, to the
+  inbox machine; the inbox machine stores it and forwards `name@spoke` one
+  hop. `name@<own name>` is local.
+- **Identity.** A link says `link-hello {machine}` and is placed `link`.
+  It is never the person and never verified. What it sends is from
+  `<claimed>@<machine>`; a link cannot claim `human` or an `@`.
+  Messages delivered to a spoke keep the inbox machine's `verified` mark:
+  the spoke trusts its inbox machine (joining is trusting, §13).
+- **Asks wait at home.** A spoke's `ask` and `ask-human` send over the link
+  without blocking it, then wait on the spoke for the reply in the thread.
+  A dropped link or a sleeping laptop does not end the wait.
+- **Delivery.** The inbox machine keeps mail for `name@spoke` in that box,
+  unread until the spoke acknowledges it, and pushes it on the link. On
+  every `link-hello` and every heartbeat (15 s) it resends what is still
+  unread. A spoke drops a mid it already holds: at-least-once, mid-deduped.
+- **Approvals.** A spoke's held permission request is held on the inbox
+  machine through the link and decided from its Inbox. If the link drops,
+  the hook gets no decision and the harness falls back to its own prompt.
+- **Offline.** A spoke whose link is down refuses a send off the machine
+  with `offline`. (A spoke outbox is not in v1.) The inbox machine refuses
+  `name@m` for a machine that never linked.
+- **Not in v1.** Answering from a spoke, relay between spokes without the
+  inbox machine, grants that cross machines, hold policy, `machine add`,
+  service install, upgrades over the link.
 
 ## 14. Engineering
 

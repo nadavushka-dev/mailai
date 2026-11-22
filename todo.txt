@@ -1,2 +1,2 @@
-(D) 2026-10-29 M6 fleet: copy enigma link/bridge/proto framing/service/machine add; routing, outbox, relay, hold policy, upgrades, doctor +m6
+(D) 2026-10-29 M6 fleet (rest of SPEC §13 after the star): service install, machine add, spoke outbox, answering from a spoke, mesh relay, hold policy, upgrades, doctor +m6
 (D) 2026-10-29 M7 polish: MCP server, selectors/--select, stash across machines, notifications, docker e2e, goreleaser + install.sh +m7

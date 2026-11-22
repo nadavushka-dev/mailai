@@ -40,6 +40,18 @@ func EnvVar(pid int, name string) (string, bool) {
 	return ProcargsEnvVar(buf, name)
 }
 
+// HasTTY says whether pid has a controlling terminal (e_tdev != NODEV).
+func HasTTY(pid int) bool {
+	if pid <= 0 {
+		return false
+	}
+	kp, err := unix.SysctlKinfoProc("kern.proc.pid", pid)
+	if err != nil || kp == nil || int(kp.Proc.P_pid) != pid {
+		return false
+	}
+	return kp.Eproc.Tdev != -1 && kp.Eproc.Tdev != 0
+}
+
 // ParentPID returns a process's parent pid from its kinfo_proc.
 func ParentPID(pid int) (int, bool) {
 	if pid <= 0 {

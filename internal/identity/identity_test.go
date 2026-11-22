@@ -97,6 +97,39 @@ func TestNoKernelPID_TokensOnly(t *testing.T) {
 	}
 }
 
+type fakeTTY map[int]bool
+
+func (f fakeTTY) HasTTY(pid int) bool { return f[pid] }
+
+// §9: outside every pane, the person is at a terminal. A caller with no
+// controlling terminal (cron, launchd, a setsid child an agent left behind)
+// is detached, never the person. Panes and tokens do not care.
+func TestNoTerminalIsDetached(t *testing.T) {
+	p := placer(700)
+	p.TTY = fakeTTY{700: true}
+	if pl := p.Place(nil, ""); pl.Proof != store.ProofOutsidePane {
+		t.Fatalf("at a terminal: %+v", pl)
+	}
+	p.TTY = fakeTTY{}
+	if pl := p.Place(nil, ""); pl.Proof != store.ProofDetached || pl.Principal != "" || pl.PID != 700 {
+		t.Fatalf("no terminal: %+v", pl)
+	}
+	if pl := p.Place(nil, "mt_ok"); pl.Proof != store.ProofToken {
+		t.Fatalf("token: %+v", pl)
+	}
+	p = placer(400)
+	p.TTY = fakeTTY{}
+	if pl := p.Place(nil, ""); pl.Proof != store.ProofPane {
+		t.Fatalf("pane: %+v", pl)
+	}
+	// No kernel pid: nothing to ask about, so not the person either.
+	p = placer(0)
+	p.TTY = fakeTTY{0: true}
+	if pl := p.Place(nil, ""); pl.Proof != store.ProofDetached {
+		t.Fatalf("no pid: %+v", pl)
+	}
+}
+
 func TestWalkIsBoundedAndCycleSafe(t *testing.T) {
 	loop := map[int]int{10: 11, 11: 10}
 	p := &Placer{Proc: fakeProc{parent: loop, peer: 10}, Panes: fakePanes{}, MaxDepth: 5}

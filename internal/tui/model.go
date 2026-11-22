@@ -50,6 +50,13 @@ type Model struct {
 	status string
 	errAt  time.Time
 	now    func() time.Time
+
+	// Mail filters (SPEC §12): unread, principal, session, machine.
+	filterUnread  bool
+	filterWho     string
+	filterSession string
+	filterMachine string
+	pendingReply  bool
 }
 
 type inputMode int
@@ -59,6 +66,7 @@ const (
 	modeAnswer
 	modeReply
 	modeDenyMessage
+	modeFilter
 )
 
 // Messages between the program and the model.
@@ -154,6 +162,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.fail(msg.err), nil
 		}
 		m.open, m.openID, m.openTop = msg.msgs, msg.id, 0
+		if m.pendingReply {
+			m.pendingReply = false
+			return m.startReply()
+		}
 		return m, nil
 	case eventMsg:
 		// Any event may change a list; fetch, then keep listening.
@@ -202,7 +214,82 @@ func (m Model) rows() int {
 	if m.view == ViewInbox {
 		return len(m.items)
 	}
-	return len(m.threads)
+	return len(m.filteredThreads())
+}
+
+// filteredThreads applies the Mail filters. An empty text filter matches all.
+func (m Model) filteredThreads() []daemon.ThreadRow {
+	var out []daemon.ThreadRow
+	for _, t := range m.threads {
+		if m.filterUnread && t.Unread == 0 {
+			continue
+		}
+		if m.filterWho != "" && !addrMatch(t.From, t.To, t.LastFrom, m.filterWho) {
+			continue
+		}
+		if m.filterSession != "" && !strings.EqualFold(t.Session, m.filterSession) {
+			continue
+		}
+		if m.filterMachine != "" && !hostMatch(t.From, t.To, t.LastFrom, m.filterMachine) {
+			continue
+		}
+		out = append(out, t)
+	}
+	return out
+}
+
+func localName(a store.Address) string {
+	s := string(a)
+	if i := strings.IndexByte(s, '@'); i >= 0 {
+		return s[:i]
+	}
+	return s
+}
+
+func addrMatch(from, to, last store.Address, who string) bool {
+	who = strings.ToLower(who)
+	for _, a := range []store.Address{from, to, last} {
+		if strings.EqualFold(localName(a), who) {
+			return true
+		}
+	}
+	return false
+}
+
+func hostMatch(from, to, last store.Address, host string) bool {
+	host = strings.ToLower(host)
+	for _, a := range []store.Address{from, to, last} {
+		s := string(a)
+		i := strings.IndexByte(s, '@')
+		if i >= 0 && strings.EqualFold(s[i+1:], host) {
+			return true
+		}
+	}
+	return false
+}
+
+// parseMailFilter reads "name", "session:api", "machine:s2", or a mix.
+// An empty string clears every text filter.
+func parseMailFilter(s string) (who, session, machine string) {
+	for _, tok := range strings.Fields(s) {
+		switch {
+		case strings.HasPrefix(tok, "session:"):
+			session = strings.TrimPrefix(tok, "session:")
+		case strings.HasPrefix(tok, "s:"):
+			session = strings.TrimPrefix(tok, "s:")
+		case strings.HasPrefix(tok, "machine:"):
+			machine = strings.TrimPrefix(tok, "machine:")
+		case strings.HasPrefix(tok, "m:"):
+			machine = strings.TrimPrefix(tok, "m:")
+		case strings.HasPrefix(tok, "principal:"):
+			who = strings.TrimPrefix(tok, "principal:")
+		case strings.HasPrefix(tok, "p:"):
+			who = strings.TrimPrefix(tok, "p:")
+		default:
+			who = tok
+		}
+	}
+	return who, session, machine
 }
 
 func (m Model) updateKeys(k tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -244,8 +331,22 @@ func (m Model) updateKeys(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "o":
-		m.view, m.cursor = ViewInbox, 0
+		m.view, m.cursor, m.open, m.openID = ViewInbox, 0, nil, ""
 		return m, nil
+	case "u":
+		if m.view == ViewMail && m.open == nil {
+			m.filterUnread = !m.filterUnread
+			m.clampCursor()
+		}
+		return m, nil
+	case "f":
+		if m.view != ViewMail || m.open != nil {
+			return m, nil
+		}
+		m.mode = modeFilter
+		m.input.Placeholder = "name, session:…, machine:… — empty clears"
+		m.input.SetValue("")
+		return m, m.input.Focus()
 	case "A":
 		m.showAll = !m.showAll
 		return m, m.refresh()
@@ -262,11 +363,20 @@ func (m Model) updateKeys(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
-		if m.cursor < len(m.threads) {
-			return m, m.loadThread(m.threads[m.cursor].ThreadID)
+		rows := m.filteredThreads()
+		if m.cursor < len(rows) {
+			return m, m.loadThread(rows[m.cursor].ThreadID)
 		}
 		return m, nil
 	case "r":
+		if m.view == ViewMail && m.open == nil {
+			rows := m.filteredThreads()
+			if m.cursor < len(rows) {
+				m.pendingReply = true
+				return m, m.loadThread(rows[m.cursor].ThreadID)
+			}
+			return m, nil
+		}
 		return m.startReply()
 	case "a", "y":
 		if it, ok := m.current(); ok && it.Kind == store.ItemApproval && m.view == ViewInbox {
@@ -363,6 +473,10 @@ func (m Model) updateInput(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			return m.act(func() error { return m.b.Reply(replyTo.MID, replyTo.From, text) })
+		case modeFilter:
+			m.filterWho, m.filterSession, m.filterMachine = parseMailFilter(text)
+			m.clampCursor()
+			return m, nil
 		}
 		return m, nil
 	}

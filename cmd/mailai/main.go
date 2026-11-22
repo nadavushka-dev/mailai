@@ -44,13 +44,20 @@ harnesses
 
 daemon
   daemon run              run the daemon in the foreground
-  ping                    is the daemon up
+  ping                    is the daemon up, and this machine's link in the star
+  bridge                  what a spoke runs over ssh to reach this machine's daemon
   whoami                  how the daemon places this caller
   version
 
 Every command takes --json. MAILAI_SOCKET points at a daemon elsewhere.
 MAILAI_TOKEN makes this process the agent the token was issued to.
 MAILAI_ADAPTER=herdr|none overrides the adapter the daemon picks.
+
+Several machines (a star): one inbox machine, where the person answers.
+On every other machine, config.toml has
+  [fleet]
+  inbox = "<ssh target of the inbox machine>"
+and its agents reach the person as human, other machines' agents as name@machine.
 `
 
 func main() {
@@ -104,6 +111,8 @@ func main() {
 		err = cmdSkill(args)
 	case "ping":
 		err = cmdPing(args)
+	case "bridge":
+		err = cmdBridge(args)
 	case "whoami":
 		err = cmdWhoami(args)
 	case "tui":

@@ -37,6 +37,13 @@ func resolveFrom(pl Placement, claimed store.Address) (store.Address, error) {
 		}
 		return pl.Principal, nil
 	}
+	if pl.Proof == store.ProofDetached {
+		// No terminal: not the person, so it must say who it is (§9).
+		if claimed == "" || claimed == store.Human {
+			return "", errForbidden("this caller has no terminal and is not the person; pass --from <name>")
+		}
+		return claimed, nil
+	}
 	if claimed == "" {
 		return store.Human, nil
 	}

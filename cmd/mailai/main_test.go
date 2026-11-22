@@ -46,6 +46,10 @@ func startEnv(t *testing.T) *env {
 	home := t.TempDir()
 	sock := filepath.Join(os.TempDir(), "mailai-cli-"+id+".sock")
 	e := &env{t: t, home: home, sock: sock}
+	// Test processes have no terminal; the person check is covered by the
+	// identity and daemon tests.
+	os.MkdirAll(filepath.Join(home, "config"), 0o700)
+	os.WriteFile(filepath.Join(home, "config", "config.toml"), []byte("[identity]\nrequire_terminal = false\n"), 0o600)
 	cmd := e.cmd("daemon", "run")
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)

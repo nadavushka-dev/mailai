@@ -15,3 +15,5 @@ x 2026-10-29 2026-10-29 M3 harness manifests (TOML), bundled claude-code + codex
 x 2026-10-29 2026-10-29 M3 delivery: notice once per message, wake 5s/30s rules, rebuilt before typing, queue verb +m3
 x 2026-10-29 2026-10-29 M4 grants: read/write/respond/admin, scopes, delegation depth 2 narrower only, verified supervisor, held approvals via hook +m4
 x 2026-10-29 2026-10-29 M5 TUI (bubbletea): Inbox + Mail views, reply signed; web UI on loopback with one-time token, SSE, parity +m5
+x 2026-11-19 2026-11-19 Star fleet (SPEC 13a): inbox machine + ssh-linked spokes, mailai bridge, name@machine routing, asks wait at home, approvals held on the inbox machine, redelivery until acked +m6
+x 2026-11-19 2026-11-19 Bugs: ask reply left unread; name@host stored locally. TUI o/r/u/f; web page redesign +m5

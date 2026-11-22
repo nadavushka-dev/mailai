@@ -46,6 +46,14 @@ func (d *Daemon) holdApproval(c *conn, a HoldApprovalArgs) (any, error) {
 	if who == "" {
 		return nil, errForbidden("an approval hold needs a placed caller (the agent's own hook)")
 	}
+	// On a spoke the person decides on the inbox machine (SPEC §13a).
+	if d.isSpoke() {
+		return d.holdRemote(who, a)
+	}
+	return d.holdApprovalAs(who, a)
+}
+
+func (d *Daemon) holdApprovalAs(who store.Address, a HoldApprovalArgs) (any, error) {
 	if a.Tool == "" {
 		return nil, proto.Errorf(proto.CodeBadRequest, "hold-approval needs the tool name")
 	}

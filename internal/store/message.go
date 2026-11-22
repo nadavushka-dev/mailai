@@ -35,6 +35,9 @@ const (
 	ProofOutsidePane Proof = "outside_pane"
 	ProofLink        Proof = "link"
 	ProofToken       Proof = "token"
+	// ProofDetached is outside every pane with no controlling terminal
+	// (cron, a service, a setsid child): a claim, never the person.
+	ProofDetached Proof = "detached"
 )
 
 // Attachment is a reference to a file, never its bytes (SPEC §6).

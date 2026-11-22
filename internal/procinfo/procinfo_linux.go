@@ -42,26 +42,41 @@ func EnvVar(pid int, name string) (string, bool) {
 	return EnvironVar(data, name)
 }
 
-// ParentPID returns a process's parent pid, field 4 of /proc/<pid>/stat.
-func ParentPID(pid int) (int, bool) {
+// statFields are the fields of /proc/<pid>/stat after comm: state(3)
+// ppid(4) pgrp(5) session(6) tty_nr(7) ... comm (field 2) is in
+// parentheses and may hold spaces, so count from after the last ')'.
+func statFields(pid int) []string {
 	if pid <= 0 {
-		return 0, false
+		return nil
 	}
 	data, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/stat")
 	if err != nil {
-		return 0, false
+		return nil
 	}
-	// comm (field 2) is in parentheses and may hold spaces, so count from
-	// after the last ')': state(3) ppid(4) ...
 	stat := string(data)
 	rparen := strings.LastIndexByte(stat, ')')
 	if rparen < 0 {
-		return 0, false
+		return nil
 	}
-	fields := strings.Fields(stat[rparen+1:])
+	return strings.Fields(stat[rparen+1:])
+}
+
+// ParentPID returns a process's parent pid, field 4 of /proc/<pid>/stat.
+func ParentPID(pid int) (int, bool) {
+	fields := statFields(pid)
 	if len(fields) < 2 {
 		return 0, false
 	}
 	v, err := strconv.Atoi(fields[1])
 	return v, err == nil
+}
+
+// HasTTY says whether pid has a controlling terminal (tty_nr, field 7).
+func HasTTY(pid int) bool {
+	fields := statFields(pid)
+	if len(fields) < 5 {
+		return false
+	}
+	v, err := strconv.Atoi(fields[4])
+	return err == nil && v != 0
 }

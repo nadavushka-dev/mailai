@@ -11,5 +11,8 @@ func PeerPID(net.Conn) int { return 0 }
 // EnvVar cannot be read here.
 func EnvVar(int, string) (string, bool) { return "", false }
 
+// HasTTY cannot be read here: no caller is placed at a terminal.
+func HasTTY(int) bool { return false }
+
 // ParentPID cannot be read here.
 func ParentPID(int) (int, bool) { return 0, false }

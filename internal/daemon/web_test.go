@@ -50,6 +50,16 @@ func TestWeb_TokenCookieAndInboxActions(t *testing.T) {
 	if !strings.Contains(body, "<title>mailai</title>") {
 		t.Fatalf("page: %.80s", body)
 	}
+	// The page is the Inbox, not a prompt() dialog: a composer and the
+	// mail filters the TUI has are in the document itself.
+	if strings.Contains(body, "prompt(") {
+		t.Fatal("page uses prompt()")
+	}
+	for _, need := range []string{`id="composer"`, `id="f-who"`, `id="f-session"`, `id="f-machine"`, `id="f-unread"`} {
+		if !strings.Contains(body, need) {
+			t.Fatalf("page missing %s", need)
+		}
+	}
 	// The token is one-time.
 	fresh := &http.Client{Timeout: 5 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	r2, _ := fresh.Get(ws.URL)

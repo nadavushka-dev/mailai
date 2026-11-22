@@ -93,11 +93,11 @@ func (m Model) footer(w int) string {
 	var parts []string
 	switch {
 	case m.open != nil:
-		parts = []string{key("r", "reply"), key("j/k", "scroll"), key("esc", "back")}
+		parts = []string{key("r", "reply"), key("j/k", "scroll"), key("esc", "back"), key("o", "oldest")}
 	case m.view == ViewInbox:
-		parts = []string{key("enter", "open"), key("r", "answer"), key("1-8", "pick"), key("a", "allow"), key("d", "deny"), key("x", "dismiss"), key("A", "all")}
+		parts = []string{key("enter", "open"), key("r", "answer"), key("1-8", "pick"), key("a", "allow"), key("d", "deny"), key("x", "dismiss"), key("A", "all"), key("o", "oldest")}
 	default:
-		parts = []string{key("enter", "open thread")}
+		parts = []string{key("enter", "open"), key("r", "reply"), key("u", "unread"), key("f", "filter"), key("o", "oldest")}
 	}
 	parts = append(parts, key("tab", "view"), key("q", "quit"))
 	return fit(" "+strings.Join(parts, "  "), w)
@@ -110,7 +110,23 @@ func (m Model) listTitle() string {
 		}
 		return "Inbox · waiting on you"
 	}
-	return "Mail · every thread"
+	title := "Mail"
+	if m.filterUnread {
+		title += " · unread"
+	}
+	if m.filterWho != "" {
+		title += " · " + m.filterWho
+	}
+	if m.filterSession != "" {
+		title += " · session " + m.filterSession
+	}
+	if m.filterMachine != "" {
+		title += " · " + m.filterMachine
+	}
+	if title == "Mail" {
+		return "Mail · every thread"
+	}
+	return title
 }
 
 func (m Model) listBody(w, h int) string {
@@ -127,8 +143,15 @@ func (m Model) listBody(w, h int) string {
 	if len(m.threads) == 0 {
 		return center(styleDim.Render("no mail yet"), w, h)
 	}
+	threads := m.filteredThreads()
+	if len(threads) == 0 {
+		if len(m.threads) == 0 {
+			return center(styleDim.Render("no mail yet"), w, h)
+		}
+		return center(styleDim.Render("no threads match"), w, h)
+	}
 	var rows []string
-	for i, t := range m.threads {
+	for i, t := range threads {
 		rows = append(rows, m.threadRow(t, w, i == m.cursor))
 	}
 	return strings.Join(window(rows, m.cursor, h), "\n")
@@ -166,7 +189,11 @@ func (m Model) itemRow(it store.Item, w int, sel bool) string {
 			state = styleSuper.Render(it.ClosedBy + " by " + it.DecidedBy)
 		}
 	}
-	left := fmt.Sprintf("%s %s %s ", styleDim.Render(fmt.Sprintf("#%-3d", it.ID)), kindStyled, styleBold.Render(fit(string(it.From), 12)))
+	who := string(it.From)
+	if it.Session != "" {
+		who += " · " + it.Session
+	}
+	left := fmt.Sprintf("%s %s %s ", styleDim.Render(fmt.Sprintf("#%-3d", it.ID)), kindStyled, styleBold.Render(fit(who, 22)))
 	room := w - lipgloss.Width(left) - lipgloss.Width(state) - 2
 	row := padBetween(left+fit(oneLine(q), room), state, w)
 	if sel {
@@ -269,9 +296,14 @@ func (m Model) detailBody(w, h int) string {
 		}
 		return b.String()
 	}
-	if m.cursor < len(m.threads) {
-		t := m.threads[m.cursor]
-		return fmt.Sprintf("%s\n%s → %s\n%d messages, %d unread\n\n%s", styleBold.Render(orFirst(t)), t.From, t.To, t.Count, t.Unread, styleDim.Render("enter opens the thread"))
+	threads := m.filteredThreads()
+	if m.cursor < len(threads) {
+		t := threads[m.cursor]
+		where := ""
+		if t.Session != "" {
+			where = "\nsession " + t.Session
+		}
+		return fmt.Sprintf("%s\n%s → %s%s\n%d messages, %d unread\n\n%s", styleBold.Render(orFirst(t)), t.From, t.To, where, t.Count, t.Unread, styleDim.Render("enter opens the thread, r replies"))
 	}
 	return center(styleDim.Render("nothing selected"), w, h)
 }

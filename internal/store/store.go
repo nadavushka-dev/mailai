@@ -248,6 +248,59 @@ func (s *Store) Send(r SendRequest) (Message, error) {
 	return *m, nil
 }
 
+// Accept stores a message minted on another machine (SPEC §13a) in box,
+// keeping its mid, thread and trust fields, with a local id and unread. A
+// mid already held is not stored twice: fresh is false and the held copy
+// is returned.
+func (s *Store) Accept(box Address, in Message) (m Message, fresh bool, err error) {
+	if in.MID == "" || box == "" {
+		return Message{}, false, ErrNoRecipient
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if held, ok := s.byMID[in.MID]; ok {
+		return *held, false, nil
+	}
+	c := in
+	c.Options = append([]string(nil), in.Options...)
+	c.Attachments = append([]Attachment(nil), in.Attachments...)
+	c.ReadAt, c.SeenAt, c.WasUnread, c.WasSeen = 0, 0, false, false
+	if c.ThreadID == "" {
+		c.ThreadID = c.MID
+	}
+	s.nextID++
+	c.ID = s.nextID
+	c.box = box
+	mb := s.box(box)
+	if err := s.makeRoom(box, mb, c.size()); err != nil {
+		s.nextID--
+		return Message{}, false, err
+	}
+	if s.p != nil {
+		if err := s.p.Insert(box, &c); err != nil {
+			s.nextID--
+			return Message{}, false, err
+		}
+	}
+	p := &c
+	mb.msgs = append(mb.msgs, p)
+	mb.bytes += p.size()
+	s.byMID[p.MID] = p
+	s.attend(p)
+	return *p, true, nil
+}
+
+// Get returns a copy of the message with this mid, wherever it is held.
+func (s *Store) Get(mid string) (Message, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	m, ok := s.byMID[mid]
+	if !ok {
+		return Message{}, false
+	}
+	return *m, true
+}
+
 // attend keeps the Inbox in step with a stored message (D13): an ask to
 // human opens an item; a verified reply from human in an item's thread
 // closes it as answered. Plain mail opens nothing.
