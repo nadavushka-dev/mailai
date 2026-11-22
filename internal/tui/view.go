@@ -202,6 +202,9 @@ func (m Model) itemRow(it store.Item, w int, sel bool) string {
 		if it.DecidedBy != "" && it.DecidedBy != "human" {
 			state = styleSuper.Render(it.ClosedBy + " by " + it.DecidedBy)
 		}
+		if it.ClosedBy == store.ClosedInSession {
+			state = styleOK.Render(daemon.InSessionBadge)
+		}
 	}
 	who := string(it.From)
 	if it.Session != "" {
@@ -223,10 +226,14 @@ func (m Model) recentRow(it store.Item, w int) string {
 	if it.Kind == store.ItemApproval {
 		q = it.Subject + ": " + it.Question
 	}
-	how := daemon.ClosedHow(it) + " · " + ago(m.now(), it.ClosedAt)
+	when := " · " + ago(m.now(), it.ClosedAt)
+	how := styleDim.Render(daemon.ClosedHow(it) + when)
+	if it.ClosedBy == store.ClosedInSession {
+		how = styleOK.Render(daemon.InSessionBadge) + styleDim.Render(when)
+	}
 	left := fmt.Sprintf("#%-3d %s %s ", it.ID, fit(string(it.Kind), 14), fit(string(it.From), 22))
 	room := w - lipgloss.Width(left) - lipgloss.Width(how) - 2
-	return styleDim.Render(padBetween(left+fit(oneLine(q), room), how, w))
+	return padBetween(styleDim.Render(left+fit(oneLine(q), room)), how, w)
 }
 
 // clock is the local time of day of a timestamp, for notes.

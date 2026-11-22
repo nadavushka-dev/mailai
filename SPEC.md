@@ -289,7 +289,9 @@ knows, and tells the agent nothing (D12).
 - **What the person sees.** The Inbox (TUI and web) has a dim "Recently
   closed" strip: items closed in the last hour, newest first, with how (by
   you, by supervisor:<name>, timeout, in session, dismissed). Open items
-  carry the maybe badge. A Mail thread shows a one-line note rendered from
+  carry the maybe badge; an item closed `in_session` carries the
+  "answered in session" badge (green) in the strip, the all list and its
+  detail, so an answer given outside mailai stands out. A Mail thread shows a one-line note rendered from
   its item ("answered in the session at 10:42"); no message is stored.
   `mailai inbox` shows the badge, `mailai inbox --closed` lists recently
   closed with how; `--json` carries `closed_by`, `decided_by` and

@@ -40,6 +40,10 @@ func validSignal(s string) bool {
 // MaybeBadge is how an open item marked maybe_in_session_at is shown.
 const MaybeBadge = "maybe answered in session"
 
+// InSessionBadge is how an item closed in_session is shown: the person
+// answered it outside mailai, in the agent's own session.
+const InSessionBadge = "answered in session"
+
 // ClosedHow says in a few words how an item closed, for the person: by you,
 // by supervisor:<name>, in session, dismissed, timeout.
 func ClosedHow(it store.Item) string {

@@ -88,13 +88,16 @@
   #list, #read { min-height: 0; overflow: auto; }
   .left { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--line); }
   #list { flex: 1; }
-  #recent { border-top: 1px solid var(--line); max-height: 40%; overflow: auto; opacity: .62; }
+  #recent { border-top: 1px solid var(--line); max-height: 40%; overflow: auto; }
+  #recent h3, .recent-row > span, .recent-row .ago { opacity: .62; }
+  .recent-row > span.how { opacity: 1; }
   #recent[hidden] { display: none; }
   #recent h3 { margin: 0; padding: 8px 16px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); font-weight: 600; }
   .recent-row { display: grid; grid-template-columns: auto 1fr auto; gap: 2px 10px; padding: 6px 16px; font-size: 13px; color: var(--dim); border-bottom: 1px solid var(--line); }
   .recent-row .q { grid-column: 1 / -1; color: var(--dim); }
   .badge { font-size: 11px; border: 1px solid currentColor; border-radius: 999px; padding: 0 6px; white-space: nowrap; }
   .badge.maybe { color: var(--super); }
+  .badge.insession { color: var(--ok); }
   .sysnote { color: var(--dim); font-size: 13px; font-style: italic; margin: 0 0 16px; }
   .row {
     display: grid;
@@ -227,6 +230,10 @@
   };
   const hhmm = ns => new Date(ns/1e6).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', hour12:false});
   const maybeBadge = '<span class="badge maybe">maybe answered in session</span>';
+  const inSessionBadge = '<span class="badge insession">answered in session</span>';
+  // closedState is how a closed item reads: the badge when the person
+  // answered it in the agent's session, else plain words.
+  const closedState = it => it.closed_by === 'in_session' ? inSessionBadge : esc(closedHow(it));
   const typing = () => {
     const a = document.activeElement;
     return a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA');
@@ -310,7 +317,7 @@
         const it = row;
         const q = it.kind === 'approval' ? `${it.subject||''}: ${it.question}` : it.question;
         const where = it.session ? ` · ${esc(it.session)}` : '';
-        const state = it.closed_at ? esc(closedHow(it)) : it.maybe_in_session_at ? maybeBadge : `waiting ${ago(it.opened_at)}`;
+        const state = it.closed_at ? closedState(it) : it.maybe_in_session_at ? maybeBadge : `waiting ${ago(it.opened_at)}`;
         return `<button class="row${i===selected?' on':''}" role="option" aria-selected="${i===selected}" data-i="${i}"><span class="kind${it.risky?' risky':''}">${it.risky?'risky ':''}${esc(it.kind)}</span><span class="from">${esc(it.from)}${where}</span><span class="meta">${state}</span><span class="q">${esc(q)}</span></button>`;
       }
       const t = row;
@@ -329,7 +336,7 @@
     if (!show) return;
     $('#recent-list').innerHTML = recent.map(it => {
       const q = it.kind === 'approval' ? `${it.subject||''}: ${it.question}` : it.question;
-      return `<div class="recent-row"><span class="kind">#${it.id} ${esc(it.kind)}</span><span>${esc(it.from)}</span><span class="meta">${esc(closedHow(it))} · ${ago(it.closed_at)}</span><span class="q">${esc(q)}</span></div>`;
+      return `<div class="recent-row"><span class="kind">#${it.id} ${esc(it.kind)}</span><span>${esc(it.from)}</span><span class="meta how">${closedState(it)}<span class="ago"> · ${ago(it.closed_at)}</span></span><span class="q">${esc(q)}</span></div>`;
     }).join('');
   }
 
@@ -358,7 +365,7 @@
       }
       const q = it.kind === 'approval' ? `${it.subject||''}: ${it.question}` : it.question;
       const maybe = !it.closed_at && it.maybe_in_session_at ? `<div class="meta">${maybeBadge} at ${hhmm(it.maybe_in_session_at)}; still open, Dismiss closes it</div>` : '';
-      detail.innerHTML = `<div class="eyebrow">${it.risky?'risky ':''}${esc(it.kind)} · ${esc(it.from)}</div><h2>${esc(q)}</h2><div class="meta">${where}${it.closed_at ? ' · '+esc(closedHow(it)) : ''}</div>${maybe}<div class="acts">${acts}</div>`;
+      detail.innerHTML = `<div class="eyebrow">${it.risky?'risky ':''}${esc(it.kind)} · ${esc(it.from)}</div><h2>${esc(q)}</h2><div class="meta">${where}${it.closed_at ? ' · '+closedState(it) : ''}</div>${maybe}<div class="acts">${acts}</div>`;
       return;
     }
     const t = visibleThreads()[selected];
