@@ -23,6 +23,8 @@ type Backend interface {
 	Answer(item uint64, text, message string) error
 	Dismiss(item uint64) error
 	Reply(mid string, to store.Address, text string) error
+	// MarkRead marks these of the person's own messages read.
+	MarkRead(ids []uint64) error
 	// Events delivers daemon events; nil when not subscribed.
 	Events() <-chan proto.Frame
 }
@@ -76,6 +78,13 @@ func (l Live) Dismiss(item uint64) error {
 
 func (l Live) Reply(mid string, to store.Address, text string) error {
 	return l.C.Call("send", daemon.SendArgs{To: to, Text: text, ReplyTo: mid}, nil)
+}
+
+func (l Live) MarkRead(ids []uint64) error {
+	if len(ids) == 0 {
+		return nil // no ids would read the whole mailbox
+	}
+	return l.C.Call("read", daemon.ReadArgs{Mailbox: store.Human, IDs: ids}, nil)
 }
 
 func (l Live) Events() <-chan proto.Frame {

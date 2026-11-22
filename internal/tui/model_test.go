@@ -25,7 +25,11 @@ type fake struct {
 	// recent is what closed lately; byThread the items of a thread (§7a).
 	recent   []store.Item
 	byThread map[string][]store.Item
+	// marked are the id sets MarkRead was called with.
+	marked [][]uint64
 }
+
+func (f *fake) MarkRead(ids []uint64) error { f.marked = append(f.marked, ids); return nil }
 
 func (f *fake) Whoami() (daemon.WhoamiResult, error)      { return f.who, nil }
 func (f *fake) Inbox(all bool) ([]store.Item, error)      { return f.items, nil }

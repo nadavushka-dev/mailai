@@ -479,7 +479,14 @@ the pane's thread, `r` replies (signed as the person), `a`/`d` approve or
 deny a held request, `x` dismisses (`d` too, on an item marked maybe
 answered in session), `o` jumps to the oldest item. Under the open items, a
 dim Recently closed strip says what closed in the last hour and how (§7a). Mail
-lists every thread with filters by session, machine, principal and unread.
+lists every thread with filters by session, machine, principal and unread;
+`t` narrows it to the person's own threads (started from or to `human`) or
+to those between agents, and the principal filter follows one agent through
+every thread it is in. Opening a thread marks the person's own mail in it
+read, never an agent's. In a thread between agents `r` joins it as the
+person, writing to every agent in it by default (`tab` picks one); the
+web UI reads along by default and shows when each agent read (or, on another
+machine, received) a message.
 Plain mail from an agent to `human` is Mail, not Inbox: an agent that needs
 an answer uses `ask-human` or `ask human`, and that is what the Inbox lists. Supervisor answers show in their own colour.
 A reply typed in the TUI is verified; the TUI refuses to run from inside a

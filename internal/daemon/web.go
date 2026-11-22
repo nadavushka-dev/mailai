@@ -88,6 +88,7 @@ func (d *Daemon) webStart(port int) (any, error) {
 		mux.HandleFunc("/api/answer", d.webAuth(d.apiAnswer))
 		mux.HandleFunc("/api/dismiss", d.webAuth(d.apiDismiss))
 		mux.HandleFunc("/api/reply", d.webAuth(d.apiReply))
+		mux.HandleFunc("/api/mark-read", d.webAuth(d.apiMarkRead))
 		mux.HandleFunc("/api/events", d.webAuth(d.apiEvents))
 		d.web.srv = &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 		d.web.ln = ln
@@ -277,6 +278,33 @@ func (d *Daemon) apiDismiss(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	res, err := d.dismiss(d.person(), a)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, res)
+}
+
+// apiMarkRead is read on the person's own mailbox by id: opening a thread
+// marks the person's mail in it read. Ids of other mailboxes match nothing.
+func (d *Daemon) apiMarkRead(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST", http.StatusMethodNotAllowed)
+		return
+	}
+	var a struct {
+		IDs []uint64 `json:"ids"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&a); err != nil {
+		writeErr(w, proto.Errorf(proto.CodeBadRequest, "%v", err))
+		return
+	}
+	if len(a.IDs) == 0 {
+		// No ids would mean the whole mailbox to read.
+		writeJSON(w, ReadResult{Messages: []store.Message{}})
+		return
+	}
+	res, err := d.read(d.person(), ReadArgs{Mailbox: store.Human, IDs: a.IDs})
 	if err != nil {
 		writeErr(w, err)
 		return

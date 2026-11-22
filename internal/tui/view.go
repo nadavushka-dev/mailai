@@ -97,7 +97,7 @@ func (m Model) footer(w int) string {
 	case m.view == ViewInbox:
 		parts = []string{key("enter", "open"), key("r", "answer"), key("1-8", "pick"), key("a", "allow"), key("d", "deny"), key("x", "dismiss"), key("A", "all"), key("o", "oldest")}
 	default:
-		parts = []string{key("enter", "open"), key("r", "reply"), key("u", "unread"), key("f", "filter"), key("o", "oldest")}
+		parts = []string{key("enter", "open"), key("r", "reply"), key("t", "to me/agents"), key("u", "unread"), key("f", "filter"), key("o", "oldest")}
 	}
 	parts = append(parts, key("tab", "view"), key("q", "quit"))
 	return fit(" "+strings.Join(parts, "  "), w)
@@ -111,6 +111,12 @@ func (m Model) listTitle() string {
 		return "Inbox · waiting on you"
 	}
 	title := "Mail"
+	switch m.scope {
+	case scopeMe:
+		title += " · to me"
+	case scopeAgents:
+		title += " · between agents"
+	}
 	if m.filterUnread {
 		title += " · unread"
 	}
@@ -240,9 +246,13 @@ func (m Model) recentRow(it store.Item, w int) string {
 func clock(ns int64) string { return time.Unix(0, ns).Format("15:04") }
 
 func (m Model) threadRow(t daemon.ThreadRow, w int, sel bool) string {
+	// ● unread by the person; ○ not yet read by an agent in it.
 	mark := " "
-	if t.Unread > 0 {
+	switch {
+	case t.UnreadMine > 0:
 		mark = styleAccent.Render("●")
+	case t.Unread > 0:
+		mark = styleDim.Render("○")
 	}
 	subj := t.Subject
 	if subj == "" {

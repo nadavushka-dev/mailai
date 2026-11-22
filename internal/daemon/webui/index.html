@@ -306,6 +306,59 @@
   .sysnote.maybe .i { color: var(--violet); }
   .back { margin-bottom: 18px; }
 
+  /* ---------- mail scopes, agents, joining a thread ---------- */
+  .scopes { display: flex; gap: 2px; align-items: center; padding: 8px 8px 6px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  .scopes[hidden] { display: none; }
+  .scopes > button { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border: 0; border-radius: 8px; background: transparent; color: var(--dim); font: inherit; font-size: 12.5px; font-weight: 560; cursor: pointer; }
+  .scopes > button:hover { color: var(--fg-2); background: var(--hover); }
+  .scopes > button.on { color: var(--fg); background: var(--panel-2); }
+  .scopes .count.new { background: rgba(130,182,255,.14); color: var(--blue); }
+  .follow-chip { display: inline-flex; align-items: center; gap: 8px; margin-left: auto; padding: 3px 4px 3px 3px; border-radius: 99px; background: var(--amber-soft); color: var(--fg); font-size: 12.5px; font-weight: 560; }
+  .follow-chip:empty { display: none; }
+  .follow-chip .av, .person-chip .av, .to-pick .av { width: 22px; height: 22px; font-size: 9.5px; border-radius: 99px; }
+  .follow-chip button { border: 0; background: transparent; color: var(--dim); cursor: pointer; display: grid; place-items: center; padding: 3px; border-radius: 99px; }
+  .follow-chip button:hover { color: var(--fg); background: var(--hover); }
+  .profile { display: grid; grid-template-columns: 40px 1fr; gap: 2px 12px; align-items: center; padding: 12px 12px 14px; margin-bottom: 6px; border-bottom: 1px solid var(--line); }
+  .profile .name { font-size: 15px; font-weight: 620; display: flex; gap: 4px; align-items: baseline; }
+  .profile .name .host { font-weight: 450; }
+  .profile .stats { grid-column: 2; color: var(--dim); font-size: 12.5px; display: flex; gap: 12px; flex-wrap: wrap; }
+  .profile .stats b { color: var(--fg); font-weight: 600; }
+  .profile .stats .link { padding: 0; color: var(--amber); }
+  .ring { width: 7px; height: 7px; border-radius: 99px; box-shadow: inset 0 0 0 1.5px var(--dim); flex: none; align-self: center; }
+  .tag.new { color: var(--blue); background: rgba(130,182,255,.1); }
+  .tag.joined { color: var(--amber); background: var(--amber-soft); }
+  .people { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-bottom: 22px; }
+  .people .lbl { color: var(--faint); font-size: 12px; margin-right: 2px; }
+  .person-chip { display: inline-flex; align-items: center; gap: 7px; padding: 3px 10px 3px 3px; border: 1px solid var(--line); border-radius: 99px; background: var(--panel); color: var(--fg-2); font: inherit; font-size: 12.5px; cursor: pointer; }
+  .person-chip:hover { border-color: var(--line-2); color: var(--fg); }
+  .rcpt { font-size: 11.5px; color: var(--faint); display: inline-flex; align-items: center; gap: 5px; }
+  .rcpt.done { color: var(--dim); }
+  .rcpt .i { width: 12px; height: 12px; }
+  .rcpts { display: flex; gap: 6px 14px; flex-wrap: wrap; margin-top: 5px; padding-left: 2px; }
+  .rcpts .rcpt b { color: var(--dim); font-weight: 560; }
+  .stepped { font-size: 11px; font-weight: 600; color: var(--amber); background: var(--amber-soft); padding: 2px 7px; border-radius: 99px; }
+  .agent-card .recent-threads { display: grid; gap: 4px; margin-top: 18px; max-width: 788px; }
+  .agent-card .recent-threads button { display: flex; gap: 10px; align-items: baseline; text-align: left; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--fg-2); font: inherit; cursor: pointer; }
+  .agent-card .recent-threads button:hover { border-color: var(--line-2); color: var(--fg); }
+  .agent-card .recent-threads .who { color: var(--dim); font-size: 12.5px; flex: none; }
+  .agent-card .recent-threads .what { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .agent-card .recent-threads .age { margin-left: auto; color: var(--faint); font-size: 12px; flex: none; }
+  .join-bar {
+    position: sticky; bottom: 0; margin: auto 36px 20px; max-width: 788px;
+    display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
+    padding: 10px 10px 10px 14px; border: 1px dashed var(--line-2); border-radius: 14px;
+    background: var(--panel); color: var(--dim); font-size: 13px;
+  }
+  .join-bar[hidden] { display: none; }
+  .join-bar b { color: var(--fg-2); font-weight: 600; }
+  .join-bar .btn { margin-left: auto; }
+  .to-pick { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; padding: 0 4px; }
+  .to-pick[hidden] { display: none; }
+  .to-pick .lbl { color: var(--faint); font-size: 12px; margin-right: 2px; }
+  .to-pick button { display: inline-flex; align-items: center; gap: 7px; padding: 3px 10px 3px 3px; border: 1px solid var(--line-2); border-radius: 99px; background: transparent; color: var(--dim); font: inherit; font-size: 12.5px; cursor: pointer; }
+  .to-pick button[aria-pressed="true"] { border-color: rgba(243,179,64,.55); background: var(--amber-soft); color: var(--fg); }
+  .to-pick button[aria-pressed="false"] .av { opacity: .45; }
+
   /* ---------- composer ---------- */
   #composer {
     position: sticky; bottom: 0;
@@ -368,6 +421,9 @@
     #detail { padding: 16px 16px 8px; }
     .d-q { font-size: 19px; }
     #composer { margin: auto 12px 12px; }
+    .join-bar { margin: auto 12px 12px; padding: 6px; border-style: solid; }
+    .join-bar > .i, .join-bar > span { display: none; }
+    .join-bar .btn { margin: 0; width: 100%; justify-content: center; }
     .choice { padding: 14px; }
   }
 </style>
@@ -388,6 +444,10 @@
   <symbol id="i-term" viewBox="0 0 24 24"><path d="m4 17 6-6-6-6"/><path d="M12 19h8"/></symbol>
   <symbol id="i-send" viewBox="0 0 24 24"><path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z"/><path d="m21.854 2.147-10.94 10.939"/></symbol>
   <symbol id="i-chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="i-user" viewBox="0 0 24 24"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></symbol>
+  <symbol id="i-users" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
+  <symbol id="i-bot" viewBox="0 0 24 24"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></symbol>
+  <symbol id="i-join" viewBox="0 0 24 24"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22z"/><path d="M8 12h8"/><path d="M12 8v8"/></symbol>
   <symbol id="i-maybe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l3 2"/></symbol>
 </svg>
 
@@ -412,6 +472,12 @@
 </div>
 <main class="split">
   <aside class="left">
+    <nav class="scopes" id="scopes" aria-label="Mail" hidden>
+      <button type="button" id="scope-me" data-scope="me" title="Mail to and from you"><svg class="i"><use href="#i-user"/></svg>To me <span class="count" id="n-me"></span></button>
+      <button type="button" id="scope-agents" data-scope="agents" title="Your agents writing to each other"><svg class="i"><use href="#i-bot"/></svg>Between agents <span class="count new" id="n-agents"></span></button>
+      <button type="button" id="scope-people" data-scope="people" title="Every agent; pick one to follow"><svg class="i"><use href="#i-users"/></svg>Agents</button>
+      <span class="follow-chip" id="follow"></span>
+    </nav>
     <section id="list" role="listbox" aria-label="Waiting on you"></section>
     <section id="recent" aria-label="Recently closed" hidden>
       <button type="button" class="recent-h" id="recent-toggle" aria-expanded="true"><svg class="i chev"><use href="#i-chev"/></svg>Done in the last hour <span id="recent-n" class="count"></span></button>
@@ -420,8 +486,10 @@
   </aside>
   <section id="read" aria-label="Detail">
     <div id="detail"></div>
+    <div class="join-bar" id="joinbar" hidden></div>
     <form id="composer" hidden>
       <label id="composer-label" for="composer-text">Reply</label>
+      <div class="to-pick" id="to-pick" role="group" aria-label="Send to" hidden></div>
       <textarea id="composer-text" placeholder="Write the reply"></textarea>
       <div class="composer-acts">
         <span class="hint"><kbd>enter</kbd> sends · <kbd>shift</kbd>+<kbd>enter</kbd> new line</span>
@@ -440,6 +508,12 @@
   let items = [], threads = [], recent = [], me = 'human';
   // Done starts folded while something waits, so the queue keeps the room.
   let recentOpen = null, convoFor = null;
+  // Mail (D13): mailScope is me | agents | people; following narrows Mail
+  // to one agent's threads. agentsMark is when the person last looked at
+  // mail between agents, for its "new" count.
+  let mailScope = 'me', following = null;
+  const SEEN_KEY = 'mailai.agentsSeenAt';
+  let agentsMark = +(localStorage.getItem(SEEN_KEY) || 0);
 
   // ---------- words ----------
   const icon = (id, cls) => `<svg class="i${cls ? ' ' + cls : ''}"><use href="#i-${id}"/></svg>`;
@@ -454,6 +528,17 @@
   const avatar = (who, lg) => localName(who) === 'human'
     ? `<span class="av human${lg?' lg':''}">you</span>`
     : `<span class="av${lg?' lg':''}" style="--h:${hue(localName(who))}">${esc(initials(who))}</span>`;
+  const isHuman = a => localName(a) === 'human';
+  // A thread is the person's when it started from or to them; one the
+  // person stepped into later stays between agents.
+  const toMe = t => isHuman(t.from) || isHuman(t.to);
+  const agentsOf = t => (t.people && t.people.length ? t.people : [t.from, t.to, t.last_from]).filter(a => a && !isHuman(a));
+  const sameAgent = (a, b) => String(a||'').toLowerCase() === String(b||'').toLowerCase();
+  // Mail to an agent on another machine is marked when its machine has it,
+  // not when the agent read it (the hub cannot know).
+  const receipt = (to, readAt) => !to || isHuman(to) ? ''
+    : hostOf(to) ? (readAt ? `<span class="rcpt done">${icon('check')}delivered to ${esc(hostOf(to))}</span>` : `<span class="rcpt"><span class="ring"></span>on its way to ${esc(hostOf(to))}</span>`)
+    : (readAt ? `<span class="rcpt done">${icon('check')}read ${hhmm(readAt)}</span>` : `<span class="rcpt"><span class="ring"></span>not read yet</span>`);
   const agentName = a => `<span class="agent">${esc(localName(a))}</span>${hostOf(a) ? `<span class="host">@${esc(hostOf(a))}</span>` : ''}`;
   const KIND = {
     approval: ['Permission', 'shield', 'k-approval'],
@@ -518,8 +603,10 @@
   const visibleThreads = () => {
     const f = filters();
     return threads.filter(t => {
+      if (following) { if (!agentsOf(t).some(a => sameAgent(a, following))) return false; }
+      else if (mailScope === 'me' ? !toMe(t) : toMe(t)) return false;
       if (f.unread && !t.unread) return false;
-      if (!matchWho([t.from, t.to, t.last_from], f.who)) return false;
+      if (!matchWho([t.from, t.to, t.last_from, ...(t.people || [])], f.who)) return false;
       if (f.session && String(t.session||'').toLowerCase() !== f.session) return false;
       if (!matchHost([t.from, t.to, t.last_from], f.machine)) return false;
       return true;
@@ -534,11 +621,24 @@
       return true;
     });
   };
+  // Every agent seen in Mail or the Inbox, busiest first.
+  const agentsList = () => {
+    const by = new Map();
+    const get = a => { const k = a.toLowerCase(); if (!by.has(k)) by.set(k, {addr: a, threads: 0, last: 0, waiting: 0, mine: 0}); return by.get(k); };
+    for (const t of threads) for (const a of agentsOf(t)) {
+      const g = get(a); g.threads++; g.last = Math.max(g.last, t.last_at || 0);
+      if (t.unread_mine && sameAgent(t.from, a)) g.mine++;
+    }
+    for (const it of items) if (!it.closed_at && it.from && !isHuman(it.from)) { const g = get(it.from); g.waiting++; g.last = Math.max(g.last, it.opened_at || 0); }
+    const f = filters();
+    return [...by.values()].filter(g => matchWho([g.addr], f.who) && matchHost([g.addr], f.machine)).sort((a, b) => b.last - a.last);
+  };
+  const mailRows = () => view === 'mail' && mailScope === 'people' && !following ? agentsList() : visibleThreads();
   const current = () => view === 'inbox' ? visibleItems()[selected] : null;
   const reading = on => document.body.classList.toggle('reading', !!on);
 
   // ---------- composer ----------
-  const hideComposer = () => { $('#composer').hidden = true; $('#composer').classList.remove('deny'); $('#composer-deny').hidden = true; $('#composer-send').hidden = false; };
+  const hideComposer = () => { $('#composer').hidden = true; $('#composer').classList.remove('deny'); $('#composer-deny').hidden = true; $('#composer-send').hidden = false; $('#to-pick').hidden = true; $('#joinbar').hidden = true; $('#composer').dataset.mode = ''; };
   const showComposer = (label, placeholder, mode, data) => {
     const form = $('#composer');
     form.hidden = false;
@@ -555,9 +655,11 @@
   const keys = () => {
     const k = (key, does) => `<span><kbd>${key}</kbd>${does}</span>`;
     let parts;
-    if (openThread) parts = [k('r','reply'), k('esc','back')];
-    else if (view === 'inbox') parts = [k('j','next'), k('k','previous'), k('1–8','pick'), k('a','allow'), k('d','deny'), k('r','answer'), k('x','dismiss'), k('↵','thread')];
-    else parts = [k('j','next'), k('k','previous'), k('r','reply'), k('u','unread only')];
+    const joining = !$('#joinbar').hidden || $('#composer').dataset.mode === 'join';
+    if (openThread) parts = [k('r', joining ? 'join' : 'reply'), k('p','follow'), k('esc','back')];
+    else if (view === 'inbox') parts = [k('j','next'), k('k','previous'), k('1–8','pick'), k('a','allow'), k('d','deny'), k('r','answer'), k('x','dismiss'), k('↵','thread'), k('p','follow agent')];
+    else if (mailScope === 'people' && !following) parts = [k('j','next'), k('k','previous'), k('↵','follow'), k('t','next tab')];
+    else parts = [k('j','next'), k('k','previous'), k('r', joining ? 'join' : 'reply'), k('p','follow'), k('t','next tab'), k('u','unread only')].concat(following ? [k('esc','unfollow')] : []);
     $('#keys').innerHTML = parts.join('') + k('i','waiting') + k('m','mail') + k('/','filter');
   };
 
@@ -569,8 +671,19 @@
     set($('#tab-mail'), view === 'mail');
     const openN = items.filter(i => !i.closed_at).length;
     $('#count').textContent = openN || '';
-    const unread = threads.reduce((n, t) => n + (t.unread ? 1 : 0), 0);
+    // Mail counts only what is unread by you; agents' unread is theirs.
+    const unread = threads.filter(t => t.unread_mine > 0).length;
     $('#mail-count').textContent = unread || '';
+    $('#n-me').textContent = unread || '';
+    const fresh = threads.filter(t => !toMe(t) && t.last_at > agentsMark && !isHuman(t.last_from)).length;
+    $('#n-agents').textContent = fresh || '';
+    $('#n-agents').title = fresh ? `${fresh} new since you last looked` : '';
+    $('#scopes').hidden = view !== 'mail';
+    for (const b of document.querySelectorAll('.scopes > button')) {
+      const on = !following && b.dataset.scope === mailScope;
+      b.classList.toggle('on', on); b.setAttribute('aria-pressed', on);
+    }
+    $('#follow').innerHTML = following ? `${avatar(following)}<span>${esc(following)}</span><button type="button" data-a="unfollow" title="Stop following (esc)" aria-label="Stop following">${icon('x')}</button>` : '';
     document.title = openN ? `(${openN}) mailai` : 'mailai';
     const f = filters();
     const active = !!(f.who || f.session || f.machine || f.unread);
@@ -592,30 +705,65 @@
   }
   function threadRow(t, i) {
     const on = i === selected;
-    const fromMe = localName(t.from) === 'human';
+    const fromMe = isHuman(t.from);
     const other = fromMe ? t.to : t.from;
-    const dot = t.unread ? '<span class="unread-dot" title="unread"></span>' : '';
+    const theirs = (t.unread || 0) - (t.unread_mine || 0);
+    const dot = t.unread_mine ? '<span class="unread-dot" title="unread"></span>'
+      : theirs > 0 ? '<span class="ring" title="not read yet by the agent it is to"></span>' : '';
+    const between = !toMe(t);
+    const tags = [];
+    if (t.count > 1) tags.push(`<span class="tag">${icon('thread')}${t.count}</span>`);
+    if (between && (t.people || []).some(isHuman)) tags.push(`<span class="tag joined">${icon('join')}you stepped in</span>`);
+    if (between && t.last_at > agentsMark && !isHuman(t.last_from) && mailScope === 'agents' && !following) tags.push('<span class="tag new">new</span>');
     const people = fromMe
       ? `<span class="agent">You</span><span class="host">→ ${esc(t.to || 'session ' + (t.session||''))}</span>`
       : `${agentName(t.from)}<span class="host">→ ${localName(t.to) === 'human' ? 'you' : esc(t.to || 'session ' + (t.session||''))}</span>`;
     const line = t.subject ? `<b class="subj">${esc(t.subject)}</b>${t.first ? ' — ' + esc(t.first) : ''}` : esc(t.first || '');
-    return `<button class="row${on?' on':''}" role="option" aria-selected="${on}" data-i="${i}">${avatar(other)}<span class="r-body"><span class="r-top">${dot}${people}<span class="age">${ago(t.last_at)}</span></span><span class="r-q">${line}</span>${t.count > 1 ? `<span class="r-tags"><span class="tag">${icon('thread')}${t.count}</span></span>` : ''}</span></button>`;
+    return `<button class="row${on?' on':''}" role="option" aria-selected="${on}" data-i="${i}">${avatar(other)}<span class="r-body"><span class="r-top">${dot}${people}<span class="age">${ago(t.last_at)}</span></span><span class="r-q">${line}</span>${tags.length ? `<span class="r-tags">${tags.join('')}</span>` : ''}</span></button>`;
+  }
+  const agentStats = g => [
+    `<span><b>${g.threads}</b> thread${g.threads === 1 ? '' : 's'}</span>`,
+    g.waiting ? `<span><b>${g.waiting}</b> waiting on you</span>` : '',
+    g.mine ? `<span><b>${g.mine}</b> unread by you</span>` : '',
+    g.last ? `<span>active ${ago(g.last)} ago</span>` : '',
+  ].filter(Boolean);
+  function agentRow(g, i) {
+    const on = i === selected;
+    const tags = g.waiting ? `<span class="r-tags"><span class="tag k-ask">${icon('ask')}${g.waiting} waiting on you</span></span>` : '';
+    return `<button class="row${on?' on':''}" role="option" aria-selected="${on}" data-i="${i}">${avatar(g.addr)}<span class="r-body"><span class="r-top">${agentName(g.addr)}<span class="age">${g.last ? ago(g.last) : ''}</span></span><span class="r-q">${g.threads} thread${g.threads === 1 ? '' : 's'}${g.mine ? ` · ${g.mine} unread by you` : ''}</span>${tags}</span></button>`;
+  }
+  function profileHTML(who) {
+    const g = agentsList().find(x => sameAgent(x.addr, who)) || {addr: who, threads: 0, last: 0, waiting: 0, mine: 0};
+    const stats = agentStats(g);
+    if (g.waiting) stats[1] = `<button type="button" class="link" data-a="waiting-of" data-who="${esc(who)}">${g.waiting} waiting on you →</button>`;
+    return `<div class="profile">${avatar(who, true)}<div class="name">${agentName(who)}</div><div class="stats">${stats.join('')}</div></div>`;
   }
 
   function renderList() {
     const list = $('#list');
-    const data = view === 'inbox' ? visibleItems() : visibleThreads();
+    const people = view === 'mail' && mailScope === 'people' && !following;
+    const data = view === 'inbox' ? visibleItems() : mailRows();
     if (selected >= data.length) selected = Math.max(0, data.length - 1);
     renderTabs();
+    const head = view === 'mail' && following ? profileHTML(following) : '';
     if (!data.length) {
       const filtered = (() => { const f = filters(); return f.who || f.session || f.machine || f.unread; })();
       const [title, sub] = view === 'inbox'
         ? (filtered ? ['Nothing matches', 'Clear the filter to see everything waiting.'] : ['Nothing is waiting on you', 'Questions, permissions and agent errors land here.'])
-        : (threads.length ? ['No threads match', 'Clear the filter to see all mail.'] : ['No mail yet', 'Threads between you and your agents show up here.']);
-      list.innerHTML = `<div class="empty"><span class="glyph">${icon(view==='inbox'?'check':'mail')}</span><strong>${title}</strong>${sub}</div>`;
+        : filtered ? ['Nothing matches', 'Clear the filter to see more.']
+        : following ? [`No mail with ${esc(localName(following))}`, 'Threads it sends or receives show up here.']
+        : mailScope === 'me' ? ['Nothing to you yet', 'Mail your agents send you lands here. Questions that need an answer go to Waiting.']
+        : mailScope === 'agents' ? ['No mail between agents', 'When your agents write to each other, you can read along here and step in.']
+        : ['No agents yet', 'Agents show up once they send or receive mail.'];
+      list.innerHTML = head + `<div class="empty"><span class="glyph">${icon(view==='inbox'?'check':people?'users':'mail')}</span><strong>${title}</strong>${sub}</div>`;
       return;
     }
-    list.innerHTML = data.map((row, i) => view === 'inbox' ? itemRow(row, i) : threadRow(row, i)).join('');
+    list.innerHTML = head + data.map((row, i) => view === 'inbox' ? itemRow(row, i) : people ? agentRow(row, i) : threadRow(row, i)).join('');
+    // Looking at mail between agents clears its "new" count next time.
+    if (view === 'mail' && mailScope === 'agents' && !following) {
+      const newest = Math.max(agentsMark, ...threads.filter(t => !toMe(t)).map(t => t.last_at || 0));
+      localStorage.setItem(SEEN_KEY, String(newest));
+    }
     const on = list.querySelector('.row.on');
     if (on) on.scrollIntoView({block:'nearest'});
   }
@@ -640,10 +788,30 @@
     if (m.claimed_human) return '<span class="trust u">automated reply</span>';
     return `<span class="trust u">${esc(m.sender_proof || 'unplaced')}</span>`;
   }
-  function messagesHTML(messages, thItems) {
-    const msgs = (messages || []).map(m => {
-      const mine = localName(m.from) === 'human';
-      return `<div class="msg${mine ? ' me' : ''}">${avatar(m.from)}<div><div class="msg-h"><b>${mine ? 'You' : esc(localName(m.from))}</b>${hostOf(m.from) ? `<span class="host">@${esc(hostOf(m.from))}</span>` : ''}${trustOf(m)}${m.to ? `<span>→ ${esc(m.to)}</span>` : ''}<span class="t">${m.sent_at ? hhmm(m.sent_at) : ''}</span></div><pre>${esc(m.text)}</pre></div></div>`;
+  // One bubble per message; the person's same words to several agents in
+  // one go (joining a thread between agents) read as one bubble.
+  function groupMessages(messages) {
+    const out = [];
+    for (const m of messages || []) {
+      const prev = out[out.length - 1];
+      if (prev && isHuman(m.from) && isHuman(prev.from) && prev.text === m.text && Math.abs((m.sent_at||0) - (prev.sent_at||0)) < 10e9) {
+        prev.tos.push([m.to, m.read_at]);
+        continue;
+      }
+      out.push({...m, tos: [[m.to, m.read_at]]});
+    }
+    return out;
+  }
+  function messagesHTML(messages, thItems, between) {
+    const msgs = groupMessages(messages).map(m => {
+      const mine = isHuman(m.from);
+      const to = m.tos.map(([a]) => a).filter(Boolean);
+      // One recipient: its receipt in the header. Several: a line each,
+      // under the bubble.
+      const many = m.tos.length > 1;
+      const head = many ? '' : receipt(m.tos[0][0], m.tos[0][1]);
+      const under = many ? `<div class="rcpts">${m.tos.map(([a, r]) => `<span class="rcpt"><b>${esc(localName(a))}</b>${receipt(a, r)}</span>`).join('')}</div>` : '';
+      return `<div class="msg${mine ? ' me' : ''}">${avatar(m.from)}<div><div class="msg-h"><b>${mine ? 'You' : esc(localName(m.from))}</b>${hostOf(m.from) ? `<span class="host">@${esc(hostOf(m.from))}</span>` : ''}${mine && between ? '<span class="stepped">stepped in</span>' : ''}${trustOf(m)}${to.length ? `<span>→ ${to.map(a => isHuman(a) ? 'you' : esc(a)).join(', ')}</span>` : ''}<span class="t">${m.sent_at ? hhmm(m.sent_at) : ''}</span>${head}</div><pre>${esc(m.text)}</pre>${under}</div></div>`;
     }).join('');
     // One-line notes from the thread's items, never stored messages (§7a).
     const notes = (thItems || []).map(it =>
@@ -660,6 +828,7 @@
     try {
       const th = await api('/api/thread?id=' + encodeURIComponent(want));
       if (!th || convoFor !== want || !$('#convo')) return;
+      markRead(th.messages, want);
       // The question itself is already the heading: show the rest.
       const msgs = (th.messages || []).filter(m => m.mid !== it.mid);
       const others = (th.items || []).filter(x => x.id !== it.id);
@@ -671,6 +840,7 @@
 
   function renderItem(it) {
     const detail = $('#detail');
+    threadSeq++; // a thread still loading must not draw over the item
     hideComposer();
     if (!it) {
       detail.innerHTML = `<div class="empty"><span class="glyph">${icon('check')}</span><strong>All clear</strong>Nothing waits on you. New questions show up here the moment an agent asks.</div>`;
@@ -702,7 +872,7 @@
       } else {
         showComposer(`Answer ${localName(it.from)}`, 'Write your answer', 'answer', {id: it.id});
       }
-      acts += `<div class="secondary"><button class="link" data-a="dismiss" data-id="${it.id}">${icon('x')}Dismiss <kbd>x</kbd></button>${it.thread_id ? `<button class="link" data-a="open" data-id="${esc(it.thread_id)}">${icon('thread')}Open thread <kbd>↵</kbd></button>` : ''}</div>`;
+      acts += `<div class="secondary"><button class="link" data-a="dismiss" data-id="${it.id}">${icon('x')}Dismiss <kbd>x</kbd></button>${it.thread_id ? `<button class="link" data-a="open" data-id="${esc(it.thread_id)}">${icon('thread')}Open thread <kbd>↵</kbd></button>` : ''}${it.from && !isHuman(it.from) ? `<button class="link" data-a="follow" data-who="${esc(it.from)}">${icon('user')}All mail with ${esc(localName(it.from))} <kbd>p</kbd></button>` : ''}</div>`;
     } else {
       acts = `<div class="closed-line">${closedState(it)}<span>${hhmm(it.closed_at)}</span></div>`;
       if (it.thread_id) acts += `<div class="secondary"><button class="link" data-a="open" data-id="${esc(it.thread_id)}">${icon('thread')}Open thread <kbd>↵</kbd></button></div>`;
@@ -711,19 +881,69 @@
     loadConvo(it);
   }
 
+  // markRead marks the person's own unread mail in a thread read, so the
+  // Mail count is what you have not seen. An agent's mail is its own.
+  function markRead(messages, threadId) {
+    const ids = (messages || []).filter(m => isHuman(m.to) && !m.read_at).map(m => m.id);
+    if (!ids.length) return;
+    api('/api/mark-read', {ids}).then(() => {
+      const t = threads.find(x => x.thread_id === threadId);
+      if (t) { t.unread = Math.max(0, (t.unread || 0) - ids.length); t.unread_mine = 0; }
+      renderTabs();
+      if (view === 'mail' && !openThread) renderList();
+    }).catch(() => {});
+  }
+  // threadAgents are the agents in a thread, first sender first.
+  const threadAgents = messages => {
+    const out = [];
+    for (const m of messages) for (const a of [m.from, m.to]) if (a && !isHuman(a) && !out.some(x => sameAgent(x, a))) out.push(a);
+    return out;
+  };
+  let joinFor = null, threadSeq = 0;
   async function renderThread(id, full) {
+    // Only the newest load may draw: an older one finishing late would
+    // show one thread with another thread's reply box.
+    const seq = ++threadSeq;
     const th = await api('/api/thread?id=' + encodeURIComponent(id));
-    if (!th) return;
+    if (!th || seq !== threadSeq) return;
     const messages = th.messages || [];
     const first = messages[0] || {};
-    const last = [...messages].reverse().find(m => localName(m.from) !== 'human') || first;
-    const people = [...new Set(messages.map(m => localName(m.from) === 'human' ? 'you' : m.from))].join(', ');
-    const back = full ? `<button type="button" class="link back" data-a="back">${icon('back')}Back to waiting <kbd>esc</kbd></button>` : `<button type="button" class="link mback back" data-a="mback">${icon('back')}Back</button>`;
+    const between = !!first.from && !isHuman(first.from) && !isHuman(first.to);
+    const agents = threadAgents(messages);
+    const back = full ? `<button type="button" class="link back" data-a="back">${icon('back')}Back <kbd>esc</kbd></button>` : `<button type="button" class="link mback back" data-a="mback">${icon('back')}Back</button>`;
     const firstLine = String(first.text || '').split('\n')[0];
     const title = first.subject || (firstLine.length > 90 ? firstLine.slice(0, 89) + '…' : firstLine) || 'Thread';
-    $('#detail').innerHTML = `${back}<h2 class="thread-title">${esc(title)}</h2><div class="thread-sub">${esc(people)} · ${messages.length} message${messages.length === 1 ? '' : 's'}</div>` + messagesHTML(messages, th.items);
-    if (last && last.mid) showComposer(`Reply to ${localName(last.from)}`, 'Write a reply, signed as you', 'reply', {mid: last.mid, to: last.from});
-    else hideComposer();
+    const chips = agents.map(a => `<button type="button" class="person-chip" data-a="follow" data-who="${esc(a)}" title="All mail with ${esc(a)}">${avatar(a)}${esc(a)}</button>`).join('');
+    const sub = `<div class="people"><span class="lbl">${between ? 'Between' : 'With'}</span>${chips}<span class="lbl">· ${messages.length} message${messages.length === 1 ? '' : 's'}</span></div>`;
+    $('#detail').innerHTML = `${back}<h2 class="thread-title">${esc(title)}</h2>${sub}` + messagesHTML(messages, th.items, between);
+    markRead(messages, id);
+    const last = messages[messages.length - 1];
+    if (between && last) {
+      // Reading along by default; the person steps in on purpose (D13).
+      joinFor = {mid: last.mid, agents};
+      if ($('#composer').dataset.mode === 'join' && !$('#composer').hidden && $('#composer').dataset.mid === last.mid) { keys(); return; }
+      hideComposer();
+      const names = agents.map(a => `<b>${esc(a)}</b>`).join(agents.length === 2 ? ' and ' : ', ');
+      $('#joinbar').innerHTML = `${icon('bot')}<span>Your agents ${names} are talking. Step in if they need a hand.</span><button type="button" class="btn" data-a="join">${icon('join')}Join thread as you <kbd>r</kbd></button>`;
+      $('#joinbar').hidden = false;
+    } else {
+      joinFor = null;
+      const lastAgent = [...messages].reverse().find(m => !isHuman(m.from)) || first;
+      if (lastAgent && lastAgent.mid) showComposer(`Reply to ${localName(lastAgent.from)}`, 'Write a reply, signed as you', 'reply', {mid: lastAgent.mid, to: lastAgent.from});
+      else hideComposer();
+    }
+    keys();
+  }
+  // startJoin opens the composer to write into a thread between agents, to
+  // all of them unless the person picks.
+  function startJoin() {
+    if (!joinFor) return;
+    $('#joinbar').hidden = true;
+    showComposer('Join thread as you', 'Write to them. It arrives as mail from you, marked verified.', 'join', {mid: joinFor.mid});
+    const pick = $('#to-pick');
+    pick.innerHTML = `<span class="lbl">To</span>` + joinFor.agents.map(a => `<button type="button" aria-pressed="true" data-to="${esc(a)}">${avatar(a)}${esc(a)}</button>`).join('');
+    pick.hidden = false;
+    $('#composer-text').focus();
     keys();
   }
 
@@ -731,9 +951,24 @@
     keys();
     if (openThread) return renderThread(openThread, true);
     if (view === 'inbox') return renderItem(visibleItems()[selected]);
+    if (mailScope === 'people' && !following) return renderAgentCard(agentsList()[selected]);
     const t = visibleThreads()[selected];
-    if (!t) { hideComposer(); $('#detail').innerHTML = `<div class="empty"><span class="glyph">${icon('mail')}</span><strong>No thread selected</strong>Pick one on the left.</div>`; return; }
+    if (!t) { threadSeq++; hideComposer(); $('#detail').innerHTML = `<div class="empty"><span class="glyph">${icon('mail')}</span><strong>No thread selected</strong>Pick one on the left.</div>`; return; }
     return renderThread(t.thread_id, false);
+  }
+
+  // The Agents tab: who an agent is in Mail, and its latest threads.
+  function renderAgentCard(g) {
+    threadSeq++;
+    hideComposer();
+    if (!g) { $('#detail').innerHTML = `<div class="empty"><span class="glyph">${icon('users')}</span><strong>No agents yet</strong>Agents show up once they send or receive mail.</div>`; return; }
+    const mine = threads.filter(t => agentsOf(t).some(a => sameAgent(a, g.addr))).slice(0, 6);
+    const line = t => {
+      const other = agentsOf(t).find(a => !sameAgent(a, g.addr));
+      const who = toMe(t) ? (isHuman(t.from) ? 'you →' : '→ you') : `⇄ ${esc(localName(other || ''))}`;
+      return `<button type="button" data-a="open" data-id="${esc(t.thread_id)}"><span class="who">${who}</span><span class="what">${esc(t.subject || t.first || 'Thread')}</span><span class="age">${ago(t.last_at)}</span></button>`;
+    };
+    $('#detail').innerHTML = `<button type="button" class="link mback back" data-a="mback">${icon('back')}Back</button><div class="agent-card"><div class="d-head">${avatar(g.addr, true)}<div class="d-who"><div class="name">${agentName(g.addr)}</div><div class="d-meta">${agentStats(g).join('<span class="sep">·</span>')}</div></div></div><div class="decide"><button class="btn primary" data-a="follow" data-who="${esc(g.addr)}">${icon('user')}Follow ${esc(localName(g.addr))} <kbd>↵</kbd></button>${g.waiting ? `<button class="btn" data-a="waiting-of" data-who="${esc(g.addr)}">${icon('inbox')}${g.waiting} waiting on you</button>` : ''}</div>${mine.length ? `<div class="recent-threads">${mine.map(line).join('')}</div>` : ''}</div>`;
   }
 
   async function render() {
@@ -741,9 +976,17 @@
     try {
       const [inbox, mail, closed] = await Promise.all([api('/api/inbox' + (showAll ? '?all=1' : '')), api('/api/threads'), api('/api/inbox?closed=1')]);
       if (!inbox || !mail || !closed) return;
+      // Keep the selection on the same thing when the order changes.
+      // Items have opened_at; thread rows a thread_id; agents an addr.
+      const keyOf = r => r && (r.opened_at ? 'i' + r.id : r.thread_id ? 't' + r.thread_id : r.addr ? 'a' + r.addr : null);
+      const was = keyOf((view === 'inbox' ? visibleItems() : mailRows())[selected]);
       items = inbox.items || [];
       threads = mail.threads || [];
       recent = closed.items || [];
+      if (was) {
+        const i = (view === 'inbox' ? visibleItems() : mailRows()).findIndex(r => keyOf(r) === was);
+        if (i >= 0) selected = i;
+      }
       renderList();
       renderRecent();
       await renderDetail();
@@ -766,14 +1009,53 @@
     reading(true);
     await renderDetail();
   };
-  const go = async (v, all) => { view = v; showAll = !!all; openThread = null; selected = 0; reading(false); await render(); };
+  const go = async (v, all) => { view = v; showAll = !!all; openThread = null; following = null; selected = 0; reading(false); await render(); };
+  const setScope = async s => {
+    view = 'mail'; mailScope = s; following = null; openThread = null; selected = 0; reading(false);
+    agentsMark = +(localStorage.getItem(SEEN_KEY) || 0);
+    await render();
+  };
+  const follow = async who => {
+    if (!who) return;
+    view = 'mail'; following = who; openThread = null; selected = 0;
+    reading(false);
+    await render();
+  };
+  const unfollow = async () => { following = null; selected = 0; await render(); };
+  // waitingOf shows the Waiting list for one agent.
+  const waitingOf = async who => {
+    $('#f-who').value = localName(who);
+    await go('inbox', false);
+  };
+  // followTarget is the agent a key press of p means right now.
+  const followTarget = () => {
+    if (view === 'inbox') { const it = current(); return it && !isHuman(it.from) ? it.from : null; }
+    if (mailScope === 'people' && !following) return agentsList()[selected]?.addr;
+    const t = visibleThreads()[selected];
+    if (!t) return null;
+    return isHuman(t.from) ? t.to : t.from;
+  };
 
   // ---------- events ----------
   document.addEventListener('click', async e => {
     const row = e.target.closest('.row');
     if (row) return select(+row.dataset.i);
+    const sc = e.target.closest('.scopes > button');
+    if (sc) return setScope(sc.dataset.scope);
+    const tp = e.target.closest('#to-pick button');
+    if (tp) {
+      const on = tp.getAttribute('aria-pressed') !== 'true';
+      // Never zero recipients: turning the last one off is refused.
+      if (!on && $('#to-pick').querySelectorAll('button[aria-pressed="true"]').length === 1) return;
+      tp.setAttribute('aria-pressed', on);
+      return;
+    }
     const b = e.target.closest('[data-a]'); if (!b) return;
     const a = b.dataset.a, id = b.dataset.id;
+    if (a === 'follow') return follow(b.dataset.who);
+    if (a === 'unfollow') return unfollow();
+    if (a === 'waiting-of') return waitingOf(b.dataset.who);
+    if (a === 'join') return startJoin();
     const it = items.find(x => String(x.id) === id);
     if (a === 'answer') return answer(it || +id, b.dataset.t);
     if (a === 'deny') return startDeny(id);
@@ -792,6 +1074,18 @@
     $('#composer-text').blur();
     if (mode === 'answer') return act('/api/answer', {item: +form.dataset.id, text}, 'Answer sent');
     if (mode === 'reply') return act('/api/reply', {reply_to: form.dataset.mid, to: form.dataset.to, text}, 'Reply sent');
+    if (mode === 'join') {
+      const to = [...$('#to-pick').querySelectorAll('button[aria-pressed="true"]')].map(b => b.dataset.to);
+      const mid = form.dataset.mid;
+      form.dataset.mode = '';
+      return (async () => {
+        try {
+          for (const who of to) await api('/api/reply', {reply_to: mid, to: who, text});
+          status(`Sent to ${to.map(localName).join(' and ')}`);
+        } catch (err) { status(err.message, true); }
+        await render();
+      })();
+    }
     if (mode === 'deny') return act('/api/answer', {item: +form.dataset.id, text: 'deny', message: text}, 'Denied');
   });
   $('#composer-text').addEventListener('keydown', e => {
@@ -818,14 +1112,20 @@
   document.addEventListener('keydown', e => {
     if (e.metaKey || e.ctrlKey || e.altKey) return;
     if (e.key === 'Escape') {
-      if (typing()) { e.target.blur(); if (($('#composer').dataset.mode) === 'deny') renderDetail(); return; }
+      if (typing()) {
+        e.target.blur();
+        const mode = $('#composer').dataset.mode;
+        if (mode === 'deny' || mode === 'join') { $('#composer').dataset.mode = ''; renderDetail(); }
+        return;
+      }
       if (!$('#filters').hidden) { toggleFilters(false); return; }
       if (openThread) { openThread = null; renderList(); renderDetail(); return; }
+      if (following && view === 'mail') { unfollow(); return; }
       reading(false);
       return;
     }
     if (typing()) return;
-    const data = view === 'inbox' ? visibleItems() : visibleThreads();
+    const data = view === 'inbox' ? visibleItems() : mailRows();
     const cur = current();
     const move = d => { if (!data.length) return; openThread = null; selected = Math.max(0, Math.min(data.length - 1, selected + d)); renderList(); renderDetail(); };
     if (e.key === 'j' || e.key === 'ArrowDown') { e.preventDefault(); move(1); }
@@ -834,14 +1134,18 @@
     if (e.key === 'm') go('mail');
     if (e.key === 'A') go('inbox', !showAll);
     if (e.key === 'o') go('inbox', false);
+    if (e.key === 't' && view === 'mail') { const order = ['me', 'agents', 'people']; setScope(order[(order.indexOf(following ? 'people' : mailScope) + 1) % 3]); }
+    if (e.key === 'p') { e.preventDefault(); follow(followTarget()); }
     if (e.key === 'u' && view === 'mail') { $('#f-unread').checked = !$('#f-unread').checked; selected = 0; renderList(); renderDetail(); }
     if (e.key === '/') { e.preventDefault(); toggleFilters(true); }
     if (e.key === 'Enter') {
       e.preventDefault();
       if (view === 'inbox' && cur?.thread_id) { openThread = cur.thread_id; renderThread(openThread, true); }
+      if (view === 'mail' && mailScope === 'people' && !following) follow(agentsList()[selected]?.addr);
     }
     if (e.key === 'r') {
       e.preventDefault();
+      if (!$('#joinbar').hidden) { startJoin(); return; }
       if (!$('#composer').hidden) { $('#composer-text').focus(); return; }
       if (cur?.thread_id) { openThread = cur.thread_id; renderThread(openThread, true).then(() => $('#composer-text').focus()); }
     }

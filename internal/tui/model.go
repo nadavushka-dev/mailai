@@ -49,6 +49,10 @@ type Model struct {
 	mode    inputMode
 	target  store.Item
 	replyTo store.Message
+	// joinTo are the agents of a thread between agents the person is
+	// joining; joinPick 0 writes to all of them, i to joinTo[i-1] only.
+	joinTo   []store.Address
+	joinPick int
 
 	status string
 	errAt  time.Time
@@ -60,6 +64,23 @@ type Model struct {
 	filterSession string
 	filterMachine string
 	pendingReply  bool
+	// scope narrows Mail to the person's own threads or to those between
+	// agents (D13).
+	scope mailScope
+}
+
+type mailScope int
+
+const (
+	scopeAll mailScope = iota
+	scopeMe
+	scopeAgents
+)
+
+// toMe says a thread started with the person: from or to human. One the
+// person stepped into later stays between agents.
+func toMe(t daemon.ThreadRow) bool {
+	return localName(t.From) == string(store.Human) || localName(t.To) == string(store.Human)
 }
 
 type inputMode int
@@ -175,11 +196,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.fail(msg.err), nil
 		}
 		m.open, m.openID, m.openTop, m.openItems = msg.msgs, msg.id, 0, msg.items
+		mark := m.markRead(msg.msgs)
 		if m.pendingReply {
 			m.pendingReply = false
-			return m.startReply()
+			mm, cmd := m.startReply()
+			return mm, tea.Batch(cmd, mark)
 		}
-		return m, nil
+		return m, mark
 	case eventMsg:
 		// Any event may change a list; fetch, then keep listening.
 		return m, tea.Batch(m.refresh(), m.listen())
@@ -234,10 +257,13 @@ func (m Model) rows() int {
 func (m Model) filteredThreads() []daemon.ThreadRow {
 	var out []daemon.ThreadRow
 	for _, t := range m.threads {
+		if (m.scope == scopeMe && !toMe(t)) || (m.scope == scopeAgents && toMe(t)) {
+			continue
+		}
 		if m.filterUnread && t.Unread == 0 {
 			continue
 		}
-		if m.filterWho != "" && !addrMatch(t.From, t.To, t.LastFrom, m.filterWho) {
+		if m.filterWho != "" && !addrMatch(t.From, t.To, t.LastFrom, m.filterWho) && !peopleMatch(t.People, m.filterWho) {
 			continue
 		}
 		if m.filterSession != "" && !strings.EqualFold(t.Session, m.filterSession) {
@@ -267,6 +293,40 @@ func addrMatch(from, to, last store.Address, who string) bool {
 		}
 	}
 	return false
+}
+
+func peopleMatch(people []store.Address, who string) bool {
+	for _, a := range people {
+		if strings.EqualFold(localName(a), who) {
+			return true
+		}
+	}
+	return false
+}
+
+// markRead marks the person's own unread mail in an opened thread read;
+// an agent's mail is its own to read, and a browse-only client marks
+// nothing.
+func (m Model) markRead(msgs []store.Message) tea.Cmd {
+	if !m.person {
+		return nil
+	}
+	var ids []uint64
+	for _, x := range msgs {
+		if x.To == store.Human && x.ReadAt == 0 {
+			ids = append(ids, x.ID)
+		}
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	b := m.b
+	return func() tea.Msg {
+		if err := b.MarkRead(ids); err != nil {
+			return refreshMsg{err: err}
+		}
+		return m.refresh()()
+	}
 }
 
 func hostMatch(from, to, last store.Address, host string) bool {
@@ -345,6 +405,12 @@ func (m Model) updateKeys(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "o":
 		m.view, m.cursor, m.open, m.openID = ViewInbox, 0, nil, ""
+		return m, nil
+	case "t":
+		if m.view == ViewMail && m.open == nil {
+			m.scope = (m.scope + 1) % 3
+			m.cursor = 0
+		}
 		return m, nil
 	case "u":
 		if m.view == ViewMail && m.open == nil {
@@ -457,8 +523,23 @@ func (m Model) startReply() (tea.Model, tea.Cmd) {
 				root = x
 			}
 		}
-		m.replyTo, m.mode = root, modeReply
+		m.replyTo, m.mode, m.joinTo, m.joinPick = root, modeReply, nil, 0
 		m.input.Placeholder = "reply to " + string(root.From)
+		if first := m.open[0]; first.From != store.Human && first.To != store.Human {
+			// Between agents: the person joins, by default writing to
+			// every agent in it (D13).
+			seen := map[store.Address]bool{}
+			for _, x := range m.open {
+				for _, a := range []store.Address{x.From, x.To} {
+					if a != "" && a != store.Human && !seen[a] {
+						seen[a] = true
+						m.joinTo = append(m.joinTo, a)
+					}
+				}
+			}
+			m.replyTo = m.open[len(m.open)-1]
+			m.input.Placeholder = m.joinPlaceholder()
+		}
 	default:
 		return m, nil
 	}
@@ -466,15 +547,41 @@ func (m Model) startReply() (tea.Model, tea.Cmd) {
 	return m, m.input.Focus()
 }
 
+// joinTargets are who a join writes to with the current pick.
+func (m Model) joinTargets() []store.Address {
+	if m.joinPick == 0 || m.joinPick > len(m.joinTo) {
+		return m.joinTo
+	}
+	return m.joinTo[m.joinPick-1 : m.joinPick]
+}
+
+func (m Model) joinPlaceholder() string {
+	names := make([]string, 0, len(m.joinTo))
+	for _, a := range m.joinTargets() {
+		names = append(names, string(a))
+	}
+	hint := ""
+	if len(m.joinTo) > 1 {
+		hint = "  (tab: who)"
+	}
+	return "join thread as you → " + strings.Join(names, " + ") + hint
+}
+
 func (m Model) updateInput(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch k.String() {
+	case "tab":
+		if m.mode == modeReply && len(m.joinTo) > 1 {
+			m.joinPick = (m.joinPick + 1) % (len(m.joinTo) + 1)
+			m.input.Placeholder = m.joinPlaceholder()
+		}
+		return m, nil
 	case "esc":
 		m.mode = modeNone
 		m.input.Blur()
 		return m, nil
 	case "enter":
 		text := strings.TrimSpace(m.input.Value())
-		mode, target, replyTo := m.mode, m.target, m.replyTo
+		mode, target, replyTo, join := m.mode, m.target, m.replyTo, m.joinTargets()
 		m.mode = modeNone
 		m.input.Blur()
 		switch mode {
@@ -488,6 +595,16 @@ func (m Model) updateInput(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case modeReply:
 			if text == "" {
 				return m, nil
+			}
+			if len(join) > 0 {
+				return m.act(func() error {
+					for _, to := range join {
+						if err := m.b.Reply(replyTo.MID, to, text); err != nil {
+							return err
+						}
+					}
+					return nil
+				})
 			}
 			return m.act(func() error { return m.b.Reply(replyTo.MID, replyTo.From, text) })
 		case modeFilter:
