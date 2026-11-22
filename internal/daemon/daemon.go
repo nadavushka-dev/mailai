@@ -102,6 +102,9 @@ type Daemon struct {
 	waits map[string][]chan store.Message // thread id -> waiting asks
 	ln    net.Listener
 	wg    sync.WaitGroup
+
+	// linkAsks are spokes' asks held in the graph, by thread (SPEC §13a).
+	linkAsks map[string][]*linkAsk
 }
 
 // New makes a Daemon; Serve starts it.
@@ -135,7 +138,7 @@ func New(o Options) *Daemon {
 	}
 	d := &Daemon{st: o.Store, placer: o.Placer, now: o.Now, log: o.Log, maxAsk: o.MaxAsks, stash: o.Stash, tokens: o.Tokens,
 		adapter: o.Adapter, wake: o.Wake, poll: o.PollEvery, agents: newAgents(), marks: map[store.Address]noticeMark{}, approvals: map[uint64]chan approvalDecision{}, webSubs: map[chan proto.Event]bool{},
-		subs: map[*conn]bool{}, asks: newAskGraph(), waits: map[string][]chan store.Message{},
+		subs: map[*conn]bool{}, asks: newAskGraph(), linkAsks: map[string][]*linkAsk{}, waits: map[string][]chan store.Message{},
 		name: o.Name, inboxTarget: o.Inbox, dial: o.Dial, linkRetry: o.LinkRetry, heartbeat: o.Heartbeat, knownFile: o.MachinesFile,
 		links: map[string]*conn{}, known: map[string]string{}, key: o.MachineKey}
 	d.loadKnown()
@@ -588,6 +591,7 @@ func (d *Daemon) publish(m store.Message) {
 	}
 	d.mu.Unlock()
 	d.fanout(proto.Event{Event: "mail", Data: data})
+	d.replyReleases(m)
 	for _, w := range waiters {
 		select {
 		case w <- m:

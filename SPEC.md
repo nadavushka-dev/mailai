@@ -490,6 +490,19 @@ many machines but answers from one.
 - **Asks wait at home.** A spoke's `ask` and `ask-human` send over the link
   without blocking it, then wait on the spoke for the reply in the thread.
   A dropped link or a sleeping laptop does not end the wait.
+- **Asks across machines** (decided 2026-11-20). The inbox machine enters
+  every `ask` that arrives over a link in its own ask graph (§7), as an edge
+  from `name@spoke` to the target, beside its own agents' asks. An ask that
+  would close a cycle there is refused `ask_cycle`, and a spoke relays the
+  refusal to its waiting caller unchanged; so are A@s2 → B@s1 → A@s2 and
+  A@s2 → C@s3 → A@s2. `link-send` carries the ask's `timeout_ms`; the edge
+  goes when a reply in the ask's thread addressed to the asker reaches the
+  inbox machine (what ends the wait on the spoke), or when the timeout
+  passes, 24 h when none is given and never more. The ask limit (16 per
+  sender) stays the spoke's to enforce. Edges are memory only, gone if the
+  inbox machine restarts. A cycle that closes through an ask local to a
+  spoke (A@s2 → B@s1 → C@s2, then C asks A on s2) is not seen by either
+  graph and ends by timeout.
 - **Delivery.** The inbox machine keeps mail for `name@spoke` in that box,
   unread until the spoke acknowledges it, and pushes it on the link. On
   every `link-hello` and every heartbeat (15 s) it resends what is still

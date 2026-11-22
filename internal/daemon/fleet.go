@@ -42,6 +42,9 @@ type LinkSendArgs struct {
 	Text    string        `json:"text"`
 	ReplyTo string        `json:"reply_to,omitempty"`
 	Options []string      `json:"options,omitempty"`
+	// TimeoutMS is how long an ask waits on the spoke; the inbox machine
+	// holds the ask's edge in its graph that long, 24 h at most.
+	TimeoutMS int64 `json:"timeout_ms,omitempty"`
 }
 
 type LinkSendResult struct {
@@ -174,11 +177,23 @@ func (d *Daemon) linkSend(c *conn, a LinkSendArgs) (any, error) {
 	default:
 		return nil, proto.Errorf(proto.CodeBadRequest, "kind %q does not cross machines", a.Kind)
 	}
-	m, err := d.store(c.pl, store.SendRequest{From: from, To: to, Kind: a.Kind, Subject: a.Subject, Text: a.Text,
+	if a.Kind == store.KindAsk {
+		if err := d.openLinkAsk(from, to); err != nil {
+			return nil, err
+		}
+	}
+	m, err := d.st.Send(store.SendRequest{From: from, To: to, Kind: a.Kind, Subject: a.Subject, Text: a.Text,
 		ReplyTo: a.ReplyTo, Options: a.Options, Remote: true, Proof: store.ProofLink, Origin: "link", OriginHost: c.link})
 	if err != nil {
+		if a.Kind == store.KindAsk {
+			d.releaseAsk(from, to)
+		}
 		return nil, err
 	}
+	if a.Kind == store.KindAsk {
+		d.holdLinkAsk(m, linkAskTimeout(a.TimeoutMS))
+	}
+	d.publish(m)
 	res := LinkSendResult{Message: m}
 	for _, it := range d.st.Items(false) {
 		if it.MID == m.MID {
@@ -349,7 +364,7 @@ func (d *Daemon) askRemote(from store.Address, a AskArgs) (any, error) {
 		return nil, err
 	}
 	defer d.releaseAsk(from, a.To)
-	r, err := d.relay(LinkSendArgs{From: from, To: a.To, Kind: store.KindAsk, Subject: a.Subject, Text: a.Text})
+	r, err := d.relay(LinkSendArgs{From: from, To: a.To, Kind: store.KindAsk, Subject: a.Subject, Text: a.Text, TimeoutMS: a.TimeoutMS})
 	if err != nil {
 		return nil, err
 	}
