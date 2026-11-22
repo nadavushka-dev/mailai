@@ -45,6 +45,13 @@ func TestLoadMissingIsDefaultAndWakeParses(t *testing.T) {
 	if (Config{}).MachineName() == "" {
 		t.Fatal("default machine name is empty")
 	}
+	if !(Config{}).NotifyEnabled() {
+		t.Fatal("[notify] is on by default")
+	}
+	os.WriteFile(f, []byte("[notify]\nenabled = false\ncommand = [\"ntfy\", \"publish\", \"mytopic\"]\n"), 0o600)
+	if c, err = Load(f); err != nil || c.NotifyEnabled() || len(c.Notify.Command) != 3 || c.Notify.Command[2] != "mytopic" {
+		t.Fatal(err, c)
+	}
 	os.WriteFile(f, []byte("adapter = [\n"), 0o600)
 	if _, err := Load(f); err == nil {
 		t.Fatal("bad toml must error")

@@ -18,6 +18,7 @@ import (
 
 	"github.com/nadavushka-dev/mailai/internal/adapter"
 	"github.com/nadavushka-dev/mailai/internal/client"
+	"github.com/nadavushka-dev/mailai/internal/notify"
 	"github.com/nadavushka-dev/mailai/internal/proto"
 	"github.com/nadavushka-dev/mailai/internal/stash"
 	"github.com/nadavushka-dev/mailai/internal/store"
@@ -55,6 +56,11 @@ type Options struct {
 	Heartbeat time.Duration
 	// MachinesFile remembers which spokes have linked; memory only when "".
 	MachinesFile string
+
+	// Notifier tells the person a new Inbox item opened here (SPEC §12b);
+	// nil notifies nobody. NotifyEvery is the coalescing window (3 s).
+	Notifier    notify.Notifier
+	NotifyEvery time.Duration
 }
 
 // Daemon serves one machine.
@@ -69,6 +75,7 @@ type Daemon struct {
 	adapter adapter.Adapter
 	wake    bool
 	poll    time.Duration
+	alerts  *alerter
 
 	agents    *agents
 	web       webState
@@ -129,6 +136,12 @@ func New(o Options) *Daemon {
 		subs: map[*conn]bool{}, asks: newAskGraph(), waits: map[string][]chan store.Message{},
 		name: o.Name, inboxTarget: o.Inbox, dial: o.Dial, linkRetry: o.LinkRetry, heartbeat: o.Heartbeat, knownFile: o.MachinesFile,
 		links: map[string]*conn{}, known: map[string]bool{}}
+	if o.Notifier != nil {
+		if o.NotifyEvery == 0 {
+			o.NotifyEvery = 3 * time.Second
+		}
+		d.alerts = newAlerter(o.Notifier, o.NotifyEvery, d.itemIsOpen)
+	}
 	d.loadKnown()
 	return d
 }
@@ -163,6 +176,9 @@ func (d *Daemon) Serve(ctx context.Context) error {
 		<-ctx.Done()
 		d.ln.Close()
 		d.webStop()
+		if d.alerts != nil {
+			d.alerts.stop()
+		}
 	}()
 	if _, isNone := d.adapter.(adapter.None); !isNone {
 		go d.pollAgents(ctx, d.poll)
@@ -603,11 +619,14 @@ func (d *Daemon) publish(m store.Message) {
 }
 
 // publishItem tells subscribers an Inbox item opened or closed. It carries
-// no question text: the TUI fetches the list.
+// no question text: the TUI fetches the list. An item opening also tells
+// the person (SPEC §12b).
 func (d *Daemon) publishItem(it store.Item) {
 	state := "open"
 	if it.ClosedAt != 0 {
 		state = "closed"
+	} else {
+		d.itemOpened(it)
 	}
 	data, _ := json.Marshal(map[string]any{"id": it.ID, "kind": it.Kind, "from": it.From, "state": state, "closed_by": it.ClosedBy})
 	d.fanout(proto.Event{Event: "attention", Data: data})
