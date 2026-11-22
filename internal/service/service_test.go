@@ -352,7 +352,22 @@ func TestUnsupportedOS(t *testing.T) {
 
 // Defaults carries the variables that place the daemon's files and socket
 // into the service, and only when set.
+// launchd and systemd start the daemon with a minimal PATH; the adapter
+// runs `herdr` from the installer's PATH (/opt/homebrew/bin), so the unit
+// carries it.
+func TestDefaultsCarryPATH(t *testing.T) {
+	t.Setenv("PATH", "/opt/homebrew/bin:/usr/bin:/bin")
+	o, err := Defaults("/x/daemon.log")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if o.Env["PATH"] != "/opt/homebrew/bin:/usr/bin:/bin" {
+		t.Fatalf("env %v", o.Env)
+	}
+}
+
 func TestDefaultsEnv(t *testing.T) {
+	t.Setenv("PATH", "") // carried when set; TestDefaultsCarryPATH covers it
 	t.Setenv("MAILAI_HOME", "/tmp/mh")
 	t.Setenv("MAILAI_SOCKET", "")
 	t.Setenv("XDG_DATA_HOME", "")

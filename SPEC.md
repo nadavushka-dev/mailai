@@ -110,8 +110,9 @@ Two advantages, both design goals (D12):
   for `default.target`). Either runs `<absolute path of mailai> daemon run`
   at login and again after a crash, with stdout and stderr appended to the
   data dir's `daemon.log`, and carries `MAILAI_HOME`, `MAILAI_SOCKET`,
-  `XDG_CONFIG_HOME` and `XDG_DATA_HOME` into the service when they are set
-  at install. Installing again replaces the definition and restarts the
+  `XDG_CONFIG_HOME`, `XDG_DATA_HOME` and `PATH` into the service when they
+  are set at install (`PATH`, because launchd and systemd start services
+  with a minimal one and the herdr adapter runs `herdr` from it). Installing again replaces the definition and restarts the
   daemon; `service uninstall` stops it and removes the file; `service
   status` reports installed, loaded (launchd: bootstrapped; systemd:
   enabled), running, and the path. Linux linger is not enabled: a user

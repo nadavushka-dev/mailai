@@ -29,7 +29,9 @@ const (
 // envKeys are the variables that place the daemon's files and socket
 // (config.DefaultPaths, Paths.Socket); set at install, they go into the
 // service so the daemon it starts is the one this shell talks to.
-var envKeys = []string{"MAILAI_HOME", "MAILAI_SOCKET", "XDG_CONFIG_HOME", "XDG_DATA_HOME"}
+// PATH is carried because launchd/systemd start the daemon with a minimal
+// one, and the herdr adapter runs `herdr` from wherever the person has it.
+var envKeys = []string{"MAILAI_HOME", "MAILAI_SOCKET", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "PATH"}
 
 // Runner executes service-manager commands (launchctl, systemctl --user)
 // and returns their combined output.
