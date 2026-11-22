@@ -593,6 +593,12 @@ many machines but answers from one.
     live test behind `HERDR_ENV=1`.
   - End-to-end: 3 Linux Docker containers with sshd and a mailai daemon
     plus the Mac, as Enigma does; cut links to test relay and outbox.
+    For the star (§13a), `e2e/fleet.sh` (`make e2e-fleet`) runs against
+    the sandbox (`e2e/sandbox.sh`): ask-human from a spoke answered on the
+    inbox machine, mail both ways, spoke-to-spoke ask, an approval held
+    on a spoke, a link drop under a waiting ask, the spoke outbox across
+    an inbox-machine restart, and a refused machine key; one PASS/FAIL
+    line per flow, non-zero exit on any failure.
   - Always `go test -race ./...`, `gofmt -l .`, `go vet ./...`.
 - **Releases:** goreleaser, darwin/linux × amd64/arm64, `checksums.txt`,
   `install.sh`, `mailai update`.
