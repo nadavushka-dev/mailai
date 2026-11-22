@@ -662,6 +662,12 @@ func (d *Daemon) read(c *conn, a ReadArgs) (any, error) {
 	}
 	if a.Thread != "" {
 		msgs := d.st.Thread(a.Thread)
+		if len(msgs) == 0 {
+			// Any message names its thread, not only the first one.
+			if m, ok := d.st.Get(a.Thread); ok && m.ThreadID != "" {
+				msgs = d.st.Thread(m.ThreadID)
+			}
+		}
 		resolveMissing(msgs)
 		if msgs == nil {
 			msgs = []store.Message{}
