@@ -40,6 +40,15 @@ func EnvVar(pid int, name string) (string, bool) {
 	return ProcargsEnvVar(buf, name)
 }
 
+// Args reads a process's argv from kern.procargs2 (same user only).
+func Args(pid int) ([]string, bool) {
+	buf, err := unix.SysctlRaw("kern.procargs2", pid)
+	if err != nil {
+		return nil, false
+	}
+	return ProcargsArgs(buf)
+}
+
 // HasTTY says whether pid has a controlling terminal (e_tdev != NODEV).
 func HasTTY(pid int) bool {
 	if pid <= 0 {

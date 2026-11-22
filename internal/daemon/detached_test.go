@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/nadavushka-dev/mailai/internal/client"
@@ -13,8 +14,32 @@ import (
 // answer the Inbox, mint tokens, grant, or open the web page. It may carry
 // a link (the ssh bridge has no terminal).
 func TestDetachedCallerIsNeverThePerson(t *testing.T) {
+	neverThePerson(t, Placement{Proof: store.ProofDetached, PID: 42})
+}
+
+// Decided 2026-11-22 (§9): an agent program among the parents, outside
+// every pane with no token, is an agent: the same as detached, whatever
+// terminal it has. It is told how to get a name of its own.
+func TestAgentOutsidePaneIsNeverThePerson(t *testing.T) {
+	sock := neverThePerson(t, Placement{Proof: store.ProofAgent, PID: 42, Agent: "claude"})
+	c, err := client.Dial(sock, "detached")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	err = c.Call("send", SendArgs{To: "worker", Text: "hi"}, nil)
+	if err == nil || !strings.Contains(err.Error(), "claude") || !strings.Contains(err.Error(), "MAILAI_TOKEN") {
+		t.Fatalf("the refusal should say why and how: %v", err)
+	}
+	if err := c.Call("link-hello", LinkHelloArgs{Machine: "s9"}, nil); client.Code(err) != proto.CodeForbidden {
+		t.Fatalf("an agent may not open a link: %v", err)
+	}
+}
+
+func neverThePerson(t *testing.T, pl Placement) string {
+	t.Helper()
 	sock, _ := startDaemonWith(t, Options{Placer: &fakePlacer{byToken: map[string]Placement{
-		"detached": {Proof: store.ProofDetached, PID: 42},
+		"detached": pl,
 	}}})
 	person := dial(t, sock)
 	if err := person.Call("ask-human", AskHumanArgs{From: "worker", Text: "ok?", NoWait: true}, nil); err != nil {
@@ -27,7 +52,7 @@ func TestDetachedCallerIsNeverThePerson(t *testing.T) {
 	defer c.Close()
 	var who WhoamiResult
 	c.Call("whoami", nil, &who)
-	if who.Proof != store.ProofDetached {
+	if who.Proof != pl.Proof {
 		t.Fatalf("%+v", who)
 	}
 	if err := c.Call("send", SendArgs{To: "worker", Text: "hi"}, nil); client.Code(err) != proto.CodeForbidden {
@@ -40,7 +65,7 @@ func TestDetachedCallerIsNeverThePerson(t *testing.T) {
 	if err := c.Call("send", SendArgs{From: "nightly", To: "worker", Text: "build red"}, &sr); err != nil {
 		t.Fatal(err)
 	}
-	if sr.Message.From != "nightly" || sr.Message.Verified != "" || sr.Message.SenderProof != store.ProofDetached {
+	if sr.Message.From != "nightly" || sr.Message.Verified != "" || sr.Message.SenderProof != pl.Proof {
 		t.Fatalf("%+v", sr.Message)
 	}
 	var inbox InboxResult
@@ -58,7 +83,7 @@ func TestDetachedCallerIsNeverThePerson(t *testing.T) {
 		{"web-start", WebStartArgs{}},
 	} {
 		if err := c.Call(v.verb, v.args, nil); err == nil {
-			t.Fatalf("%s from a detached caller succeeded", v.verb)
+			t.Fatalf("%s from a %s caller succeeded", v.verb, pl.Proof)
 		}
 	}
 	c.Call("inbox", InboxArgs{}, &inbox)
@@ -92,7 +117,10 @@ func TestDetachedCallerIsNeverThePerson(t *testing.T) {
 	if !nr.New {
 		t.Fatalf("a detached notice consumed the person's: %+v", nr)
 	}
-	if err := c.Call("link-hello", LinkHelloArgs{Machine: "s2"}, nil); err != nil {
-		t.Fatalf("bridge without a terminal must link: %v", err)
+	if pl.Proof == store.ProofDetached {
+		if err := c.Call("link-hello", LinkHelloArgs{Machine: "s2"}, nil); err != nil {
+			t.Fatalf("bridge without a terminal must link: %v", err)
+		}
 	}
+	return sock
 }

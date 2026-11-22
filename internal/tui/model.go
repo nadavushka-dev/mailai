@@ -518,7 +518,7 @@ func (m Model) current() (store.Item, bool) {
 // startReply opens the input for the current item or thread.
 func (m Model) startReply() (tea.Model, tea.Cmd) {
 	if !m.person {
-		return m.fail(fmt.Errorf("browse only: this client is inside a pane, so its replies would not be the person's (SPEC §12)")), nil
+		return m.fail(m.browseOnly()), nil
 	}
 	switch {
 	case m.view == ViewInbox:
@@ -698,7 +698,15 @@ func (m Model) updateInput(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m Model) act(f func() error) (tea.Model, tea.Cmd) {
 	if !m.person {
-		return m.fail(fmt.Errorf("browse only: this client is inside a pane (SPEC §12)")), nil
+		return m.fail(m.browseOnly()), nil
 	}
 	return m, func() tea.Msg { return actionMsg{err: f()} }
+}
+
+// browseOnly is why this client cannot act: the daemon's reason (§9).
+func (m Model) browseOnly() error {
+	if m.who.NotPerson != "" {
+		return fmt.Errorf("browse only: %s", m.who.NotPerson)
+	}
+	return fmt.Errorf("browse only: this client is inside a pane, so its replies would not be the person's (SPEC §12)")
 }

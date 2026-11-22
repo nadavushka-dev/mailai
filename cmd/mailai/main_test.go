@@ -49,7 +49,7 @@ func startEnv(t *testing.T) *env {
 	// Test processes have no terminal; the person check is covered by the
 	// identity and daemon tests. Tests never pop desktop notifications.
 	os.MkdirAll(filepath.Join(home, "config"), 0o700)
-	os.WriteFile(filepath.Join(home, "config", "config.toml"), []byte("[identity]\nrequire_terminal = false\n[notify]\nenabled = false\n"), 0o600)
+	os.WriteFile(filepath.Join(home, "config", "config.toml"), []byte("[identity]\nrequire_terminal = false\ndetect_agents = false\n[notify]\nenabled = false\n"), 0o600)
 	cmd := e.cmd("daemon", "run")
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
@@ -249,6 +249,25 @@ func TestCLI_AttachAndStash(t *testing.T) {
 	e.must("stash", "get", stored, dest)
 	if b, _ := os.ReadFile(dest); string(b) != "plan" {
 		t.Fatal(string(b))
+	}
+}
+
+// An empty Inbox for a caller that is not the person says so, not "nothing
+// waits on you" (found on UbCl, where a question was waiting).
+func TestCLI_InboxSaysWhenYouAreNotThePerson(t *testing.T) {
+	e := startEnv(t)
+	e.must("ask-human", "--from", "worker", "--no-wait", "-o", "yes", "-o", "no", "ok?")
+	tok := strings.TrimSpace(strings.SplitN(e.must("token", "new", "builder"), "\n", 2)[0])
+	c := e.cmd("inbox")
+	c.Env = append(c.Env, "MAILAI_TOKEN="+tok)
+	out, err := c.CombinedOutput()
+	if err != nil || strings.Contains(string(out), "inbox empty") || !strings.Contains(string(out), "not the person") {
+		t.Fatalf("%v %q", err, out)
+	}
+	c = e.cmd("whoami")
+	c.Env = append(c.Env, "MAILAI_TOKEN="+tok)
+	if out, _ := c.CombinedOutput(); strings.TrimSpace(string(out)) != "builder (token)" {
+		t.Fatalf("an agent's whoami stays one short line: %q", out)
 	}
 }
 

@@ -173,6 +173,33 @@ func (h *Herdr) PaneOfPID(pid int) (store.Address, bool) {
 	return store.Address(id), true
 }
 
+// RunsAgent says whether herdr lists an agent in a pane (by the principal
+// PaneOfPID gave). A pane not in the last list is checked afresh, since an
+// agent may have started since; when herdr cannot say, the pane counts as
+// an agent's, never the person's (SPEC §9, decided 2026-11-22).
+func (h *Herdr) RunsAgent(pane store.Address) bool {
+	if h.listed(pane) {
+		return true
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	if _, err := h.Agents(ctx); err != nil {
+		return true
+	}
+	return h.listed(pane)
+}
+
+func (h *Herdr) listed(pane store.Address) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for id, p := range h.names {
+		if p == pane || store.Address(id) == pane {
+			return true
+		}
+	}
+	return false
+}
+
 // server is the herdr server's pid: the peer of a connection to its socket,
 // cached and re-checked when the process is gone.
 func (h *Herdr) server() int {

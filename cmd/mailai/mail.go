@@ -358,7 +358,8 @@ func cmdWhoami(args []string) error {
 		return printJSON(w)
 	}
 	if w.Principal == "" {
-		fmt.Printf("nobody (%s: no terminal and no token, so not the person; pass --from)\n", w.Proof)
+		// No name of its own: say why, and how to get one (§9).
+		fmt.Printf("nobody (%s): %s\n", w.Proof, w.NotPerson)
 		return nil
 	}
 	fmt.Printf("%s (%s)\n", w.Principal, w.Proof)

@@ -63,3 +63,7 @@ func (None) Name() string                                      { return "none" }
 func (None) Agents(context.Context) ([]Agent, error)           { return nil, nil }
 func (None) Type(context.Context, store.Address, string) error { return ErrCannotType }
 func (None) PaneOfPID(int) (store.Address, bool)               { return "", false }
+
+// RunsAgent: none places nothing in a pane, so it is never asked; if it is,
+// the answer that cannot make anyone the person.
+func (None) RunsAgent(store.Address) bool { return true }

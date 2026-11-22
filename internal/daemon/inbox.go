@@ -48,6 +48,8 @@ const RecentWindow = time.Hour
 
 type InboxResult struct {
 	Items []store.Item `json:"items"`
+	// NotPerson: as on whoami, for a caller that is not the person.
+	NotPerson string `json:"not_person,omitempty"`
 }
 
 type AnswerArgs struct {
@@ -218,7 +220,7 @@ func (d *Daemon) inbox(c *conn, a InboxArgs) (any, error) {
 			items = append(items, it)
 		}
 	}
-	return InboxResult{Items: items}, nil
+	return InboxResult{Items: items, NotPerson: whyNotPerson(c.pl)}, nil
 }
 
 // answer is the person replying to an item: a verified reply into the thread

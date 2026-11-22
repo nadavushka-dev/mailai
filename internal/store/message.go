@@ -38,6 +38,10 @@ const (
 	// ProofDetached is outside every pane with no controlling terminal
 	// (cron, a service, a setsid child): a claim, never the person.
 	ProofDetached Proof = "detached"
+	// ProofAgent is outside every pane with no token, but an agent program
+	// (claude, codex, pi, ...) is among its parents: an agent, never the
+	// person, so its name is only a claim (decided 2026-11-22).
+	ProofAgent Proof = "agent"
 )
 
 // Attachment is a reference to a file, never its bytes (SPEC §6).

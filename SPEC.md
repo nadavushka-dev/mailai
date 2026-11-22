@@ -356,9 +356,25 @@ what state each is in, and how to type one line at one of them.
 
 The daemon reads every caller's pid from the socket (`SO_PEERCRED`,
 `LOCAL_PEERPID`); nothing the caller sends can change it. From the pid it
-derives `sender_proof`:
+derives `sender_proof`.
 
-- **`pane`:** the caller is inside a pane the adapter knows. Herdr: the
+**Decided 2026-11-22: an agent is what an agent program runs, not what
+runs in a pane.** The person works in Herdr too, and an agent started
+outside Herdr was passing as the person. So a pane counts as an agent's only
+when one runs there, and an agent program among a caller's parents makes it
+an agent anywhere. Agent programs are recognised by argv: `claude`, `codex`,
+`pi`, `gemini`, `opencode`, `aider`, `goose`, `amp`, `crush`,
+`cursor-agent`, `qwen`, `droid`, `copilot`, `kiro-cli`, or a script of a
+known agent package under `node`/`bun`/`deno`/`python`. `[identity]
+detect_agents = false` turns the check off (test rigs, which run under
+whatever started them).
+
+- **`pane`:** the caller is inside a pane the adapter knows **and an agent
+  runs there**: Herdr lists an agent in the pane (a pane missing from the
+  last list is asked about afresh; if Herdr cannot say, it counts as an
+  agent's), or an agent program sits between the caller and the pane's
+  shell. A pane running no agent, a plain shell, is a terminal like any
+  other: the person's TUI and `mailai answer` work there. Herdr: the
   caller's ancestry reaches the pane's shell pid when `herdr pane list`
   exposes it, else its controlling tty is that pane's. When neither can be
   established the caller falls back to `token`, and `HERDR_PANE_ID` is only a
@@ -368,7 +384,13 @@ derives `sender_proof`:
 - **`token`:** the caller presents a per-agent token the daemon issued at
   spawn (`mailai token new <name>`, exported into the agent's environment by
   whoever starts it). Used with the `none` adapter and for headless agents.
-- **`outside_pane`:** same user, outside every known pane, no token, **at a
+- **`agent`:** outside every pane, no token, but an agent program is among
+  the caller's parents: an agent with no name of its own. Like `detached`
+  it must say `--from <name>` (a claim, never `human`), is never verified,
+  has none of the person's rights and cannot open a link; the refusal tells
+  it to start with `MAILAI_TOKEN`.
+- **`outside_pane`:** same user, no token, no agent program among its
+  parents, outside every agent's pane, **at a
   controlling terminal** (the kernel's `tty_nr` / `e_tdev`). On a
   single-user machine this is, as far as mailai can tell, the person. It is
   what `--from human` from a shell needs; an agent cannot get here from a
@@ -396,8 +418,15 @@ target is in that grant's scope. Nothing in the request chooses it.
 
 **Out of scope,** as in TUIOS: another user, root, a changed binary, and a
 process that deliberately leaves its pane through a service manager or
-scheduler. The checks stop an agent acting as the person through mailai,
-not a determined local attacker. Windows and the BSDs give no peer pid and
+scheduler, an agent that opens a new shell pane (`herdr pane split`) and
+types into it, and an agent program mailai does not recognise. The checks
+stop an agent acting as the person through mailai, not a determined local
+attacker.
+
+**Saying why.** `whoami` and `inbox` carry `not_person`, one line on why a
+caller is not the person and where the person's Inbox is (a pane with no
+agent, a plain terminal, `mailai web`). The CLI and the TUI show it instead
+of an empty Inbox. Windows and the BSDs give no peer pid and
 are not supported in v1.
 
 ## 10. Grants and supervisors (D5)

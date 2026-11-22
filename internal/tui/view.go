@@ -142,12 +142,17 @@ func (m Model) listTitle() string {
 func (m Model) listBody(w, h int) string {
 	if m.view == ViewInbox {
 		strip := !m.showAll && len(m.recent) > 0
+		empty := styleDim.Render("inbox empty: nothing waits on you")
+		if m.who.NotPerson != "" {
+			// Not the person: say why nothing shows (§9), wrapped to fit.
+			empty = styleWarn.Width(max(20, w-4)).Render(m.who.NotPerson)
+		}
 		if len(m.items) == 0 && !strip {
-			return center(styleDim.Render("inbox empty: nothing waits on you"), w, h)
+			return center(empty, w, h)
 		}
 		var rows []string
 		if len(m.items) == 0 {
-			rows = append(rows, styleDim.Render("inbox empty: nothing waits on you"))
+			rows = append(rows, empty)
 		}
 		for i, it := range m.items {
 			rows = append(rows, m.itemRow(it, w, i == m.cursor))

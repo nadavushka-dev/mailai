@@ -36,6 +36,36 @@ func TestProcargsEnvVar(t *testing.T) {
 	}
 }
 
+// argv, for telling an agent program from a shell (SPEC §9).
+func TestProcargsArgsAndCmdline(t *testing.T) {
+	var buf []byte
+	buf = binary.LittleEndian.AppendUint32(buf, 3)
+	buf = append(buf, "/usr/local/bin/node\x00\x00\x00"...)
+	buf = append(buf, "node\x00/x/claude-code/cli.js\x00--resume\x00"...)
+	buf = append(buf, "HOME=/h\x00\x00"...)
+	if a, ok := ProcargsArgs(buf); !ok || len(a) != 3 || a[1] != "/x/claude-code/cli.js" {
+		t.Fatalf("%q %v", a, ok)
+	}
+	if _, ok := ProcargsArgs([]byte{1}); ok {
+		t.Fatal("short buffer")
+	}
+	// A process that rewrote its title pads argv with NULs (pi does).
+	if a := CmdlineArgs([]byte("pi\x00\x00\x00\x00")); len(a) != 1 || a[0] != "pi" {
+		t.Fatalf("%q", a)
+	}
+	if a := CmdlineArgs([]byte("bash\x00-c\x00mailai unread\x00")); len(a) != 3 || a[2] != "mailai unread" {
+		t.Fatalf("%q", a)
+	}
+}
+
+// The kernel reports this process's own argv.
+func TestArgsOnSelf(t *testing.T) {
+	a, ok := Args(os.Getpid())
+	if !ok || len(a) == 0 || a[0] != os.Args[0] {
+		t.Fatalf("%q %v, want argv[0] %q", a, ok, os.Args[0])
+	}
+}
+
 // The kernel reports this process's own environment.
 func TestEnvVarOnSelf(t *testing.T) {
 	os.Setenv("MAILAI_PROCINFO_TEST", "yes") // not visible: the kernel keeps the start-time env

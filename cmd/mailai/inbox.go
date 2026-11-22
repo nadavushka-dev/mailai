@@ -90,6 +90,10 @@ func cmdInbox(args []string) error {
 		return nil
 	}
 	if len(r.Items) == 0 {
+		if r.NotPerson != "" {
+			fmt.Println(r.NotPerson)
+			return nil
+		}
 		fmt.Println("inbox empty: nothing waits on you")
 		return nil
 	}

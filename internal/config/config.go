@@ -70,6 +70,7 @@ type Config struct {
 	} `toml:"notify"`
 	Identity struct {
 		RequireTerminal *bool `toml:"require_terminal"`
+		DetectAgents    *bool `toml:"detect_agents"`
 	} `toml:"identity"`
 	// Fleet places this machine in the star (SPEC §13a).
 	Fleet struct {
@@ -108,6 +109,13 @@ func (c Config) NotifyEnabled() bool { return c.Notify.Enabled == nil || *c.Noti
 // on unless [identity] require_terminal = false (test rigs).
 func (c Config) RequireTerminal() bool {
 	return c.Identity.RequireTerminal == nil || *c.Identity.RequireTerminal
+}
+
+// DetectAgents says an agent program among a caller's parents makes it an
+// agent (§9); on unless [identity] detect_agents = false (test rigs, which
+// run under whatever started them).
+func (c Config) DetectAgents() bool {
+	return c.Identity.DetectAgents == nil || *c.Identity.DetectAgents
 }
 
 // Load reads config.toml; a missing file is the default config.

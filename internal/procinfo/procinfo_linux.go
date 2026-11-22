@@ -42,6 +42,15 @@ func EnvVar(pid int, name string) (string, bool) {
 	return EnvironVar(data, name)
 }
 
+// Args reads a process's argv from /proc/<pid>/cmdline.
+func Args(pid int) ([]string, bool) {
+	data, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/cmdline")
+	if err != nil || len(data) == 0 {
+		return nil, false
+	}
+	return CmdlineArgs(data), true
+}
+
 // statFields are the fields of /proc/<pid>/stat after comm: state(3)
 // ppid(4) pgrp(5) session(6) tty_nr(7) ... comm (field 2) is in
 // parentheses and may hold spaces, so count from after the last ')'.

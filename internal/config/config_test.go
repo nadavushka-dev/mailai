@@ -42,6 +42,14 @@ func TestLoadMissingIsDefaultAndWakeParses(t *testing.T) {
 	if c, _ = Load(f); c.RequireTerminal() {
 		t.Fatal("require_terminal = false must turn it off")
 	}
+	// Test rigs run under whatever started them, an agent included.
+	if !(Config{}).DetectAgents() {
+		t.Fatal("agent detection is on by default")
+	}
+	os.WriteFile(f, []byte("[identity]\ndetect_agents = false\n"), 0o600)
+	if c, _ = Load(f); c.DetectAgents() {
+		t.Fatal("detect_agents = false must turn it off")
+	}
 	if (Config{}).MachineName() == "" {
 		t.Fatal("default machine name is empty")
 	}

@@ -167,6 +167,34 @@ func TestHerdr_PaneOfPIDByServerChildAndRecordedEnv(t *testing.T) {
 	}
 }
 
+// Decided 2026-11-22 (SPEC §9): a pane runs an agent when herdr lists one
+// there. A pane it has not listed is asked about afresh before it counts as
+// a plain shell, and when herdr cannot say, the pane is an agent's.
+func TestHerdr_RunsAgent(t *testing.T) {
+	r := &fakeRunner{}
+	h := &Herdr{Run: r}
+	h.Agents(context.Background())
+	for _, p := range []store.Address{"reviewer", "w2Y:p1"} {
+		if !h.RunsAgent(p) {
+			t.Fatalf("%s runs an agent", p)
+		}
+	}
+	before := len(r.calls)
+	if h.RunsAgent("w7:p7") {
+		t.Fatal("a pane herdr does not list is a plain shell")
+	}
+	if len(r.calls) != before+1 || r.calls[before] != "agent list" {
+		t.Fatalf("an unlisted pane must be checked afresh: %q", r.calls[before:])
+	}
+	r.fail = true
+	if !h.RunsAgent("w7:p7") {
+		t.Fatal("herdr not answering must not make a pane the person's")
+	}
+	if !(None{}).RunsAgent("x") {
+		t.Fatal("none has no panes; anything it is asked about is an agent's")
+	}
+}
+
 func TestNone(t *testing.T) {
 	var a Adapter = None{}
 	if ag, err := a.Agents(context.Background()); err != nil || ag != nil {

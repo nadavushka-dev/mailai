@@ -83,6 +83,9 @@ type WhoamiResult struct {
 	Principal store.Address `json:"principal"`
 	Proof     store.Proof   `json:"proof"`
 	PID       int           `json:"pid,omitempty"`
+	// NotPerson, for a caller that is not the person, says why and what to
+	// do: one line for the CLI and the TUI to show instead of an empty Inbox.
+	NotPerson string `json:"not_person,omitempty"`
 }
 
 // MailEvent is the data of an "mail" event: enough to know something

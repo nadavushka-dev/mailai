@@ -274,6 +274,20 @@ func TestBrowseOnlyInsideAPane(t *testing.T) {
 	}
 }
 
+// Found on UbCl: in a Herdr pane the Inbox said "inbox empty: nothing
+// waits on you" while a question waited. It says why it shows nothing.
+func TestNotThePersonSaysWhyInsteadOfEmpty(t *testing.T) {
+	f := person()
+	f.items = nil
+	f.who = daemon.WhoamiResult{Principal: "w4Y:p3", Proof: store.ProofPane,
+		NotPerson: "this client is inside a pane running an agent (w4Y:p3), so mailai treats it as that agent"}
+	m := start(f)
+	v := m.View()
+	if strings.Contains(v, "nothing waits on you") || !strings.Contains(v, "running an agent") || !strings.Contains(v, "(w4Y:p3)") {
+		t.Fatalf("%s", v)
+	}
+}
+
 func TestErrorsShowAndFade(t *testing.T) {
 	f := person()
 	f.failNext = errors.New("not_human: nope")

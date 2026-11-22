@@ -59,9 +59,14 @@ func cmdDaemon(args []string) error {
 	}
 	logger := log.New(os.Stderr, "mailai ", log.LstdFlags)
 	ad := chooseAdapter(cfg)
+	// Args: an agent program among a caller's parents makes it an agent, and
+	// a pane that runs none is the person's (SPEC §9).
 	placer := &identity.Placer{Proc: procinfo.Kernel{}, Tokens: tk, Panes: ad, SelfPID: os.Getpid()}
 	if cfg.RequireTerminal() {
 		placer.TTY = procinfo.Kernel{}
+	}
+	if cfg.DetectAgents() {
+		placer.Args = procinfo.Kernel{}
 	}
 	// Desktop notifications for new Inbox items (SPEC §12b).
 	notifier, backend := notify.Choose(notify.Config{Enabled: cfg.NotifyEnabled(), Command: cfg.Notify.Command, Log: logger})

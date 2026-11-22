@@ -14,5 +14,8 @@ func EnvVar(int, string) (string, bool) { return "", false }
 // HasTTY cannot be read here: no caller is placed at a terminal.
 func HasTTY(int) bool { return false }
 
+// Args cannot be read here.
+func Args(int) ([]string, bool) { return nil, false }
+
 // ParentPID cannot be read here.
 func ParentPID(int) (int, bool) { return 0, false }

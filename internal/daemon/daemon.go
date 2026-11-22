@@ -449,9 +449,9 @@ func (d *Daemon) handle(c *conn, req proto.Request) (any, error) {
 			return nil, err
 		}
 		c.pl = d.placer.Place(c.Conn, a.Token)
-		return WhoamiResult{Principal: d.own(c.pl), Proof: c.pl.Proof, PID: c.pl.PID}, nil
+		return d.whoami(c), nil
 	case "whoami":
-		return WhoamiResult{Principal: d.own(c.pl), Proof: c.pl.Proof, PID: c.pl.PID}, nil
+		return d.whoami(c), nil
 	case "send":
 		a, err := decode[SendArgs](req.Args)
 		if err != nil {
