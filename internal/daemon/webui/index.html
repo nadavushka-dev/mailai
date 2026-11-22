@@ -2,242 +2,494 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
 <title>mailai</title>
 <style>
   :root {
     color-scheme: dark;
-    --bg: #100f0c;
-    --panel: #18170f;
-    --panel-2: #211f16;
-    --line: #322f26;
-    --fg: #f4f0e6;
-    --dim: #9c9688;
-    --brass: #e0b15a;
-    --brass-ink: #2a220f;
-    --ok: #9dcc86;
-    --bad: #e48b7a;
-    --super: #d2b0f0;
-    --sel: #2a2618;
-    --sans: ui-sans-serif, system-ui, "Segoe UI", sans-serif;
-    --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
-    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    --bg: #0b0c0e;
+    --bg-2: #0f1113;
+    --panel: #141619;
+    --panel-2: #1a1d21;
+    --hover: #17191d;
+    --sel: #1d2026;
+    --line: #22262b;
+    --line-2: #2e333a;
+    --fg: #eceef1;
+    --fg-2: #c4c9d0;
+    --dim: #8b929c;
+    --faint: #626872;
+    --amber: #f3b340;
+    --amber-soft: rgba(243, 179, 64, .12);
+    --amber-ink: #241a05;
+    --red: #f2806f;
+    --red-soft: rgba(242, 128, 111, .12);
+    --green: #6ad49b;
+    --green-soft: rgba(106, 212, 155, .12);
+    --violet: #b8a4ff;
+    --violet-soft: rgba(184, 164, 255, .12);
+    --blue: #82b6ff;
+    --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Segoe UI", system-ui, sans-serif;
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    --ease: cubic-bezier(.16, 1, .3, 1);
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; }
   body {
     margin: 0;
-    background:
-      radial-gradient(1200px 500px at 10% -10%, #2a2418 0%, transparent 55%),
-      var(--bg);
+    background: var(--bg);
     color: var(--fg);
-    font: 15px/1.45 var(--sans);
-    display: grid;
-    grid-template-rows: auto auto 1fr auto;
-    min-height: 100%;
-  }
-  header, .filters, footer {
+    font: 14px/1.5 var(--sans);
+    -webkit-font-smoothing: antialiased;
     display: flex;
-    gap: 10px;
-    align-items: center;
-    padding: 10px 18px;
+    flex-direction: column;
+    height: 100dvh;
+    overflow: hidden;
+  }
+  [hidden] { display: none !important; }
+  ::selection { background: rgba(243, 179, 64, .32); color: var(--fg); }
+  * { scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 10px; border: 3px solid var(--bg); }
+  .i { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+  button, input, textarea { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+  :focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; border-radius: 6px; }
+  kbd {
+    font: 500 11px/1 var(--mono);
+    color: var(--dim);
+    background: var(--panel-2);
+    border: 1px solid var(--line-2);
+    border-bottom-width: 2px;
+    border-radius: 5px;
+    padding: 2px 5px;
+    min-width: 18px;
+    text-align: center;
+    display: inline-block;
+  }
+
+  /* ---------- top bar ---------- */
+  .top {
+    display: flex; align-items: center; gap: 18px;
+    padding: 10px 16px;
     border-bottom: 1px solid var(--line);
-    background: rgba(16, 15, 12, .86);
-    backdrop-filter: blur(10px);
+    background: var(--bg-2);
   }
-  footer { border-bottom: 0; border-top: 1px solid var(--line); color: var(--dim); font-size: 12px; gap: 14px; flex-wrap: wrap; }
-  .brand {
-    font-family: var(--serif);
-    font-weight: 600;
-    letter-spacing: .01em;
-    font-size: 18px;
+  .brand { display: flex; align-items: center; gap: 8px; font-weight: 650; letter-spacing: -.01em; font-size: 15px; }
+  .brand .mark { width: 18px; height: 18px; border-radius: 5px; background: var(--amber); display: grid; place-items: center; color: var(--amber-ink); }
+  .brand .mark .i { width: 12px; height: 12px; stroke-width: 2.4; }
+  .tabs { display: flex; gap: 2px; background: var(--panel); border: 1px solid var(--line); border-radius: 9px; padding: 2px; }
+  .tabs button {
+    display: inline-flex; align-items: center; gap: 7px;
+    border: 0; background: transparent; color: var(--dim);
+    padding: 5px 11px; border-radius: 7px; font-weight: 550; font-size: 13px;
+    transition: background .15s, color .15s;
   }
-  .brand span { color: var(--brass); }
-  nav { display: flex; gap: 4px; }
-  button, input, textarea {
-    font: inherit;
-    color: var(--fg);
-    background: transparent;
-    border: 1px solid var(--line);
-    border-radius: 8px;
+  .tabs button:hover { color: var(--fg-2); }
+  .tabs button.on { background: var(--panel-2); color: var(--fg); box-shadow: 0 1px 2px rgba(0,0,0,.4); }
+  .count { font: 600 11px/1 var(--sans); font-variant-numeric: tabular-nums; padding: 3px 6px; border-radius: 99px; background: var(--line); color: var(--fg-2); }
+  .count:empty { display: none; }
+  #tab-inbox.on .count { background: var(--amber); color: var(--amber-ink); }
+  .spacer { flex: 1; }
+  .ghost {
+    display: inline-flex; align-items: center; gap: 8px;
+    border: 1px solid var(--line); background: var(--panel); color: var(--dim);
+    padding: 5px 8px 5px 10px; border-radius: 8px; font-size: 13px;
   }
-  header button, .filters button {
-    padding: 6px 12px;
-    cursor: pointer;
+  .ghost:hover { color: var(--fg-2); border-color: var(--line-2); }
+  .ghost.on { color: var(--amber); border-color: rgba(243,179,64,.4); }
+  .live { display: inline-flex; align-items: center; gap: 7px; color: var(--dim); font-size: 12px; }
+  .live i { width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 3px var(--green-soft); }
+  .live.off i { background: var(--red); box-shadow: 0 0 0 3px var(--red-soft); }
+  .who { color: var(--faint); font-size: 12px; }
+
+  /* ---------- filters ---------- */
+  .filters {
+    display: flex; gap: 10px; flex-wrap: wrap; align-items: center;
+    padding: 8px 16px; border-bottom: 1px solid var(--line); background: var(--bg-2);
   }
-  header button.on, .chip.on {
-    background: var(--sel);
-    border-color: #5c5130;
-    color: var(--brass);
+  .filters[hidden] { display: none; }
+  .filters label {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+    padding: 0 0 0 10px; color: var(--dim); font-size: 12px;
   }
-  button:focus-visible, input:focus-visible, textarea:focus-visible, .row:focus-visible {
-    outline: 2px solid var(--brass);
-    outline-offset: 2px;
-  }
-  .who { margin-left: auto; color: var(--dim); font-size: 13px; }
-  .live { display: inline-flex; align-items: center; gap: 6px; color: var(--dim); font-size: 12px; }
-  .live i {
-    width: 7px; height: 7px; border-radius: 50%; background: var(--ok); display: block;
-  }
-  .live.off i { background: var(--bad); }
-  .filters { gap: 14px; flex-wrap: wrap; padding-top: 8px; padding-bottom: 8px; }
-  .filters label { display: flex; align-items: center; gap: 6px; color: var(--dim); font-size: 12px; letter-spacing: .04em; text-transform: uppercase; }
-  .filters input[type="text"] { padding: 5px 8px; min-width: 9em; background: var(--panel); }
-  .filters input[type="checkbox"] { accent-color: var(--brass); }
-  .split { display: grid; grid-template-columns: minmax(280px, 38%) 1fr; min-height: 0; }
-  #list, #read { min-height: 0; overflow: auto; }
-  .left { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--line); }
-  #list { flex: 1; }
-  #recent { border-top: 1px solid var(--line); max-height: 40%; overflow: auto; }
-  #recent h3, .recent-row > span, .recent-row .ago { opacity: .62; }
-  .recent-row > span.how { opacity: 1; }
-  #recent[hidden] { display: none; }
-  #recent h3 { margin: 0; padding: 8px 16px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); font-weight: 600; }
-  .recent-row { display: grid; grid-template-columns: auto 1fr auto; gap: 2px 10px; padding: 6px 16px; font-size: 13px; color: var(--dim); border-bottom: 1px solid var(--line); }
-  .recent-row .q { grid-column: 1 / -1; color: var(--dim); }
-  .badge { font-size: 11px; border: 1px solid currentColor; border-radius: 999px; padding: 0 6px; white-space: nowrap; }
-  .badge.maybe { color: var(--super); }
-  .badge.insession { color: var(--ok); }
-  .sysnote { color: var(--dim); font-size: 13px; font-style: italic; margin: 0 0 16px; }
+  .filters label:focus-within { border-color: var(--line-2); }
+  .filters input[type="text"] { border: 0; background: transparent; padding: 6px 10px 6px 0; width: 9.5em; outline: none; color: var(--fg); }
+  .filters input::placeholder { color: var(--faint); }
+  .filters .check { padding-right: 10px; }
+  .filters input[type="checkbox"] { accent-color: var(--amber); margin: 6px 0; }
+  .filters .clear { border: 0; background: none; color: var(--dim); font-size: 12px; padding: 4px 6px; }
+  .filters .clear:hover { color: var(--fg); }
+
+  /* ---------- layout ---------- */
+  .split { flex: 1; display: grid; grid-template-columns: minmax(320px, 400px) minmax(0, 1fr); min-height: 0; }
+  .left { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--line); background: var(--bg-2); }
+  #list { flex: 1; min-height: 0; overflow: auto; padding: 6px; }
+  #read { min-height: 0; overflow: auto; display: flex; flex-direction: column; }
+
+  /* ---------- queue rows ---------- */
   .row {
-    display: grid;
-    grid-template-columns: auto 1fr auto;
-    gap: 8px 10px;
-    width: 100%;
-    text-align: left;
-    padding: 12px 16px;
-    border: 0;
-    border-bottom: 1px solid var(--line);
-    border-radius: 0;
-    cursor: pointer;
-    background: transparent;
+    display: grid; grid-template-columns: 32px 1fr; gap: 0 12px;
+    width: 100%; text-align: left;
+    padding: 11px 12px; margin: 0 0 2px;
+    border: 0; border-radius: 10px; background: transparent; color: inherit;
+    transition: background .12s;
   }
-  .row:hover { background: #1e1c15; }
-  .row.on { background: var(--sel); box-shadow: inset 3px 0 0 var(--brass); }
-  .kind { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); }
-  .kind.risky { color: var(--bad); }
-  .from { font-weight: 650; }
-  .q { grid-column: 1 / -1; color: var(--fg); }
-  .meta { color: var(--dim); font-size: 12px; font-variant-numeric: tabular-nums; }
-  .dot { color: var(--brass); }
-  #read { display: flex; flex-direction: column; background: linear-gradient(180deg, #1c1a13 0%, #14130f 28%); }
-  #detail { padding: 28px 32px 12px; flex: 1; }
-  #detail h2 {
-    font-family: var(--serif);
-    font-weight: 560;
-    font-size: 28px;
-    line-height: 1.25;
-    margin: 8px 0 12px;
-    letter-spacing: -.01em;
+  .row:hover { background: var(--hover); }
+  .row.on { background: var(--sel); box-shadow: inset 0 0 0 1px var(--line-2); }
+  .row.closed { opacity: .6; }
+  .av {
+    --h: 210;
+    width: 32px; height: 32px; border-radius: 9px;
+    display: grid; place-items: center;
+    font: 650 12px/1 var(--sans); letter-spacing: .02em;
+    color: hsl(var(--h) 80% 82%);
+    background: hsl(var(--h) 35% 20%);
+    box-shadow: inset 0 0 0 1px hsl(var(--h) 40% 30%);
   }
-  .eyebrow { color: var(--dim); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; }
-  .acts { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 18px; }
-  .acts button, #composer button { padding: 8px 14px; cursor: pointer; }
-  .acts button.allow, #composer button[type="submit"] { background: var(--brass); color: var(--brass-ink); border-color: var(--brass); font-weight: 650; }
-  .acts button.deny, #composer-deny { border-color: var(--bad); color: var(--bad); }
-  pre {
-    white-space: pre-wrap;
-    margin: 0 0 16px;
-    padding: 0 0 0 12px;
-    border-left: 2px solid var(--line);
-    font-family: var(--sans);
+  .av.human { color: var(--amber-ink); background: var(--amber); box-shadow: none; }
+  .av.lg { width: 40px; height: 40px; border-radius: 11px; font-size: 14px; }
+  .r-body { min-width: 0; display: grid; gap: 3px; }
+  .r-top { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+  .agent { font-weight: 620; color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .host { color: var(--faint); font-size: 12px; white-space: nowrap; }
+  .age { margin-left: auto; padding-left: 8px; font-size: 12px; color: var(--faint); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .age.warm { color: var(--amber); }
+  .age.hot { color: var(--red); }
+  .r-q { color: var(--fg-2); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+  .r-q code { font: 12.5px/1.45 var(--mono); color: var(--fg); }
+  .r-tags { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 3px; }
+  .r-q .subj { color: var(--fg); font-weight: 580; }
+  .unread-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--amber); display: inline-block; flex: none; align-self: center; }
+
+  /* ---------- tags and badges ---------- */
+  .tag {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 11.5px; font-weight: 560; line-height: 1;
+    padding: 3px 7px 3px 6px; border-radius: 6px;
+    color: var(--dim); background: var(--panel-2);
   }
-  .msg-h { color: var(--dim); font-size: 13px; margin-bottom: 4px; }
-  .msg-h b { color: var(--fg); }
-  .v { color: var(--ok); }
-  .s { color: var(--super); }
-  .empty { color: var(--dim); padding: 48px 20px; text-align: center; }
-  .empty strong { display: block; color: var(--fg); font-family: var(--serif); font-size: 22px; font-weight: 560; margin-bottom: 6px; }
+  .tag .i { width: 12px; height: 12px; }
+  .tag.k-approval { color: var(--blue); background: rgba(130,182,255,.1); }
+  .tag.k-ask { color: var(--amber); background: var(--amber-soft); }
+  .tag.k-errored, .tag.risky { color: var(--red); background: var(--red-soft); }
+  .badge {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 11.5px; font-weight: 560; line-height: 1;
+    padding: 3px 8px 3px 6px; border-radius: 99px; white-space: nowrap;
+    color: var(--dim); background: var(--panel-2); box-shadow: inset 0 0 0 1px var(--line-2);
+  }
+  .badge .i { width: 12px; height: 12px; }
+  .badge.maybe { color: var(--violet); background: var(--violet-soft); box-shadow: inset 0 0 0 1px rgba(184,164,255,.3); }
+  .badge.insession { color: var(--green); background: var(--green-soft); box-shadow: inset 0 0 0 1px rgba(106,212,155,.32); }
+  .badge.super { color: var(--violet); }
+  .badge.bad { color: var(--red); }
+
+  /* ---------- done (recently closed) ---------- */
+  #recent { border-top: 1px solid var(--line); max-height: 34%; display: flex; flex-direction: column; min-height: 0; }
+  #recent[hidden] { display: none; }
+  .recent-h {
+    display: flex; align-items: center; gap: 8px; width: 100%;
+    border: 0; background: none; color: var(--dim); text-align: left;
+    padding: 10px 18px; font-size: 12px; font-weight: 600;
+  }
+  .recent-h:hover { color: var(--fg-2); }
+  .recent-h .chev { transition: transform .2s var(--ease); }
+  #recent.shut .chev { transform: rotate(-90deg); }
+  #recent.shut #recent-list { display: none; }
+  #recent-list { overflow: auto; padding: 0 6px 8px; }
+  .recent-row {
+    display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; align-items: center;
+    padding: 7px 12px; border-radius: 8px; font-size: 13px;
+  }
+  .recent-row:hover { background: var(--hover); }
+  .recent-row .who-line { color: var(--dim); min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .recent-row .who-line b { color: var(--fg-2); font-weight: 560; }
+  .recent-row .how { display: inline-flex; align-items: center; gap: 6px; justify-self: end; }
+  .recent-row .ago { color: var(--faint); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .recent-row .q { grid-column: 1 / -1; color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* ---------- decision pane ---------- */
+  #detail { padding: 28px 36px 8px; width: 100%; max-width: 860px; }
+  .d-head { display: flex; gap: 14px; align-items: center; }
+  .d-who { min-width: 0; }
+  .d-who .name { font-weight: 650; font-size: 15px; }
+  .d-who .name .host { font-weight: 450; }
+  .d-meta { color: var(--dim); font-size: 12.5px; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .d-meta .sep { color: var(--faint); }
+  .d-meta .waiting { color: var(--amber); font-weight: 560; }
+  .d-who .name { display: flex; align-items: center; gap: 8px; }
+  .d-who .name .tag { margin-left: 4px; }
+  .d-q {
+    font-size: 21px; line-height: 1.35; font-weight: 600; letter-spacing: -.015em;
+    margin: 22px 0 0; max-width: 62ch; text-wrap: pretty; overflow-wrap: anywhere;
+  }
+  .cmd {
+    margin: 16px 0 0; padding: 14px 16px;
+    background: var(--bg-2); border: 1px solid var(--line); border-radius: 12px;
+    font: 13.5px/1.6 var(--mono); color: var(--fg);
+    white-space: pre-wrap; overflow-wrap: anywhere;
+    display: flex; gap: 10px;
+  }
+  .cmd .i { color: var(--faint); margin-top: 3px; }
+  .note {
+    display: flex; gap: 10px; align-items: flex-start;
+    margin: 16px 0 0; padding: 11px 14px; border-radius: 10px; font-size: 13px;
+    max-width: 62ch;
+  }
+  .note .i { margin-top: 2px; }
+  .note.risk { color: var(--red); background: var(--red-soft); }
+  .note.maybe { color: var(--violet); background: var(--violet-soft); }
+  .note.maybe b, .note.risk b { color: var(--fg); font-weight: 600; }
+  .note span { color: var(--fg-2); }
+  .choices { display: grid; gap: 8px; margin-top: 22px; max-width: 520px; }
+  .choice {
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 14px; border-radius: 11px;
+    background: var(--panel); border: 1px solid var(--line-2); color: var(--fg);
+    font-size: 14.5px; font-weight: 550; text-align: left;
+    transition: border-color .12s, background .12s, transform .12s var(--ease);
+  }
+  .choice:hover { border-color: var(--amber); background: var(--panel-2); }
+  .choice:active { transform: scale(.99); }
+  .choice kbd { margin-left: auto; }
+  .decide { display: flex; gap: 10px; margin-top: 22px; flex-wrap: wrap; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 9px;
+    padding: 9px 14px; border-radius: 10px; font-weight: 600; font-size: 14px;
+    border: 1px solid var(--line-2); background: var(--panel); color: var(--fg);
+    transition: filter .12s, background .12s, border-color .12s;
+  }
+  .btn:hover { background: var(--panel-2); border-color: #3a4048; }
+  .btn kbd { background: rgba(0,0,0,.18); border-color: rgba(0,0,0,.25); color: inherit; opacity: .8; }
+  .btn.primary { background: var(--amber); border-color: var(--amber); color: var(--amber-ink); }
+  .btn.primary:hover { filter: brightness(1.07); }
+  .btn.allow { background: var(--green); border-color: var(--green); color: #062114; }
+  .btn.allow:hover { filter: brightness(1.07); }
+  .btn.allow.risky { background: transparent; color: var(--red); border-color: rgba(242,128,111,.6); }
+  .btn.allow.risky:hover { background: var(--red-soft); filter: none; }
+  .btn.deny { color: var(--red); }
+  .btn.deny kbd, .btn.allow.risky kbd { background: var(--panel-2); border-color: var(--line-2); }
+  .secondary { display: flex; gap: 4px; margin-top: 14px; flex-wrap: wrap; }
+  .link {
+    display: inline-flex; align-items: center; gap: 7px;
+    border: 0; background: none; color: var(--dim); padding: 6px 8px; border-radius: 8px; font-size: 13px;
+  }
+  .link:hover { color: var(--fg); background: var(--hover); }
+  .link kbd { font-size: 10.5px; }
+  .closed-line { margin-top: 18px; display: flex; gap: 8px; align-items: center; color: var(--dim); font-size: 13px; }
+
+  /* ---------- conversation ---------- */
+  .convo { margin-top: 34px; padding-top: 18px; border-top: 1px solid var(--line); max-width: 760px; }
+  .convo h3 { margin: 0 0 14px; font-size: 13px; font-weight: 600; color: var(--dim); }
+  .thread-title { font-size: 19px; font-weight: 620; letter-spacing: -.012em; margin: 0 0 4px; }
+  .thread-sub { color: var(--dim); font-size: 12.5px; margin-bottom: 22px; }
+  .msg { display: grid; grid-template-columns: 32px 1fr; gap: 0 12px; margin-bottom: 18px; }
+  .msg-h { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; font-size: 13px; color: var(--dim); }
+  .msg-h b { color: var(--fg); font-weight: 620; }
+  .msg-h .t { color: var(--faint); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .trust { font-size: 11.5px; }
+  .trust.v { color: var(--green); }
+  .trust.s { color: var(--violet); }
+  .trust.u { color: var(--faint); }
+  .msg pre {
+    margin: 5px 0 0; padding: 10px 13px;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 4px 12px 12px 12px;
+    white-space: pre-wrap; overflow-wrap: anywhere; font: 14px/1.55 var(--sans); color: var(--fg-2);
+    max-width: 68ch;
+  }
+  .msg.me pre { background: rgba(243,179,64,.07); border-color: rgba(243,179,64,.22); }
+  .sysnote { display: flex; align-items: center; gap: 8px; color: var(--dim); font-size: 12.5px; margin: 0 0 18px 44px; }
+  .sysnote .i { width: 14px; height: 14px; color: var(--green); }
+  .sysnote.maybe .i { color: var(--violet); }
+  .back { margin-bottom: 18px; }
+
+  /* ---------- composer ---------- */
   #composer {
-    margin: 0 32px 24px;
-    padding: 12px;
-    border: 1px solid var(--line);
-    border-radius: 12px;
+    position: sticky; bottom: 0;
+    margin: auto 36px 20px; max-width: 788px;
+    padding: 10px; border: 1px solid var(--line-2); border-radius: 14px;
     background: var(--panel);
-    display: grid;
-    gap: 8px;
+    box-shadow: 0 12px 32px -12px rgba(0,0,0,.6);
+    display: grid; gap: 8px;
   }
   #composer[hidden] { display: none; }
-  #composer-label { color: var(--dim); font-size: 12px; }
-  #composer-text { width: 100%; min-height: 72px; resize: vertical; padding: 8px 10px; background: var(--bg); border-radius: 8px; }
-  .composer-acts { display: flex; gap: 8px; justify-content: flex-end; }
-  #status {
-    position: fixed; bottom: 44px; left: 18px; right: 18px;
-    color: var(--bad); font-size: 13px; pointer-events: none;
+  #composer:focus-within { border-color: #4a4f57; }
+  #composer.deny { border-color: rgba(242,128,111,.5); }
+  #composer-label { color: var(--dim); font-size: 12px; padding: 0 4px; }
+  #composer-text {
+    width: 100%; min-height: 64px; max-height: 40vh; resize: vertical;
+    padding: 6px 4px; border: 0; background: transparent; outline: none; color: var(--fg); line-height: 1.5;
   }
-  kbd { font-family: var(--mono); font-size: 11px; color: var(--fg); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; }
+  #composer-text::placeholder { color: var(--faint); }
+  .composer-acts { display: flex; gap: 8px; align-items: center; justify-content: flex-end; }
+  .composer-acts .hint { margin-right: auto; color: var(--faint); font-size: 12px; padding-left: 4px; }
+
+  /* ---------- empty ---------- */
+  .empty { display: grid; place-items: center; text-align: center; color: var(--dim); padding: 64px 24px; gap: 6px; }
+  .empty .glyph { width: 44px; height: 44px; border-radius: 14px; display: grid; place-items: center; background: var(--green-soft); color: var(--green); margin-bottom: 8px; }
+  .empty .glyph .i { width: 22px; height: 22px; }
+  .empty strong { color: var(--fg); font-size: 16px; font-weight: 620; }
+  #detail .empty { min-height: 60vh; }
+
+  /* ---------- footer, toast ---------- */
+  footer {
+    display: flex; gap: 16px; flex-wrap: wrap; align-items: center;
+    padding: 8px 16px; border-top: 1px solid var(--line); background: var(--bg-2);
+    color: var(--faint); font-size: 12px;
+  }
+  footer span { display: inline-flex; gap: 6px; align-items: center; }
+  #status {
+    position: fixed; left: 50%; bottom: 52px; transform: translate(-50%, 12px);
+    display: flex; align-items: center; gap: 8px;
+    padding: 9px 14px; border-radius: 10px; font-size: 13px; font-weight: 550;
+    background: #22262c; color: var(--fg); border: 1px solid var(--line-2);
+    box-shadow: 0 16px 40px -12px rgba(0,0,0,.7);
+    opacity: 0; pointer-events: none;
+    transition: opacity .2s, transform .35s var(--ease);
+  }
+  #status.show { opacity: 1; transform: translate(-50%, 0); }
+  #status.err { color: var(--red); }
+  #status .i { color: var(--green); }
+  #status.err .i { color: var(--red); }
+  .mback { display: none; }
+
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
   @media (max-width: 800px) {
-    .split { grid-template-columns: 1fr; }
-    #list.hide-sm, #recent.hide-sm { display: none; }
-    #read.hide-sm { display: none; }
-    #detail { padding: 20px 16px 8px; }
-    #composer { margin: 0 16px 16px; }
-    #detail h2 { font-size: 24px; }
+    .top { gap: 8px; padding: 8px 10px; }
+    .brand .word, .who, .live span, .ghost .lbl, .ghost kbd, footer { display: none; }
+    .tabs button { padding: 5px 9px; gap: 5px; }
+    .split { grid-template-columns: minmax(0, 1fr); }
+    body.reading .left { display: none; }
+    body:not(.reading) #read { display: none; }
+    .mback { display: inline-flex; }
+    #detail { padding: 16px 16px 8px; }
+    .d-q { font-size: 19px; }
+    #composer { margin: auto 12px 12px; }
+    .choice { padding: 14px; }
   }
 </style>
 </head>
 <body>
-<header>
-  <div class="brand">mail<span>ai</span></div>
-  <nav aria-label="Views">
-    <button id="tab-inbox" class="on" type="button" aria-pressed="true">Inbox <span id="count"></span></button>
-    <button id="tab-mail" type="button" aria-pressed="false">Mail</button>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-inbox" viewBox="0 0 24 24"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></symbol>
+  <symbol id="i-mail" viewBox="0 0 24 24"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></symbol>
+  <symbol id="i-history" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></symbol>
+  <symbol id="i-ask" viewBox="0 0 24 24"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22z"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></symbol>
+  <symbol id="i-thread" viewBox="0 0 24 24"><path d="M14 9a2 2 0 0 1-2 2H6l-4 4V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2z"/><path d="M18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1"/></symbol>
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></symbol>
+  <symbol id="i-term" viewBox="0 0 24 24"><path d="m4 17 6-6-6-6"/><path d="M12 19h8"/></symbol>
+  <symbol id="i-send" viewBox="0 0 24 24"><path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z"/><path d="m21.854 2.147-10.94 10.939"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="i-maybe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l3 2"/></symbol>
+</svg>
+
+<header class="top">
+  <div class="brand"><span class="mark"><svg class="i"><use href="#i-send"/></svg></span><span class="word">mailai</span></div>
+  <nav class="tabs" aria-label="Views">
+    <button id="tab-inbox" class="on" type="button" aria-pressed="true"><svg class="i"><use href="#i-inbox"/></svg>Waiting <span id="count" class="count"></span></button>
+    <button id="all" type="button" aria-pressed="false" title="Every item, open and closed"><svg class="i"><use href="#i-history"/></svg>All</button>
+    <button id="tab-mail" type="button" aria-pressed="false"><svg class="i"><use href="#i-mail"/></svg>Mail <span id="mail-count" class="count"></span></button>
   </nav>
-  <button id="all" type="button" title="Show closed items too">Closed</button>
-  <span class="live" id="live"><i></i> live</span>
+  <span class="spacer"></span>
+  <button id="filter-btn" class="ghost" type="button" aria-expanded="false" aria-controls="filters"><svg class="i"><use href="#i-search"/></svg><span class="lbl">Filter</span> <kbd>/</kbd></button>
+  <span class="live" id="live"><i></i><span>live</span></span>
   <span class="who" id="who"></span>
 </header>
-<div class="filters" role="search">
-  <label>Unread <input id="f-unread" type="checkbox"></label>
-  <label>Person <input id="f-who" type="text" placeholder="name" autocomplete="off"></label>
-  <label>Session <input id="f-session" type="text" placeholder="session" autocomplete="off"></label>
-  <label>Machine <input id="f-machine" type="text" placeholder="host" autocomplete="off"></label>
+<div class="filters" id="filters" role="search" hidden>
+  <label>Agent <input id="f-who" type="text" placeholder="any" autocomplete="off" spellcheck="false"></label>
+  <label>Session <input id="f-session" type="text" placeholder="any" autocomplete="off" spellcheck="false"></label>
+  <label>Machine <input id="f-machine" type="text" placeholder="any" autocomplete="off" spellcheck="false"></label>
+  <label class="check">Unread only <input id="f-unread" type="checkbox"></label>
+  <button type="button" class="clear" id="f-clear">Clear</button>
 </div>
-<div class="split">
-  <div class="left">
-    <section id="list" role="listbox" aria-label="Waiting"></section>
+<main class="split">
+  <aside class="left">
+    <section id="list" role="listbox" aria-label="Waiting on you"></section>
     <section id="recent" aria-label="Recently closed" hidden>
-      <h3>Recently closed</h3>
+      <button type="button" class="recent-h" id="recent-toggle" aria-expanded="true"><svg class="i chev"><use href="#i-chev"/></svg>Done in the last hour <span id="recent-n" class="count"></span></button>
       <div id="recent-list"></div>
     </section>
-  </div>
-  <section id="read">
+  </aside>
+  <section id="read" aria-label="Detail">
     <div id="detail"></div>
     <form id="composer" hidden>
       <label id="composer-label" for="composer-text">Reply</label>
       <textarea id="composer-text" placeholder="Write the reply"></textarea>
       <div class="composer-acts">
-        <button type="button" id="composer-deny" hidden>Deny</button>
-        <button type="submit" id="composer-send">Send</button>
+        <span class="hint"><kbd>enter</kbd> sends · <kbd>shift</kbd>+<kbd>enter</kbd> new line</span>
+        <button type="button" class="btn deny" id="composer-deny" hidden><svg class="i"><use href="#i-x"/></svg>Deny</button>
+        <button type="submit" class="btn primary" id="composer-send"><svg class="i"><use href="#i-send"/></svg>Send</button>
       </div>
     </form>
   </section>
-</div>
+</main>
 <footer id="keys"></footer>
-<div id="status" role="status"></div>
+<div id="status" role="status" aria-live="polite"></div>
 <script>
 (() => {
   const $ = s => document.querySelector(s);
   let view = 'inbox', showAll = false, openThread = null, selected = 0;
-  let items = [], threads = [], recent = [];
+  let items = [], threads = [], recent = [], me = 'human';
+  // Done starts folded while something waits, so the queue keeps the room.
+  let recentOpen = null, convoFor = null;
+
+  // ---------- words ----------
+  const icon = (id, cls) => `<svg class="i${cls ? ' ' + cls : ''}"><use href="#i-${id}"/></svg>`;
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const localName = a => String(a||'').split('@')[0];
+  const hostOf = a => { const s = String(a||''); const i = s.indexOf('@'); return i<0 ? '' : s.slice(i+1); };
+  const ago = ns => { const d = Math.max(0, Date.now() - ns/1e6)/1000; return d<60?`${d|0}s`:d<3600?`${d/60|0}m`:d<86400?`${d/3600|0}h ${String((d/60|0)%60).padStart(2,'0')}m`:`${d/86400|0}d`; };
+  const heat = ns => { const m = (Date.now() - ns/1e6)/60000; return m >= 30 ? 'hot' : m >= 5 ? 'warm' : ''; };
+  const hhmm = ns => new Date(ns/1e6).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', hour12:false});
+  const hue = s => { let h = 0; for (const c of String(s)) h = (h * 31 + c.charCodeAt(0)) % 360; return h; };
+  const initials = name => { const p = localName(name).split(/[-_.:\s]+/).filter(Boolean); return ((p[0]||'?')[0] + (p[1] ? p[1][0] : (p[0]||'')[1] || '')).toUpperCase(); };
+  const avatar = (who, lg) => localName(who) === 'human'
+    ? `<span class="av human${lg?' lg':''}">you</span>`
+    : `<span class="av${lg?' lg':''}" style="--h:${hue(localName(who))}">${esc(initials(who))}</span>`;
+  const agentName = a => `<span class="agent">${esc(localName(a))}</span>${hostOf(a) ? `<span class="host">@${esc(hostOf(a))}</span>` : ''}`;
+  const KIND = {
+    approval: ['Permission', 'shield', 'k-approval'],
+    ask: ['Question', 'ask', 'k-ask'],
+    ask_human: ['Question', 'ask', 'k-ask'],
+    errored: ['Agent error', 'alert', 'k-errored'],
+  };
+  const kindTag = it => { const [l, ic, c] = KIND[it.kind] || [it.kind, 'ask', '']; return `<span class="tag ${c}">${icon(ic)}${l}</span>`; };
+  const question = it => it.kind === 'approval' ? `${it.subject||'Tool'}: ${it.question}` : it.question;
   // How an item closed, as the TUI says it (SPEC §7a).
   const closedHow = it => {
     const sup = String(it.decided_by||'').startsWith('supervisor:');
     if (it.closed_by === 'in_session') return 'in session';
-    if (it.closed_by === 'answered') return sup ? 'by ' + it.decided_by : 'by you';
+    if (it.closed_by === 'answered') {
+      if (it.kind === 'approval' && (it.answer === 'allow' || it.answer === 'deny')) return (it.answer === 'allow' ? 'allowed' : 'denied') + (sup ? ' by ' + it.decided_by.slice(11) : '');
+      return sup ? 'by ' + it.decided_by : 'by you';
+    }
     if (it.closed_by === 'dismissed') return sup ? 'dismissed by ' + it.decided_by : 'dismissed';
+    if (it.closed_by === 'timeout') return 'timed out';
+    if (it.closed_by === 'resolved') return 'agent moved on';
     return it.closed_by || 'closed';
   };
-  const hhmm = ns => new Date(ns/1e6).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', hour12:false});
-  const maybeBadge = '<span class="badge maybe">maybe answered in session</span>';
-  const inSessionBadge = '<span class="badge insession">answered in session</span>';
-  // closedState is how a closed item reads: the badge when the person
-  // answered it in the agent's session, else plain words.
-  const closedState = it => it.closed_by === 'in_session' ? inSessionBadge : esc(closedHow(it));
-  const typing = () => {
-    const a = document.activeElement;
-    return a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA');
+  const maybeBadge = `<span class="badge maybe">${icon('maybe')}maybe answered in session</span>`;
+  const inSessionBadge = `<span class="badge insession">${icon('term')}answered in session</span>`;
+  // closedState is how a closed item reads, always as a badge; the person
+  // answering in the agent's own session gets its own (SPEC §7a).
+  const closedState = it => {
+    if (it.closed_by === 'in_session') return inSessionBadge;
+    const how = closedHow(it);
+    const cls = String(it.decided_by||'').startsWith('supervisor:') ? ' super' : (it.closed_by === 'timeout' || it.answer === 'deny') ? ' bad' : '';
+    const ic = it.closed_by === 'answered' ? 'check' : it.closed_by === 'timeout' ? 'history' : 'x';
+    return `<span class="badge${cls}">${icon(ic)}${esc(how)}</span>`;
   };
+
+  // ---------- plumbing ----------
+  const typing = () => { const a = document.activeElement; return a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA'); };
   const api = async (path, body) => {
     const r = await fetch(path, body ? {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)} : {});
     if (r.status === 401) { location.reload(); return null; }
@@ -245,18 +497,23 @@
     if (!r.ok) throw new Error(j.error || r.statusText);
     return j;
   };
-  const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-  const ago = ns => { const d = Math.max(0, Date.now() - ns/1e6)/1000; return d<60?`${d|0}s`:d<3600?`${d/60|0}m`:`${d/3600|0}h${String((d/60|0)%60).padStart(2,'0')}m`; };
-  const status = m => { $('#status').textContent = m || ''; if (m) setTimeout(() => { if ($('#status').textContent === m) $('#status').textContent=''; }, 4000); };
-  const localName = a => String(a||'').split('@')[0];
-  const hostOf = a => { const s = String(a||''); const i = s.indexOf('@'); return i<0 ? '' : s.slice(i+1); };
+  let toastTimer;
+  const status = (m, err) => {
+    const el = $('#status');
+    if (!m) { el.classList.remove('show'); return; }
+    el.innerHTML = icon(err ? 'alert' : 'check') + esc(m);
+    el.classList.toggle('err', !!err);
+    el.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => el.classList.remove('show'), err ? 5000 : 2200);
+  };
   const filters = () => ({
     unread: $('#f-unread').checked,
     who: $('#f-who').value.trim().toLowerCase(),
     session: $('#f-session').value.trim().toLowerCase(),
     machine: $('#f-machine').value.trim().toLowerCase(),
   });
-  const matchWho = (addrs, who) => !who || addrs.some(a => localName(a).toLowerCase() === who);
+  const matchWho = (addrs, who) => !who || addrs.some(a => localName(a).toLowerCase().includes(who));
   const matchHost = (addrs, host) => !host || addrs.some(a => hostOf(a).toLowerCase() === host);
   const visibleThreads = () => {
     const f = filters();
@@ -273,239 +530,337 @@
     return items.filter(it => {
       if (!matchWho([it.from], f.who)) return false;
       if (f.session && String(it.session||'').toLowerCase() !== f.session) return false;
+      if (!matchHost([it.from], f.machine)) return false;
       return true;
     });
   };
-  const rows = () => view === 'inbox' && !openThread ? visibleItems() : visibleThreads();
-  const hideComposer = () => { $('#composer').hidden = true; $('#composer-deny').hidden = true; $('#composer-send').hidden = false; };
-  const showComposer = (label, placeholder, deny) => {
+  const current = () => view === 'inbox' ? visibleItems()[selected] : null;
+  const reading = on => document.body.classList.toggle('reading', !!on);
+
+  // ---------- composer ----------
+  const hideComposer = () => { $('#composer').hidden = true; $('#composer').classList.remove('deny'); $('#composer-deny').hidden = true; $('#composer-send').hidden = false; };
+  const showComposer = (label, placeholder, mode, data) => {
     const form = $('#composer');
     form.hidden = false;
+    form.classList.toggle('deny', mode === 'deny');
     $('#composer-label').textContent = label;
     $('#composer-text').placeholder = placeholder;
-    $('#composer-deny').hidden = !deny;
-    $('#composer-send').hidden = !!deny;
+    $('#composer-deny').hidden = mode !== 'deny';
+    $('#composer-send').hidden = mode === 'deny';
+    form.dataset.mode = mode;
+    Object.assign(form.dataset, data || {});
   };
+
+  // ---------- footer keys ----------
   const keys = () => {
-    const k = (key, does) => `<kbd>${key}</kbd> ${does}`;
+    const k = (key, does) => `<span><kbd>${key}</kbd>${does}</span>`;
     let parts;
-    if (openThread) parts = [k('r','reply'), k('esc','back'), k('o','oldest')];
-    else if (view === 'inbox') parts = [k('j/k','move'), k('r','answer'), k('1–8','pick'), k('a','allow'), k('d','deny'), k('x','dismiss'), k('o','oldest')];
-    else parts = [k('j/k','move'), k('enter','open'), k('r','reply'), k('u','unread'), k('/','filter')];
-    $('#keys').innerHTML = parts.join('  ') + `  ${k('i','inbox')}  ${k('m','mail')}`;
+    if (openThread) parts = [k('r','reply'), k('esc','back')];
+    else if (view === 'inbox') parts = [k('j','next'), k('k','previous'), k('1–8','pick'), k('a','allow'), k('d','deny'), k('r','answer'), k('x','dismiss'), k('↵','thread')];
+    else parts = [k('j','next'), k('k','previous'), k('r','reply'), k('u','unread only')];
+    $('#keys').innerHTML = parts.join('') + k('i','waiting') + k('m','mail') + k('/','filter');
   };
+
+  // ---------- list ----------
+  function renderTabs() {
+    const set = (el, on) => { el.classList.toggle('on', on); el.setAttribute('aria-pressed', on); };
+    set($('#tab-inbox'), view === 'inbox' && !showAll);
+    set($('#all'), view === 'inbox' && showAll);
+    set($('#tab-mail'), view === 'mail');
+    const openN = items.filter(i => !i.closed_at).length;
+    $('#count').textContent = openN || '';
+    const unread = threads.reduce((n, t) => n + (t.unread ? 1 : 0), 0);
+    $('#mail-count').textContent = unread || '';
+    document.title = openN ? `(${openN}) mailai` : 'mailai';
+    const f = filters();
+    const active = !!(f.who || f.session || f.machine || f.unread);
+    $('#filter-btn').classList.toggle('on', active || !$('#filters').hidden);
+  }
+
+  function itemRow(it, i) {
+    const on = i === selected;
+    const isApproval = it.kind === 'approval';
+    const q = isApproval ? `<code>${esc(it.question)}</code>` : esc(it.question);
+    const tags = [kindTag(it)];
+    if (isApproval && it.subject) tags[0] = `<span class="tag k-approval">${icon('shield')}${esc(it.subject)}</span>`;
+    if (it.risky) tags.push(`<span class="tag risky">${icon('alert')}risky</span>`);
+    if (it.session) tags.push(`<span class="tag">${esc(it.session)}</span>`);
+    if (it.closed_at) tags.push(closedState(it));
+    else if (it.maybe_in_session_at) tags.push(maybeBadge);
+    const age = it.closed_at ? `<span class="age">${ago(it.closed_at)}</span>` : `<span class="age ${heat(it.opened_at)}">${ago(it.opened_at)}</span>`;
+    return `<button class="row${on?' on':''}${it.closed_at?' closed':''}" role="option" aria-selected="${on}" data-i="${i}">${avatar(it.from)}<span class="r-body"><span class="r-top">${agentName(it.from)}${age}</span><span class="r-q">${q}</span><span class="r-tags">${tags.join('')}</span></span></button>`;
+  }
+  function threadRow(t, i) {
+    const on = i === selected;
+    const fromMe = localName(t.from) === 'human';
+    const other = fromMe ? t.to : t.from;
+    const dot = t.unread ? '<span class="unread-dot" title="unread"></span>' : '';
+    const people = fromMe
+      ? `<span class="agent">You</span><span class="host">→ ${esc(t.to || 'session ' + (t.session||''))}</span>`
+      : `${agentName(t.from)}<span class="host">→ ${localName(t.to) === 'human' ? 'you' : esc(t.to || 'session ' + (t.session||''))}</span>`;
+    const line = t.subject ? `<b class="subj">${esc(t.subject)}</b>${t.first ? ' — ' + esc(t.first) : ''}` : esc(t.first || '');
+    return `<button class="row${on?' on':''}" role="option" aria-selected="${on}" data-i="${i}">${avatar(other)}<span class="r-body"><span class="r-top">${dot}${people}<span class="age">${ago(t.last_at)}</span></span><span class="r-q">${line}</span>${t.count > 1 ? `<span class="r-tags"><span class="tag">${icon('thread')}${t.count}</span></span>` : ''}</span></button>`;
+  }
 
   function renderList() {
     const list = $('#list');
     const data = view === 'inbox' ? visibleItems() : visibleThreads();
     if (selected >= data.length) selected = Math.max(0, data.length - 1);
-    $('#tab-inbox').classList.toggle('on', view==='inbox');
-    $('#tab-mail').classList.toggle('on', view==='mail');
-    $('#tab-inbox').setAttribute('aria-pressed', view==='inbox');
-    $('#tab-mail').setAttribute('aria-pressed', view==='mail');
-    $('#all').classList.toggle('on', showAll);
-    const openN = items.filter(i => !i.closed_at).length;
-    $('#count').textContent = openN || '';
+    renderTabs();
     if (!data.length) {
-      const title = view==='inbox' ? 'Nothing is waiting' : (threads.length ? 'No threads match' : 'No mail yet');
-      const sub = view==='inbox' ? 'Asks, approvals and errors land here. Plain mail stays in Mail.' : 'Adjust the filters, or wait for the next message.';
-      list.innerHTML = `<div class="empty"><strong>${title}</strong>${sub}</div>`;
+      const filtered = (() => { const f = filters(); return f.who || f.session || f.machine || f.unread; })();
+      const [title, sub] = view === 'inbox'
+        ? (filtered ? ['Nothing matches', 'Clear the filter to see everything waiting.'] : ['Nothing is waiting on you', 'Questions, permissions and agent errors land here.'])
+        : (threads.length ? ['No threads match', 'Clear the filter to see all mail.'] : ['No mail yet', 'Threads between you and your agents show up here.']);
+      list.innerHTML = `<div class="empty"><span class="glyph">${icon(view==='inbox'?'check':'mail')}</span><strong>${title}</strong>${sub}</div>`;
       return;
     }
-    list.innerHTML = data.map((row, i) => {
-      if (view === 'inbox') {
-        const it = row;
-        const q = it.kind === 'approval' ? `${it.subject||''}: ${it.question}` : it.question;
-        const where = it.session ? ` · ${esc(it.session)}` : '';
-        const state = it.closed_at ? closedState(it) : it.maybe_in_session_at ? maybeBadge : `waiting ${ago(it.opened_at)}`;
-        return `<button class="row${i===selected?' on':''}" role="option" aria-selected="${i===selected}" data-i="${i}"><span class="kind${it.risky?' risky':''}">${it.risky?'risky ':''}${esc(it.kind)}</span><span class="from">${esc(it.from)}${where}</span><span class="meta">${state}</span><span class="q">${esc(q)}</span></button>`;
-      }
-      const t = row;
-      const subj = t.subject || t.first || '(no subject)';
-      const mark = t.unread ? '<span class="dot">●</span> ' : '';
-      return `<button class="row${i===selected?' on':''}" role="option" aria-selected="${i===selected}" data-i="${i}"><span class="from">${mark}${esc(t.from)}</span><span class="meta">→ ${esc(t.to||'session '+(t.session||''))}</span><span class="meta">${ago(t.last_at)}</span><span class="q">${esc(subj)}</span></button>`;
-    }).join('');
+    list.innerHTML = data.map((row, i) => view === 'inbox' ? itemRow(row, i) : threadRow(row, i)).join('');
     const on = list.querySelector('.row.on');
     if (on) on.scrollIntoView({block:'nearest'});
   }
 
-  // Recently closed: dim, newest first, not selectable (SPEC §7a).
+  // Recently closed: newest first, not selectable (SPEC §7a).
   function renderRecent() {
     const show = view === 'inbox' && !showAll && recent.length > 0;
     $('#recent').hidden = !show;
     if (!show) return;
-    $('#recent-list').innerHTML = recent.map(it => {
-      const q = it.kind === 'approval' ? `${it.subject||''}: ${it.question}` : it.question;
-      return `<div class="recent-row"><span class="kind">#${it.id} ${esc(it.kind)}</span><span>${esc(it.from)}</span><span class="meta how">${closedState(it)}<span class="ago"> · ${ago(it.closed_at)}</span></span><span class="q">${esc(q)}</span></div>`;
-    }).join('');
+    const open = recentOpen ?? !items.some(i => !i.closed_at);
+    $('#recent').classList.toggle('shut', !open);
+    $('#recent-toggle').setAttribute('aria-expanded', open);
+    $('#recent-n').textContent = recent.length;
+    $('#recent-list').innerHTML = recent.map(it =>
+      `<div class="recent-row"><span class="who-line"><b>${esc(localName(it.from))}</b>${hostOf(it.from) ? '@' + esc(hostOf(it.from)) : ''}</span><span class="how">${closedState(it)}<span class="ago">${ago(it.closed_at)}</span></span><span class="q">${esc(question(it))}</span></div>`
+    ).join('');
   }
 
-  function renderDetail() {
+  // ---------- detail ----------
+  function trustOf(m) {
+    if (m.verified) return `<span class="trust ${m.verified === 'human' ? 'v' : 's'}">${icon('check')} verified ${esc(String(m.verified).replace(':', ' '))}</span>`;
+    if (m.claimed_human) return '<span class="trust u">automated reply</span>';
+    return `<span class="trust u">${esc(m.sender_proof || 'unplaced')}</span>`;
+  }
+  function messagesHTML(messages, thItems) {
+    const msgs = (messages || []).map(m => {
+      const mine = localName(m.from) === 'human';
+      return `<div class="msg${mine ? ' me' : ''}">${avatar(m.from)}<div><div class="msg-h"><b>${mine ? 'You' : esc(localName(m.from))}</b>${hostOf(m.from) ? `<span class="host">@${esc(hostOf(m.from))}</span>` : ''}${trustOf(m)}${m.to ? `<span>→ ${esc(m.to)}</span>` : ''}<span class="t">${m.sent_at ? hhmm(m.sent_at) : ''}</span></div><pre>${esc(m.text)}</pre></div></div>`;
+    }).join('');
+    // One-line notes from the thread's items, never stored messages (§7a).
+    const notes = (thItems || []).map(it =>
+      it.closed_by === 'in_session' ? `<p class="sysnote">${icon('term')}#${it.id} answered in the session at ${hhmm(it.closed_at)}</p>`
+      : (!it.closed_at && it.maybe_in_session_at) ? `<p class="sysnote maybe">${icon('maybe')}#${it.id} maybe answered in the session at ${hhmm(it.maybe_in_session_at)}</p>` : '').join('');
+    return msgs + notes;
+  }
+
+  async function loadConvo(it) {
+    const box = $('#convo');
+    if (!box || !it.thread_id) return;
+    const want = it.thread_id;
+    convoFor = want;
+    try {
+      const th = await api('/api/thread?id=' + encodeURIComponent(want));
+      if (!th || convoFor !== want || !$('#convo')) return;
+      // The question itself is already the heading: show the rest.
+      const msgs = (th.messages || []).filter(m => m.mid !== it.mid);
+      const others = (th.items || []).filter(x => x.id !== it.id);
+      const body = messagesHTML(msgs, others);
+      if (!body) { $('#convo').remove(); return; }
+      $('#convo').innerHTML = `<h3>Earlier in this thread</h3>` + body;
+    } catch { /* the item still shows */ }
+  }
+
+  function renderItem(it) {
     const detail = $('#detail');
-    keys();
-    if (openThread) { hideComposer(); return; }
-    if (view === 'inbox') {
-      const it = visibleItems()[selected];
-      if (!it) { hideComposer(); detail.innerHTML = '<div class="empty"><strong>Inbox clear</strong>Nothing waits on you.</div>'; return; }
-      const where = [it.session && `session ${esc(it.session)}`, `waiting ${ago(it.opened_at)}`].filter(Boolean).join(' · ');
-      let acts = '';
-      hideComposer();
-      if (!it.closed_at) {
-        if (it.kind === 'approval') {
-          acts = `<button class="allow" data-a="answer" data-id="${it.id}" data-t="allow">Allow</button><button class="deny" data-a="deny" data-id="${it.id}">Deny</button>`;
-        } else if (it.options?.length) {
-          acts = it.options.map((o, n) => `<button data-a="answer" data-id="${it.id}" data-t="${esc(o)}"><kbd>${n+1}</kbd> ${esc(o)}</button>`).join('');
-        } else {
-          showComposer('Your answer', 'Write the answer. Enter sends.');
-          $('#composer').dataset.mode = 'answer';
-          $('#composer').dataset.id = it.id;
-        }
-        acts += `<button data-a="dismiss" data-id="${it.id}">Dismiss</button>`;
-        if (it.thread_id) acts += `<button data-a="open" data-id="${esc(it.thread_id)}">Thread</button>`;
-      }
-      const q = it.kind === 'approval' ? `${it.subject||''}: ${it.question}` : it.question;
-      const maybe = !it.closed_at && it.maybe_in_session_at ? `<div class="meta">${maybeBadge} at ${hhmm(it.maybe_in_session_at)}; still open, Dismiss closes it</div>` : '';
-      detail.innerHTML = `<div class="eyebrow">${it.risky?'risky ':''}${esc(it.kind)} · ${esc(it.from)}</div><h2>${esc(q)}</h2><div class="meta">${where}${it.closed_at ? ' · '+closedState(it) : ''}</div>${maybe}<div class="acts">${acts}</div>`;
+    hideComposer();
+    if (!it) {
+      detail.innerHTML = `<div class="empty"><span class="glyph">${icon('check')}</span><strong>All clear</strong>Nothing waits on you. New questions show up here the moment an agent asks.</div>`;
       return;
     }
-    const t = visibleThreads()[selected];
-    if (!t) { hideComposer(); detail.innerHTML = '<div class="empty"><strong>No thread</strong>Nothing matches these filters.</div>'; return; }
-    hideComposer();
-    detail.innerHTML = `<div class="eyebrow">${esc(t.from)} → ${esc(t.to||'session')}</div><h2>${esc(t.subject||t.first||'(no subject)')}</h2><div class="meta">${t.count} messages · ${t.unread} unread${t.session?' · session '+esc(t.session):''}</div><div class="acts"><button data-a="open" data-id="${esc(t.thread_id)}">Open thread</button></div>`;
+    const isApproval = it.kind === 'approval';
+    const meta = [
+      it.session && `session ${esc(it.session)}`,
+      it.harness && esc(it.harness),
+      it.closed_at ? `closed ${ago(it.closed_at)} ago` : `<span class="waiting">waiting ${ago(it.opened_at)}</span>`,
+    ].filter(Boolean).join('<span class="sep">·</span>');
+    const head = `<button type="button" class="link mback back" data-a="mback">${icon('back')}Back</button><div class="d-head">${avatar(it.from, true)}<div class="d-who"><div class="name"><span>${agentName(it.from)}</span>${kindTag(it)}</div><div class="d-meta">${meta}</div></div></div>`;
+    let body = '';
+    if (isApproval) {
+      body = `<h2 class="d-q">${it.closed_at ? 'Asked' : 'Wants'} to use ${esc(it.subject || 'a tool')}</h2><pre class="cmd">${icon('term')}<span>${esc(it.question)}</span></pre>`;
+      if (it.risky) body += `<div class="note risk">${icon('alert')}<div><b>Marked risky</b> <span>by ${esc(it.harness || 'the harness')}. Read it before you allow it.</span></div></div>`;
+    } else {
+      body = `<h2 class="d-q">${esc(it.question)}</h2>`;
+    }
+    if (!it.closed_at && it.maybe_in_session_at) {
+      body += `<div class="note maybe">${icon('maybe')}<div><b>Maybe answered in session</b> <span>at ${hhmm(it.maybe_in_session_at)}: the agent moved on after a prompt. Still open: answer anyway, or <kbd>d</kbd> dismiss.</span></div></div>`;
+    }
+    let acts = '';
+    if (!it.closed_at) {
+      if (isApproval) {
+        acts = `<div class="decide"><button class="btn allow${it.risky ? ' risky' : ''}" data-a="answer" data-id="${it.id}" data-t="allow">${icon('check')}Allow ${esc(it.subject || '')} <kbd>a</kbd></button><button class="btn deny" data-a="deny" data-id="${it.id}">${icon('x')}Deny <kbd>d</kbd></button></div>`;
+      } else if (it.options?.length) {
+        acts = `<div class="choices">${it.options.map((o, n) => `<button class="choice" data-a="answer" data-id="${it.id}" data-t="${esc(o)}">${esc(o)}<kbd>${n+1}</kbd></button>`).join('')}</div>`;
+      } else {
+        showComposer(`Answer ${localName(it.from)}`, 'Write your answer', 'answer', {id: it.id});
+      }
+      acts += `<div class="secondary"><button class="link" data-a="dismiss" data-id="${it.id}">${icon('x')}Dismiss <kbd>x</kbd></button>${it.thread_id ? `<button class="link" data-a="open" data-id="${esc(it.thread_id)}">${icon('thread')}Open thread <kbd>↵</kbd></button>` : ''}</div>`;
+    } else {
+      acts = `<div class="closed-line">${closedState(it)}<span>${hhmm(it.closed_at)}</span></div>`;
+      if (it.thread_id) acts += `<div class="secondary"><button class="link" data-a="open" data-id="${esc(it.thread_id)}">${icon('thread')}Open thread <kbd>↵</kbd></button></div>`;
+    }
+    detail.innerHTML = head + body + acts + (it.thread_id ? '<section class="convo" id="convo"></section>' : '');
+    loadConvo(it);
   }
 
-  async function renderThread() {
-    const {messages, items: thItems} = await api('/api/thread?id=' + encodeURIComponent(openThread));
-    // One-line notes from the thread's items, never stored messages (§7a).
-    const notes = (thItems||[]).map(it =>
-      it.closed_by === 'in_session' ? `<p class="sysnote">#${it.id} answered in the session at ${hhmm(it.closed_at)}</p>`
-      : (!it.closed_at && it.maybe_in_session_at) ? `<p class="sysnote">#${it.id} maybe answered in the session at ${hhmm(it.maybe_in_session_at)}</p>` : '').join('');
-    const last = [...(messages||[])].reverse().find(m => m.from !== 'human') || (messages||[])[0];
-    $('#detail').innerHTML = `<p><button type="button" data-a="back">← Back</button></p><div class="eyebrow">thread ${esc(openThread)}</div>` + (messages||[]).map(m => {
-      const trust = m.verified ? `<span class="${m.verified==='human'?'v':'s'}">verified ${esc(String(m.verified).replace(':',' '))}</span>` : m.claimed_human ? 'automated reply' : esc(m.sender_proof || 'unplaced');
-      return `<div class="msg-h">#${m.id} from <b>${esc(m.from)}</b> (${trust})${m.to?' → '+esc(m.to):''}${m.subject?' · '+esc(m.subject):''}</div><pre>${esc(m.text)}</pre>`;
-    }).join('') + notes;
-    if (last) {
-      showComposer('Reply to ' + last.from, 'Signed as you. Enter sends.');
-      const form = $('#composer');
-      form.dataset.mode = 'reply';
-      form.dataset.mid = last.mid;
-      form.dataset.to = last.from;
-    } else hideComposer();
+  async function renderThread(id, full) {
+    const th = await api('/api/thread?id=' + encodeURIComponent(id));
+    if (!th) return;
+    const messages = th.messages || [];
+    const first = messages[0] || {};
+    const last = [...messages].reverse().find(m => localName(m.from) !== 'human') || first;
+    const people = [...new Set(messages.map(m => localName(m.from) === 'human' ? 'you' : m.from))].join(', ');
+    const back = full ? `<button type="button" class="link back" data-a="back">${icon('back')}Back to waiting <kbd>esc</kbd></button>` : `<button type="button" class="link mback back" data-a="mback">${icon('back')}Back</button>`;
+    const firstLine = String(first.text || '').split('\n')[0];
+    const title = first.subject || (firstLine.length > 90 ? firstLine.slice(0, 89) + '…' : firstLine) || 'Thread';
+    $('#detail').innerHTML = `${back}<h2 class="thread-title">${esc(title)}</h2><div class="thread-sub">${esc(people)} · ${messages.length} message${messages.length === 1 ? '' : 's'}</div>` + messagesHTML(messages, th.items);
+    if (last && last.mid) showComposer(`Reply to ${localName(last.from)}`, 'Write a reply, signed as you', 'reply', {mid: last.mid, to: last.from});
+    else hideComposer();
     keys();
+  }
+
+  async function renderDetail() {
+    keys();
+    if (openThread) return renderThread(openThread, true);
+    if (view === 'inbox') return renderItem(visibleItems()[selected]);
+    const t = visibleThreads()[selected];
+    if (!t) { hideComposer(); $('#detail').innerHTML = `<div class="empty"><span class="glyph">${icon('mail')}</span><strong>No thread selected</strong>Pick one on the left.</div>`; return; }
+    return renderThread(t.thread_id, false);
   }
 
   async function render() {
     if (typing()) { render.pending = true; return; }
     try {
-      const inbox = await api('/api/inbox' + (showAll ? '?all=1' : ''));
-      const mail = await api('/api/threads');
-      const closed = await api('/api/inbox?closed=1');
+      const [inbox, mail, closed] = await Promise.all([api('/api/inbox' + (showAll ? '?all=1' : '')), api('/api/threads'), api('/api/inbox?closed=1')]);
       if (!inbox || !mail || !closed) return;
       items = inbox.items || [];
       threads = mail.threads || [];
       recent = closed.items || [];
       renderList();
       renderRecent();
-      if (openThread) await renderThread();
-      else renderDetail();
-      const sm = window.matchMedia('(max-width: 800px)').matches;
-      $('#list').classList.toggle('hide-sm', sm && !!openThread);
-      $('#recent').classList.toggle('hide-sm', sm && !!openThread);
-      $('#read').classList.toggle('hide-sm', sm && !openThread && view==='inbox' && false);
-    } catch (e) { status(e.message); }
+      await renderDetail();
+    } catch (e) { status(e.message, true); }
   }
 
-  const act = async (path, body) => { try { await api(path, body); await render(); } catch (e) { status(e.message); } };
+  const ACTED = {allow: 'Allowed', deny: 'Denied'};
+  const act = async (path, body, done) => {
+    try { await api(path, body); status(done || 'Done'); await render(); }
+    catch (e) { status(e.message, true); }
+  };
+  const answer = (it, text) => act('/api/answer', {item: it.id ?? it, text}, ACTED[text] ? `${ACTED[text]} · ${localName(it.from || '')}` : `Answered “${text}”`);
+  const startDeny = id => {
+    showComposer('Why not? The agent sees this', 'Optional reason. Enter denies.', 'deny', {id});
+    $('#composer-text').focus();
+  };
+  const select = async i => {
+    selected = i;
+    renderList();
+    reading(true);
+    await renderDetail();
+  };
+  const go = async (v, all) => { view = v; showAll = !!all; openThread = null; selected = 0; reading(false); await render(); };
+
+  // ---------- events ----------
   document.addEventListener('click', async e => {
     const row = e.target.closest('.row');
-    if (row) {
-      selected = +row.dataset.i;
-      if (view === 'mail') { openThread = visibleThreads()[selected]?.thread_id || null; }
-      renderList();
-      if (openThread) await renderThread();
-      else renderDetail();
-      return;
-    }
+    if (row) return select(+row.dataset.i);
     const b = e.target.closest('[data-a]'); if (!b) return;
     const a = b.dataset.a, id = b.dataset.id;
-    if (a === 'answer') return act('/api/answer', {item: +id, text: b.dataset.t});
-    if (a === 'deny') {
-      const it = visibleItems().find(x => String(x.id) === id);
-      selected = visibleItems().indexOf(it);
-      showComposer('Reason shown to the agent', 'Optional. Leave empty to deny with no note.', true);
-      const form = $('#composer');
-      form.dataset.mode = 'deny';
-      form.dataset.id = id;
-      $('#composer-text').focus();
-      return;
-    }
-    if (a === 'dismiss') return act('/api/dismiss', {item:+id});
-    if (a === 'open') { openThread = id; selected = Math.max(0, visibleThreads().findIndex(t => t.thread_id === id)); await renderThread(); return; }
-    if (a === 'back') { openThread = null; renderList(); renderDetail(); }
+    const it = items.find(x => String(x.id) === id);
+    if (a === 'answer') return answer(it || +id, b.dataset.t);
+    if (a === 'deny') return startDeny(id);
+    if (a === 'dismiss') return act('/api/dismiss', {item: +id}, 'Dismissed');
+    if (a === 'open') { openThread = id; reading(true); return renderThread(id, true); }
+    if (a === 'back') { openThread = null; renderList(); return renderDetail(); }
+    if (a === 'mback') { openThread = null; reading(false); }
   });
   $('#composer').addEventListener('submit', e => {
     e.preventDefault();
     const form = $('#composer');
     const text = $('#composer-text').value.trim();
+    const mode = form.dataset.mode;
+    if (mode !== 'deny' && !text) return;
     $('#composer-text').value = '';
-    if (form.dataset.mode === 'answer') { if (!text) return; return act('/api/answer', {item:+form.dataset.id, text}); }
-    if (form.dataset.mode === 'reply') { if (!text) return; return act('/api/reply', {reply_to: form.dataset.mid, to: form.dataset.to, text}); }
-    if (form.dataset.mode === 'deny') return act('/api/answer', {item:+form.dataset.id, text:'deny', message: text});
+    $('#composer-text').blur();
+    if (mode === 'answer') return act('/api/answer', {item: +form.dataset.id, text}, 'Answer sent');
+    if (mode === 'reply') return act('/api/reply', {reply_to: form.dataset.mid, to: form.dataset.to, text}, 'Reply sent');
+    if (mode === 'deny') return act('/api/answer', {item: +form.dataset.id, text: 'deny', message: text}, 'Denied');
+  });
+  $('#composer-text').addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); $('#composer').requestSubmit(); }
   });
   $('#composer-deny').addEventListener('click', () => $('#composer').requestSubmit());
-  $('#tab-inbox').onclick = () => { view='inbox'; openThread=null; selected=0; render(); };
-  $('#tab-mail').onclick = () => { view='mail'; openThread=null; selected=0; render(); };
-  $('#all').onclick = () => { showAll=!showAll; render(); };
+  $('#tab-inbox').onclick = () => go('inbox', false);
+  $('#all').onclick = () => go('inbox', true);
+  $('#tab-mail').onclick = () => go('mail');
+  const toggleFilters = open => {
+    const f = $('#filters');
+    f.hidden = open === undefined ? !f.hidden : !open;
+    $('#filter-btn').setAttribute('aria-expanded', !f.hidden);
+    renderTabs();
+    if (!f.hidden) $('#f-who').focus();
+  };
+  $('#filter-btn').onclick = () => toggleFilters();
+  $('#f-clear').onclick = () => { ['f-who','f-session','f-machine'].forEach(id => $('#'+id).value = ''); $('#f-unread').checked = false; selected = 0; renderList(); renderDetail(); };
+  $('#recent-toggle').onclick = () => { recentOpen = $('#recent').classList.contains('shut'); renderRecent(); };
   ['f-unread','f-who','f-session','f-machine'].forEach(id => {
-    $( '#'+id ).addEventListener('input', () => { selected = 0; renderList(); if (!openThread) renderDetail(); });
+    $('#'+id).addEventListener('input', () => { selected = 0; renderList(); if (!openThread) renderDetail(); });
   });
-  document.addEventListener('focusout', () => { if (render.pending && !typing()) { render.pending = false; render(); } });
+  document.addEventListener('focusout', () => setTimeout(() => { if (render.pending && !typing()) { render.pending = false; render(); } }));
   document.addEventListener('keydown', e => {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
     if (e.key === 'Escape') {
-      if (typing()) { e.target.blur(); return; }
-      if (openThread) { openThread = null; renderList(); renderDetail(); }
+      if (typing()) { e.target.blur(); if (($('#composer').dataset.mode) === 'deny') renderDetail(); return; }
+      if (!$('#filters').hidden) { toggleFilters(false); return; }
+      if (openThread) { openThread = null; renderList(); renderDetail(); return; }
+      reading(false);
       return;
     }
     if (typing()) return;
     const data = view === 'inbox' ? visibleItems() : visibleThreads();
-    const cur = view === 'inbox' ? visibleItems()[selected] : null;
-    if (e.key === 'j' || e.key === 'ArrowDown') { selected = Math.min(data.length-1, selected+1); renderList(); if (!openThread) renderDetail(); e.preventDefault(); }
-    if (e.key === 'k' || e.key === 'ArrowUp') { selected = Math.max(0, selected-1); renderList(); if (!openThread) renderDetail(); e.preventDefault(); }
-    if (e.key === 'i') { view='inbox'; openThread=null; render(); }
-    if (e.key === 'm') { view='mail'; openThread=null; render(); }
-    if (e.key === 'o') { view='inbox'; openThread=null; selected=0; render(); }
-    if (e.key === 'u' && view === 'mail') { $('#f-unread').checked = !$('#f-unread').checked; selected=0; renderList(); renderDetail(); }
-    if (e.key === '/') { e.preventDefault(); $('#f-who').focus(); }
-    if (e.key === 'A') { showAll=!showAll; render(); }
+    const cur = current();
+    const move = d => { if (!data.length) return; openThread = null; selected = Math.max(0, Math.min(data.length - 1, selected + d)); renderList(); renderDetail(); };
+    if (e.key === 'j' || e.key === 'ArrowDown') { e.preventDefault(); move(1); }
+    if (e.key === 'k' || e.key === 'ArrowUp') { e.preventDefault(); move(-1); }
+    if (e.key === 'i') go('inbox', false);
+    if (e.key === 'm') go('mail');
+    if (e.key === 'A') go('inbox', !showAll);
+    if (e.key === 'o') go('inbox', false);
+    if (e.key === 'u' && view === 'mail') { $('#f-unread').checked = !$('#f-unread').checked; selected = 0; renderList(); renderDetail(); }
+    if (e.key === '/') { e.preventDefault(); toggleFilters(true); }
     if (e.key === 'Enter') {
       e.preventDefault();
-      if (view === 'mail') { const t = visibleThreads()[selected]; if (t) { openThread = t.thread_id; renderThread(); } }
-      else if (cur?.thread_id) { openThread = cur.thread_id; renderThread(); }
+      if (view === 'inbox' && cur?.thread_id) { openThread = cur.thread_id; renderThread(openThread, true); }
     }
     if (e.key === 'r') {
-      if (openThread) { $('#composer-text').focus(); return; }
-      if (view === 'mail') { const t = visibleThreads()[selected]; if (t) { openThread = t.thread_id; renderThread().then(() => $('#composer-text').focus()); } return; }
-      if (cur && cur.kind !== 'approval' && !cur.options?.length) { showComposer('Your answer', 'Write the answer. Enter sends.'); $('#composer').dataset.mode='answer'; $('#composer').dataset.id=cur.id; $('#composer-text').focus(); }
+      e.preventDefault();
+      if (!$('#composer').hidden) { $('#composer-text').focus(); return; }
+      if (cur?.thread_id) { openThread = cur.thread_id; renderThread(openThread, true).then(() => $('#composer-text').focus()); }
     }
-    if (e.key === 'x' && cur && !cur.closed_at) act('/api/dismiss', {item: cur.id});
-    if (e.key === 'a' && cur && cur.kind === 'approval') act('/api/answer', {item: cur.id, text: 'allow'});
-    if (e.key === 'd' && cur && cur.kind !== 'approval' && cur.maybe_in_session_at && !cur.closed_at) act('/api/dismiss', {item: cur.id});
-    if (e.key === 'd' && cur && cur.kind === 'approval') {
-      showComposer('Reason shown to the agent', 'Optional. Leave empty to deny with no note.', true);
-      $('#composer').dataset.mode = 'deny'; $('#composer').dataset.id = cur.id; $('#composer-text').focus();
-    }
-    if (/^[1-8]$/.test(e.key) && cur?.options) {
+    if (!cur || cur.closed_at) return;
+    if (e.key === 'x') act('/api/dismiss', {item: cur.id}, 'Dismissed');
+    if (e.key === 'a' && cur.kind === 'approval') answer(cur, 'allow');
+    if (e.key === 'd' && cur.kind === 'approval') startDeny(cur.id);
+    if (e.key === 'd' && cur.kind !== 'approval' && cur.maybe_in_session_at) act('/api/dismiss', {item: cur.id}, 'Dismissed');
+    if (/^[1-8]$/.test(e.key) && cur.options && cur.kind !== 'approval') {
       const opt = cur.options[+e.key - 1];
-      if (opt) act('/api/answer', {item: cur.id, text: opt});
+      if (opt) answer(cur, opt);
     }
   });
-  api('/api/me').then(m => { if (m) $('#who').textContent = `${m.principal} · ${m.proof}`; });
+  api('/api/me').then(m => { if (m) { me = m.principal; $('#who').textContent = `${m.principal} · ${m.proof}`; } });
   const es = new EventSource('/api/events');
   const live = on => $('#live').classList.toggle('off', !on);
   ['mail','attention','agent_state','wake'].forEach(ev => es.addEventListener(ev, () => render()));
   es.onopen = () => live(true);
-  es.onerror = () => { live(false); status('live updates disconnected; still refreshing'); };
+  es.onerror = () => { live(false); };
   render();
   setInterval(render, 30000);
 })();
