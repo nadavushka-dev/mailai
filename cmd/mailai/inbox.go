@@ -55,6 +55,7 @@ func cmdAskHuman(args []string) error {
 func cmdInbox(args []string) error {
 	fs := newFlags("inbox")
 	all := fs.Bool("all", false, "include closed items")
+	closed := fs.Bool("closed", false, "list what closed in the last hour, newest first, and how")
 	parse(fs, args)
 	c, err := connect()
 	if err != nil {
@@ -62,19 +63,31 @@ func cmdInbox(args []string) error {
 	}
 	defer c.Close()
 	var r daemon.InboxResult
-	if err := c.Call("inbox", daemon.InboxArgs{All: *all}, &r); err != nil {
+	if err := c.Call("inbox", daemon.InboxArgs{All: *all, Closed: *closed}, &r); err != nil {
 		return err
 	}
 	if jsonOut {
 		return printJSON(r)
 	}
+	now := time.Now()
+	if *closed {
+		if len(r.Items) == 0 {
+			fmt.Println("nothing closed in the last hour")
+		}
+		for _, it := range r.Items {
+			fmt.Printf("#%d  %-9s %-14s %s  (%s %s ago)\n", it.ID, it.Kind, it.From, firstLine(it.Question), daemon.ClosedHow(it), ago(now, it.ClosedAt))
+		}
+		return nil
+	}
 	if len(r.Items) == 0 {
 		fmt.Println("inbox empty: nothing waits on you")
 		return nil
 	}
-	now := time.Now()
 	for _, it := range r.Items {
 		state := "waiting " + ago(now, it.OpenedAt)
+		if it.MaybeInSessionAt != 0 {
+			state = daemon.MaybeBadge + ", " + state
+		}
 		if it.ClosedAt != 0 {
 			state = it.ClosedBy
 		}

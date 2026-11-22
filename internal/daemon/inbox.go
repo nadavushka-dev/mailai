@@ -30,7 +30,15 @@ type AskHumanResult struct {
 
 type InboxArgs struct {
 	All bool `json:"all,omitempty"`
+	// Closed lists what closed in the last hour instead, newest first
+	// (SPEC §7a).
+	Closed bool `json:"closed,omitempty"`
+	// Thread lists every item, open or closed, opened in that thread.
+	Thread string `json:"thread,omitempty"`
 }
+
+// RecentWindow is how far back "recently closed" looks.
+const RecentWindow = time.Hour
 
 type InboxResult struct {
 	Items []store.Item `json:"items"`
@@ -65,7 +73,7 @@ func (d *Daemon) askHuman(c *conn, a AskHumanArgs) (any, error) {
 		if err := validAskHuman(a); err != nil {
 			return nil, err
 		}
-		return d.askHumanRemote(from, a)
+		return d.askHumanRemote(c.gone, from, a)
 	}
 	timeout := time.Duration(a.TimeoutMS) * time.Millisecond
 
@@ -107,7 +115,9 @@ func (d *Daemon) askHuman(c *conn, a AskHumanArgs) (any, error) {
 		if a.NoWait {
 			return AskHumanResult{Item: item}, nil
 		}
-		return d.waitReply(ch, from, item, timeout)
+		// Only this blocking connection's death says the person answered
+		// in the session (SPEC §7a).
+		return d.waitReply(ch, from, item, timeout, c.gone)
 	}
 	// Resuming: wait on the thread.
 	ch := make(chan store.Message, 1)
@@ -119,7 +129,7 @@ func (d *Daemon) askHuman(c *conn, a AskHumanArgs) (any, error) {
 	if it, _ := d.st.Item(item.ID); it.ClosedAt != 0 {
 		return d.askHumanClosed(it)
 	}
-	return d.waitReply(ch, from, item, timeout)
+	return d.waitReply(ch, from, item, timeout, nil)
 }
 
 func validAskHuman(a AskHumanArgs) error {
@@ -137,7 +147,9 @@ func validAskHuman(a AskHumanArgs) error {
 	return nil
 }
 
-func (d *Daemon) waitReply(ch chan store.Message, from store.Address, item store.Item, timeout time.Duration) (any, error) {
+// waitReply waits for the answer; when gone closes first, the item closes
+// as answered in the session.
+func (d *Daemon) waitReply(ch chan store.Message, from store.Address, item store.Item, timeout time.Duration, gone <-chan struct{}) (any, error) {
 	var timer <-chan time.Time
 	if timeout > 0 {
 		t := time.NewTimer(timeout)
@@ -153,6 +165,9 @@ func (d *Daemon) waitReply(ch chan store.Message, from store.Address, item store
 			}
 		case <-timer:
 			return nil, proto.Errorf(proto.CodeTimeout, "no answer yet; come back with --wait-for %d", item.ID)
+		case <-gone:
+			d.closeInSession(item.ID)
+			return nil, errClientGone
 		}
 	}
 }
@@ -171,8 +186,17 @@ func (d *Daemon) askHumanClosed(it store.Item) (any, error) {
 }
 
 func (d *Daemon) inbox(c *conn, a InboxArgs) (any, error) {
+	var list []store.Item
+	switch {
+	case a.Thread != "":
+		list = d.st.ItemsInThread(a.Thread)
+	case a.Closed:
+		list = d.st.RecentlyClosed(d.now().Add(-RecentWindow).UnixNano())
+	default:
+		list = d.st.Items(a.All)
+	}
 	items := []store.Item{}
-	for _, it := range d.st.Items(a.All) {
+	for _, it := range list {
 		if d.canSee(c, it) {
 			items = append(items, it)
 		}
@@ -236,11 +260,10 @@ func (d *Daemon) dismiss(c *conn, a DismissArgs) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	it, err := d.st.CloseItem(a.Item, "dismissed", "")
+	it, err := d.st.CloseItemBy(a.Item, "dismissed", "", by)
 	if err != nil {
 		return nil, proto.Errorf(proto.CodeNotFound, "no open item #%d", a.Item)
 	}
-	it.DecidedBy = by
 	d.spend(grant)
 	d.publishItem(it)
 	return map[string]any{"item": it}, nil

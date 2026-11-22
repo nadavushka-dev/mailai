@@ -86,7 +86,16 @@
   .filters input[type="checkbox"] { accent-color: var(--brass); }
   .split { display: grid; grid-template-columns: minmax(280px, 38%) 1fr; min-height: 0; }
   #list, #read { min-height: 0; overflow: auto; }
-  #list { border-right: 1px solid var(--line); }
+  .left { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--line); }
+  #list { flex: 1; }
+  #recent { border-top: 1px solid var(--line); max-height: 40%; overflow: auto; opacity: .62; }
+  #recent[hidden] { display: none; }
+  #recent h3 { margin: 0; padding: 8px 16px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); font-weight: 600; }
+  .recent-row { display: grid; grid-template-columns: auto 1fr auto; gap: 2px 10px; padding: 6px 16px; font-size: 13px; color: var(--dim); border-bottom: 1px solid var(--line); }
+  .recent-row .q { grid-column: 1 / -1; color: var(--dim); }
+  .badge { font-size: 11px; border: 1px solid currentColor; border-radius: 999px; padding: 0 6px; white-space: nowrap; }
+  .badge.maybe { color: var(--super); }
+  .sysnote { color: var(--dim); font-size: 13px; font-style: italic; margin: 0 0 16px; }
   .row {
     display: grid;
     grid-template-columns: auto 1fr auto;
@@ -156,7 +165,7 @@
   kbd { font-family: var(--mono); font-size: 11px; color: var(--fg); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; }
   @media (max-width: 800px) {
     .split { grid-template-columns: 1fr; }
-    #list.hide-sm { display: none; }
+    #list.hide-sm, #recent.hide-sm { display: none; }
     #read.hide-sm { display: none; }
     #detail { padding: 20px 16px 8px; }
     #composer { margin: 0 16px 16px; }
@@ -182,7 +191,13 @@
   <label>Machine <input id="f-machine" type="text" placeholder="host" autocomplete="off"></label>
 </div>
 <div class="split">
-  <section id="list" role="listbox" aria-label="Waiting"></section>
+  <div class="left">
+    <section id="list" role="listbox" aria-label="Waiting"></section>
+    <section id="recent" aria-label="Recently closed" hidden>
+      <h3>Recently closed</h3>
+      <div id="recent-list"></div>
+    </section>
+  </div>
   <section id="read">
     <div id="detail"></div>
     <form id="composer" hidden>
@@ -201,7 +216,17 @@
 (() => {
   const $ = s => document.querySelector(s);
   let view = 'inbox', showAll = false, openThread = null, selected = 0;
-  let items = [], threads = [];
+  let items = [], threads = [], recent = [];
+  // How an item closed, as the TUI says it (SPEC §7a).
+  const closedHow = it => {
+    const sup = String(it.decided_by||'').startsWith('supervisor:');
+    if (it.closed_by === 'in_session') return 'in session';
+    if (it.closed_by === 'answered') return sup ? 'by ' + it.decided_by : 'by you';
+    if (it.closed_by === 'dismissed') return sup ? 'dismissed by ' + it.decided_by : 'dismissed';
+    return it.closed_by || 'closed';
+  };
+  const hhmm = ns => new Date(ns/1e6).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', hour12:false});
+  const maybeBadge = '<span class="badge maybe">maybe answered in session</span>';
   const typing = () => {
     const a = document.activeElement;
     return a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA');
@@ -285,7 +310,7 @@
         const it = row;
         const q = it.kind === 'approval' ? `${it.subject||''}: ${it.question}` : it.question;
         const where = it.session ? ` · ${esc(it.session)}` : '';
-        const state = it.closed_at ? esc(it.closed_by || 'closed') : `waiting ${ago(it.opened_at)}`;
+        const state = it.closed_at ? esc(closedHow(it)) : it.maybe_in_session_at ? maybeBadge : `waiting ${ago(it.opened_at)}`;
         return `<button class="row${i===selected?' on':''}" role="option" aria-selected="${i===selected}" data-i="${i}"><span class="kind${it.risky?' risky':''}">${it.risky?'risky ':''}${esc(it.kind)}</span><span class="from">${esc(it.from)}${where}</span><span class="meta">${state}</span><span class="q">${esc(q)}</span></button>`;
       }
       const t = row;
@@ -295,6 +320,17 @@
     }).join('');
     const on = list.querySelector('.row.on');
     if (on) on.scrollIntoView({block:'nearest'});
+  }
+
+  // Recently closed: dim, newest first, not selectable (SPEC §7a).
+  function renderRecent() {
+    const show = view === 'inbox' && !showAll && recent.length > 0;
+    $('#recent').hidden = !show;
+    if (!show) return;
+    $('#recent-list').innerHTML = recent.map(it => {
+      const q = it.kind === 'approval' ? `${it.subject||''}: ${it.question}` : it.question;
+      return `<div class="recent-row"><span class="kind">#${it.id} ${esc(it.kind)}</span><span>${esc(it.from)}</span><span class="meta">${esc(closedHow(it))} · ${ago(it.closed_at)}</span><span class="q">${esc(q)}</span></div>`;
+    }).join('');
   }
 
   function renderDetail() {
@@ -321,7 +357,8 @@
         if (it.thread_id) acts += `<button data-a="open" data-id="${esc(it.thread_id)}">Thread</button>`;
       }
       const q = it.kind === 'approval' ? `${it.subject||''}: ${it.question}` : it.question;
-      detail.innerHTML = `<div class="eyebrow">${it.risky?'risky ':''}${esc(it.kind)} · ${esc(it.from)}</div><h2>${esc(q)}</h2><div class="meta">${where}${it.closed_at ? ' · '+esc(it.closed_by||'closed') : ''}</div><div class="acts">${acts}</div>`;
+      const maybe = !it.closed_at && it.maybe_in_session_at ? `<div class="meta">${maybeBadge} at ${hhmm(it.maybe_in_session_at)}; still open, Dismiss closes it</div>` : '';
+      detail.innerHTML = `<div class="eyebrow">${it.risky?'risky ':''}${esc(it.kind)} · ${esc(it.from)}</div><h2>${esc(q)}</h2><div class="meta">${where}${it.closed_at ? ' · '+esc(closedHow(it)) : ''}</div>${maybe}<div class="acts">${acts}</div>`;
       return;
     }
     const t = visibleThreads()[selected];
@@ -331,12 +368,16 @@
   }
 
   async function renderThread() {
-    const {messages} = await api('/api/thread?id=' + encodeURIComponent(openThread));
+    const {messages, items: thItems} = await api('/api/thread?id=' + encodeURIComponent(openThread));
+    // One-line notes from the thread's items, never stored messages (§7a).
+    const notes = (thItems||[]).map(it =>
+      it.closed_by === 'in_session' ? `<p class="sysnote">#${it.id} answered in the session at ${hhmm(it.closed_at)}</p>`
+      : (!it.closed_at && it.maybe_in_session_at) ? `<p class="sysnote">#${it.id} maybe answered in the session at ${hhmm(it.maybe_in_session_at)}</p>` : '').join('');
     const last = [...(messages||[])].reverse().find(m => m.from !== 'human') || (messages||[])[0];
     $('#detail').innerHTML = `<p><button type="button" data-a="back">← Back</button></p><div class="eyebrow">thread ${esc(openThread)}</div>` + (messages||[]).map(m => {
       const trust = m.verified ? `<span class="${m.verified==='human'?'v':'s'}">verified ${esc(String(m.verified).replace(':',' '))}</span>` : m.claimed_human ? 'automated reply' : esc(m.sender_proof || 'unplaced');
       return `<div class="msg-h">#${m.id} from <b>${esc(m.from)}</b> (${trust})${m.to?' → '+esc(m.to):''}${m.subject?' · '+esc(m.subject):''}</div><pre>${esc(m.text)}</pre>`;
-    }).join('');
+    }).join('') + notes;
     if (last) {
       showComposer('Reply to ' + last.from, 'Signed as you. Enter sends.');
       const form = $('#composer');
@@ -352,14 +393,18 @@
     try {
       const inbox = await api('/api/inbox' + (showAll ? '?all=1' : ''));
       const mail = await api('/api/threads');
-      if (!inbox || !mail) return;
+      const closed = await api('/api/inbox?closed=1');
+      if (!inbox || !mail || !closed) return;
       items = inbox.items || [];
       threads = mail.threads || [];
+      recent = closed.items || [];
       renderList();
+      renderRecent();
       if (openThread) await renderThread();
       else renderDetail();
       const sm = window.matchMedia('(max-width: 800px)').matches;
       $('#list').classList.toggle('hide-sm', sm && !!openThread);
+      $('#recent').classList.toggle('hide-sm', sm && !!openThread);
       $('#read').classList.toggle('hide-sm', sm && !openThread && view==='inbox' && false);
     } catch (e) { status(e.message); }
   }
@@ -438,6 +483,7 @@
     }
     if (e.key === 'x' && cur && !cur.closed_at) act('/api/dismiss', {item: cur.id});
     if (e.key === 'a' && cur && cur.kind === 'approval') act('/api/answer', {item: cur.id, text: 'allow'});
+    if (e.key === 'd' && cur && cur.kind !== 'approval' && cur.maybe_in_session_at && !cur.closed_at) act('/api/dismiss', {item: cur.id});
     if (e.key === 'd' && cur && cur.kind === 'approval') {
       showComposer('Reason shown to the agent', 'Optional. Leave empty to deny with no note.', true);
       $('#composer').dataset.mode = 'deny'; $('#composer').dataset.id = cur.id; $('#composer-text').focus();

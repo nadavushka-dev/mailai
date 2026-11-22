@@ -79,7 +79,7 @@ func (d *Daemon) ask(c *conn, a AskArgs) (any, error) {
 		return nil, proto.Errorf(proto.CodeAskCycle, "cannot ask yourself")
 	}
 	if d.isSpoke() && d.offMachine(a.To) {
-		return d.askRemote(from, a)
+		return d.askRemote(c.gone, from, a)
 	}
 	if err := d.checkRoute(a.To); err != nil {
 		return nil, err
@@ -130,6 +130,14 @@ func (d *Daemon) ask(c *conn, a AskArgs) (any, error) {
 			}
 		case <-timer:
 			return nil, proto.Errorf(proto.CodeTimeout, "no reply from %s within %s", a.To, timeout)
+		case <-c.gone:
+			// The asker died waiting (SPEC §7a): an ask to the person
+			// was answered in the session; the deferred release frees the
+			// graph edge either way.
+			if a.To == store.Human {
+				d.closeAskInSession(m.MID)
+			}
+			return nil, errClientGone
 		}
 	}
 }

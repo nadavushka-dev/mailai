@@ -317,7 +317,7 @@ func (s *Store) attend(m *Message) {
 		// A verified answer (the person, or a supervisor) closes the item.
 		for _, it := range s.att.items {
 			if it.ClosedAt == 0 && it.ThreadID == m.ThreadID && it.From == m.To {
-				s.closeItem(it.ID, "answered", m.MID)
+				s.closeItem(it.ID, "answered", m.MID, m.Verified)
 			}
 		}
 	}

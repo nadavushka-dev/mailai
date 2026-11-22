@@ -32,6 +32,7 @@ type Model struct {
 	height int
 
 	items   []store.Item
+	recent  []store.Item // closed in the last hour, newest first (§7a)
 	threads []daemon.ThreadRow
 	cursor  int
 	showAll bool
@@ -40,6 +41,8 @@ type Model struct {
 	open    []store.Message
 	openID  string
 	openTop int
+	// openItems are the open thread's items, for its one-line notes.
+	openItems []store.Item
 
 	// input is the reply or answer being typed; mode says for what.
 	input   textinput.Model
@@ -73,13 +76,15 @@ const (
 type (
 	refreshMsg struct {
 		items   []store.Item
+		recent  []store.Item
 		threads []daemon.ThreadRow
 		err     error
 	}
 	threadMsg struct {
-		id   string
-		msgs []store.Message
-		err  error
+		id    string
+		msgs  []store.Message
+		items []store.Item
+		err   error
 	}
 	eventMsg  struct{ f proto.Frame }
 	actionMsg struct{ err error }
@@ -118,8 +123,12 @@ func (m Model) refresh() tea.Cmd {
 		if err != nil {
 			return refreshMsg{err: err}
 		}
+		recent, err := b.Recent()
+		if err != nil {
+			return refreshMsg{err: err}
+		}
 		threads, err := b.Threads()
-		return refreshMsg{items: items, threads: threads, err: err}
+		return refreshMsg{items: items, recent: recent, threads: threads, err: err}
 	}
 }
 
@@ -141,7 +150,11 @@ func (m Model) loadThread(id string) tea.Cmd {
 	b := m.b
 	return func() tea.Msg {
 		msgs, err := b.Thread(id)
-		return threadMsg{id: id, msgs: msgs, err: err}
+		if err != nil {
+			return threadMsg{id: id, err: err}
+		}
+		items, err := b.ThreadItems(id)
+		return threadMsg{id: id, msgs: msgs, items: items, err: err}
 	}
 }
 
@@ -154,14 +167,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			return m.fail(msg.err), nil
 		}
-		m.items, m.threads = msg.items, msg.threads
+		m.items, m.recent, m.threads = msg.items, msg.recent, msg.threads
 		m.clampCursor()
 		return m, nil
 	case threadMsg:
 		if msg.err != nil {
 			return m.fail(msg.err), nil
 		}
-		m.open, m.openID, m.openTop = msg.msgs, msg.id, 0
+		m.open, m.openID, m.openTop, m.openItems = msg.msgs, msg.id, 0, msg.items
 		if m.pendingReply {
 			m.pendingReply = false
 			return m.startReply()
@@ -389,6 +402,10 @@ func (m Model) updateKeys(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.input.Placeholder = "reason shown to the agent (enter for none)"
 			m.input.SetValue("")
 			return m, m.input.Focus()
+		}
+		// Maybe answered in the session (§7a): d dismisses it, like x.
+		if it, ok := m.current(); ok && it.MaybeInSessionAt != 0 && m.view == ViewInbox {
+			return m.act(func() error { return m.b.Dismiss(it.ID) })
 		}
 		return m, nil
 	case "x":

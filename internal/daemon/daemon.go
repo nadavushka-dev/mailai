@@ -77,6 +77,7 @@ type Daemon struct {
 	marks     map[store.Address]noticeMark
 	queued    []queued
 	queueSeq  uint64
+	insession inSessionState
 
 	// The star (SPEC §13a).
 	name        string
@@ -206,6 +207,8 @@ type conn struct {
 	pl  Placement
 	// link is the spoke's machine name once this connection said link-hello.
 	link string
+	// gone closes when the client stops sending: it went away (SPEC §7a).
+	gone chan struct{}
 }
 
 func (c *conn) write(v any) error {
@@ -215,7 +218,7 @@ func (c *conn) write(v any) error {
 }
 
 func (d *Daemon) serveConn(nc net.Conn) {
-	c := &conn{Conn: nc, pl: d.placer.Place(nc, "")}
+	c := &conn{Conn: nc, pl: d.placer.Place(nc, ""), gone: make(chan struct{})}
 	defer func() {
 		d.mu.Lock()
 		delete(d.subs, c)
@@ -226,6 +229,8 @@ func (d *Daemon) serveConn(nc net.Conn) {
 	r := proto.NewReader(nc)
 	var wg sync.WaitGroup
 	defer wg.Wait()
+	// Runs before the wait: blocking verbs learn their client is gone.
+	defer close(c.gone)
 	for {
 		f, err := r.Next()
 		if err != nil {
@@ -287,7 +292,7 @@ func (d *Daemon) handle(c *conn, req proto.Request) (any, error) {
 	// may only use the link verbs.
 	if c.link != "" {
 		switch req.Verb {
-		case "ping", "link-send", "link-ack", "link-hold", "link-flush":
+		case "ping", "link-send", "link-ack", "link-hold", "link-flush", "link-withdraw":
 		default:
 			return nil, errForbidden("a link may only use link verbs, not %q", req.Verb)
 		}
@@ -324,6 +329,12 @@ func (d *Daemon) handle(c *conn, req proto.Request) (any, error) {
 	case "link-flush":
 		go d.flushTo(c.link)
 		return map[string]bool{"ok": true}, nil
+	case "link-withdraw":
+		a, err := decode[LinkWithdrawArgs](req.Args)
+		if err != nil {
+			return nil, err
+		}
+		return d.linkWithdraw(c, a)
 	case "hello":
 		a, err := decode[HelloArgs](req.Args)
 		if err != nil {
@@ -609,7 +620,8 @@ func (d *Daemon) publishItem(it store.Item) {
 	if it.ClosedAt != 0 {
 		state = "closed"
 	}
-	data, _ := json.Marshal(map[string]any{"id": it.ID, "kind": it.Kind, "from": it.From, "state": state, "closed_by": it.ClosedBy})
+	data, _ := json.Marshal(map[string]any{"id": it.ID, "kind": it.Kind, "from": it.From, "state": state, "closed_by": it.ClosedBy,
+		"maybe_in_session": it.MaybeInSessionAt != 0})
 	d.fanout(proto.Event{Event: "attention", Data: data})
 }
 

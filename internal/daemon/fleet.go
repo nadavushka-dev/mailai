@@ -335,8 +335,9 @@ func (d *Daemon) heldReply(thread string, from store.Address) (store.Message, bo
 	return store.Message{}, false
 }
 
-// waitThread blocks for a reply to from in thread, or the timeout.
-func (d *Daemon) waitThread(ch chan store.Message, thread string, from store.Address, timeout time.Duration, what string) (store.Message, error) {
+// waitThread blocks for a reply to from in thread, the timeout, or the
+// asker going away (errClientGone).
+func (d *Daemon) waitThread(gone <-chan struct{}, ch chan store.Message, thread string, from store.Address, timeout time.Duration, what string) (store.Message, error) {
 	if m, ok := d.heldReply(thread, from); ok {
 		d.st.Read(store.ReadQuery{Mailbox: from, IDs: []uint64{m.ID}, Mark: true})
 		return m, nil
@@ -356,6 +357,8 @@ func (d *Daemon) waitThread(ch chan store.Message, thread string, from store.Add
 			}
 		case <-timer:
 			return store.Message{}, proto.Errorf(proto.CodeTimeout, "no reply %s within %s", what, timeout)
+		case <-gone:
+			return store.Message{}, errClientGone
 		}
 	}
 }
@@ -370,7 +373,7 @@ func (d *Daemon) registerWait(thread string) chan store.Message {
 
 // askRemote is an ask that leaves the machine: sent over the link without
 // holding it, then waited for here, so a dropped link does not end it.
-func (d *Daemon) askRemote(from store.Address, a AskArgs) (any, error) {
+func (d *Daemon) askRemote(gone <-chan struct{}, from store.Address, a AskArgs) (any, error) {
 	if err := d.checkAsk(from, a.To); err != nil {
 		return nil, err
 	}
@@ -381,14 +384,17 @@ func (d *Daemon) askRemote(from store.Address, a AskArgs) (any, error) {
 	}
 	ch := d.registerWait(r.Message.ThreadID)
 	defer d.unwait(r.Message.ThreadID, ch)
-	reply, err := d.waitThread(ch, r.Message.ThreadID, from, time.Duration(a.TimeoutMS)*time.Millisecond, "from "+string(a.To))
+	reply, err := d.waitThread(gone, ch, r.Message.ThreadID, from, time.Duration(a.TimeoutMS)*time.Millisecond, "from "+string(a.To))
+	if err == errClientGone && a.To == store.Human {
+		d.withdrawRemote(LinkWithdrawArgs{MID: r.Message.MID}) // §7a
+	}
 	if err != nil {
 		return nil, err
 	}
 	return AskResult{Ask: r.Message, Reply: reply}, nil
 }
 
-func (d *Daemon) askHumanRemote(from store.Address, a AskHumanArgs) (any, error) {
+func (d *Daemon) askHumanRemote(gone <-chan struct{}, from store.Address, a AskHumanArgs) (any, error) {
 	if a.WaitFor != 0 {
 		return nil, proto.Errorf(proto.CodeBadRequest, "--wait-for is not supported on a spoke; the answer arrives as mail")
 	}
@@ -409,7 +415,10 @@ func (d *Daemon) askHumanRemote(from store.Address, a AskHumanArgs) (any, error)
 	}
 	ch := d.registerWait(r.Message.ThreadID)
 	defer d.unwait(r.Message.ThreadID, ch)
-	reply, err := d.waitThread(ch, r.Message.ThreadID, from, time.Duration(a.TimeoutMS)*time.Millisecond, "from the person")
+	reply, err := d.waitThread(gone, ch, r.Message.ThreadID, from, time.Duration(a.TimeoutMS)*time.Millisecond, "from the person")
+	if err == errClientGone {
+		d.withdrawRemote(LinkWithdrawArgs{MID: r.Message.MID}) // §7a
+	}
 	if err != nil {
 		return nil, err
 	}
