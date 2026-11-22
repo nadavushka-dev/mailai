@@ -24,6 +24,10 @@ Show the person a file (screenshot, report, log, diff): --attach path on send or
          they open it, so do not delete it or overwrite it while it matters.
 Status:  mailai whoami; mailai agents; mailai unread
 
+Waiting for mail? Do not poll unread. In a Herdr pane, end your turn: mail
+wakes you with one line. Otherwise mailai wait [--timeout 10m] blocks and
+prints the mail when it comes (exit 2 on timeout).
+
 Addresses: an agent is its pane id or live name (w1:p3, reviewer); the
 person is human. An agent on another machine is name@machine (reviewer@s1);
 the person is human from every machine. mailai read --thread <mid> shows a

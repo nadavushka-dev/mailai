@@ -119,8 +119,10 @@ type Daemon struct {
 	quitOnce sync.Once
 	asks     *askGraph
 	waits    map[string][]chan store.Message // thread id -> waiting asks
-	ln       net.Listener
-	wg       sync.WaitGroup
+	// mailWaits are callers blocked in wait, by mailbox.
+	mailWaits map[store.Address][]chan struct{}
+	ln        net.Listener
+	wg        sync.WaitGroup
 
 	// linkAsks are spokes' asks held in the graph, by thread (SPEC §13a).
 	linkAsks map[string][]*linkAsk
@@ -178,7 +180,7 @@ func New(o Options) *Daemon {
 	d := &Daemon{st: o.Store, placer: o.Placer, now: o.Now, log: o.Log, maxAsk: o.MaxAsks, stash: o.Stash, tokens: o.Tokens,
 		adapter: o.Adapter, wake: o.Wake, poll: o.PollEvery, agents: newAgents(), marks: map[store.Address]noticeMark{}, approvals: map[uint64]chan approvalDecision{}, webSubs: map[chan proto.Event]bool{},
 		subs: map[*conn]bool{}, asks: newAskGraph(), linkAsks: map[string][]*linkAsk{}, obKick: make(chan struct{}, 1), outFail: map[string][]chan error{}, spokeAsks: map[uint64]*spokeAsk{},
-		pushed: map[string]time.Time{}, resendAfter: o.ResendAfter, waits: map[string][]chan store.Message{},
+		pushed: map[string]time.Time{}, resendAfter: o.ResendAfter, waits: map[string][]chan store.Message{}, mailWaits: map[store.Address][]chan struct{}{},
 		name: o.Name, inboxTarget: o.Inbox, dial: o.Dial, linkRetry: o.LinkRetry, heartbeat: o.Heartbeat, knownFile: o.MachinesFile,
 		links: map[string]*conn{}, known: map[string]string{}, key: o.MachineKey}
 	if o.Notifier != nil {
@@ -351,7 +353,7 @@ func (d *Daemon) serveConn(nc net.Conn) {
 		req := proto.Request{ID: *f.ID, Verb: f.Verb, Args: f.Args}
 		// Blocking verbs run on their own goroutine so the connection stays
 		// responsive; everything else is cheap and runs in order.
-		if req.Verb == "ask" || req.Verb == "ask-human" || req.Verb == "hold-approval" || req.Verb == "link-hold" {
+		if req.Verb == "ask" || req.Verb == "ask-human" || req.Verb == "hold-approval" || req.Verb == "link-hold" || req.Verb == "wait" {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
@@ -473,6 +475,12 @@ func (d *Daemon) handle(c *conn, req proto.Request) (any, error) {
 		}
 		n, from := d.st.Unread(box)
 		return UnreadResult{Count: n, From: from}, nil
+	case "wait":
+		a, err := decode[WaitArgs](req.Args)
+		if err != nil {
+			return nil, err
+		}
+		return d.waitMail(c, a)
 	case "ask":
 		a, err := decode[AskArgs](req.Args)
 		if err != nil {
@@ -707,6 +715,12 @@ func (d *Daemon) publish(m store.Message) {
 	var waiters []chan store.Message
 	if m.Kind == store.KindReply {
 		waiters = d.waits[m.ThreadID]
+	}
+	for _, w := range d.mailWaits[box] {
+		select {
+		case w <- struct{}{}:
+		default:
+		}
 	}
 	d.mu.Unlock()
 	d.fanout(proto.Event{Event: "mail", Data: data})

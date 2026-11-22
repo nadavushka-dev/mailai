@@ -178,6 +178,32 @@ func TestCLI_AskPrintsBareReplyAndTimesOutWithExit2(t *testing.T) {
 	}
 }
 
+// wait blocks until mail arrives and prints it as read --unread does; with
+// nothing it exits 2 like ask, so an agent never has to poll unread.
+func TestCLI_WaitPrintsMailAndTimesOutWithExit2(t *testing.T) {
+	e := startEnv(t)
+	got := make(chan string, 1)
+	go func() {
+		out, _ := e.run("wait", "-w", "worker", "--timeout", "10s")
+		got <- out
+	}()
+	time.Sleep(200 * time.Millisecond)
+	e.must("send", "--from", "reviewer", "worker", "the rate is 0.92")
+	select {
+	case out := <-got:
+		if !strings.Contains(out, "the rate is 0.92") || !strings.Contains(out, "from reviewer") {
+			t.Fatalf("%q", out)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("wait did not return")
+	}
+	out, err := e.run("wait", "-w", "worker", "--timeout", "200ms")
+	ee, ok := err.(*exec.ExitError)
+	if !ok || ee.ExitCode() != 2 || !strings.Contains(out, "timeout") {
+		t.Fatalf("%v %q", err, out)
+	}
+}
+
 func TestCLI_NoDaemonIsAClearError(t *testing.T) {
 	e := &env{t: t, home: t.TempDir(), sock: filepath.Join(os.TempDir(), "mailai-none.sock")}
 	out, err := e.run("ping")

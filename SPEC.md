@@ -244,6 +244,15 @@ and reads it itself.
    graph and refuses a send that would close a cycle (`ask_cycle`). At most
    16 concurrent asks per sender.
 
+5. **Wait.** `mailai wait [--timeout D] [-w PRINCIPAL]` blocks the same way
+   until the mailbox holds unread mail, then prints it as `read --unread`
+   does; exit 2 on timeout. It is for mail that is not the reply to an ask
+   ("send me the rate when you have it") and for agents nothing can wake (no
+   adapter, a script, a harness that runs commands in the background). An
+   agent in a pane mailai can wake should end its turn instead. Found in the
+   first real trial: with no wait verb, an agent polled `unread` every 5 s
+   with no end.
+
 **How a reply reaches its agent.** The daemon picks the path from what the
 target is doing; none puts reply text into a pane:
 - blocked in `mailai ask`: pushed down the waiting connection, the CLI
@@ -457,6 +466,7 @@ CLI (every command takes `--json`):
 | `mailai send <to> [text] [--subject S] [--reply-to MID] [--attach PATH]… [--select SEL]` | Leave a message. Text from stdin when omitted. |
 | `mailai read [--unread] [--peek] [--summary] [--thread MID] [--from P] [-w PRINCIPAL]` | Read, inside the fence. `--summary` prints one line per message (id, sender, proof, subject) so an agent triages before paying for bodies. |
 | `mailai ask <to> <text> [--timeout MS]` · `mailai ask-human <text> -o A -o B [--no-wait] [--attach PATH]…` | Send and wait. |
+| `mailai wait [--timeout D] [-w PRINCIPAL]` | Block until mail arrives, then print it (§7 point 5). |
 | `mailai reply <mid> [text]` | Reply in a thread. |
 | `mailai queue <to> <text>` · `queue ls` · `queue rm` | Typed when the agent comes to rest. |
 | `mailai inbox [--all] [--closed] [--session S]` · `mailai answer <item> <text\|choice>` · `mailai dismiss <item>` | The Inbox from the CLI. `--closed`: what closed in the last hour, and how (§7a). |

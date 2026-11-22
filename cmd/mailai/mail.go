@@ -181,6 +181,30 @@ func cmdRead(args []string) error {
 	if err := c.Call("read", daemon.ReadArgs{Mailbox: store.Address(*mailbox), Unread: *unread, Peek: *peek || *summary, Thread: *thread}, &rr); err != nil {
 		return err
 	}
+	return printRead(rr, *summary)
+}
+
+// cmdWait blocks until mail arrives, then prints it as read --unread does:
+// how an agent waits for mail that is not the answer to an ask, instead of
+// polling unread.
+func cmdWait(args []string) error {
+	fs := newFlags("wait")
+	mailbox := fs.String("w", "", "mailbox to wait on; yours by default")
+	timeout := fs.Duration("timeout", 0, "give up after this long (exit 2); forever by default")
+	parse(fs, args)
+	c, err := connect()
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+	var rr daemon.ReadResult
+	if err := c.Call("wait", daemon.WaitArgs{Mailbox: store.Address(*mailbox), TimeoutMS: timeout.Milliseconds()}, &rr); err != nil {
+		return err
+	}
+	return printRead(rr, false)
+}
+
+func printRead(rr daemon.ReadResult, summary bool) error {
 	if jsonOut {
 		return printJSON(rr)
 	}
@@ -191,7 +215,7 @@ func cmdRead(args []string) error {
 		fmt.Println("no messages")
 		return nil
 	}
-	if *summary {
+	if summary {
 		fmt.Print(render.Summary(rr.Messages))
 		return nil
 	}
