@@ -26,6 +26,9 @@ type AskHumanArgs struct {
 type AskHumanResult struct {
 	Item  store.Item     `json:"item"`
 	Reply *store.Message `json:"reply,omitempty"`
+	// Queued says a spoke holds the question until its link is back; the
+	// Inbox item opens when it reaches the inbox machine.
+	Queued bool `json:"queued,omitempty"`
 }
 
 type InboxArgs struct {

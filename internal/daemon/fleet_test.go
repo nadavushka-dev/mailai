@@ -317,7 +317,9 @@ func TestStar_OfflineAndUnknownMachine(t *testing.T) {
 	s.cut(true)
 	s.waitLink(t, false)
 	worker := dialAs(t, s.spokeSock, "worker")
-	if err := worker.Call("send", SendArgs{To: "human", Text: "hi"}, nil); client.Code(err) != proto.CodeOffline {
+	// A send waits in the spoke's outbox now (fleet_outbox_test.go); an
+	// approval is never queued, so it is still refused.
+	if err := worker.Call("hold-approval", HoldApprovalArgs{Harness: "claude-code", Tool: "Bash", Summary: "ls", TimeoutMS: 1000}, nil); client.Code(err) != proto.CodeOffline {
 		t.Fatalf("spoke with the link down: %v", err)
 	}
 	// The inbox machine still takes mail for the spoke and delivers it later.

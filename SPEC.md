@@ -510,9 +510,36 @@ many machines but answers from one.
 - **Approvals.** A spoke's held permission request is held on the inbox
   machine through the link and decided from its Inbox. If the link drops,
   the hook gets no decision and the harness falls back to its own prompt.
-- **Offline.** A spoke whose link is down refuses a send off the machine
-  with `offline`. (A spoke outbox is not in v1.) The inbox machine refuses
-  `name@m` for a machine that never linked.
+- **Spoke outbox** (decided 2026-11-20; it replaces "a spoke whose link is
+  down refuses a send off the machine with `offline`"). Every mail, reply,
+  ask and ask-human a spoke sends off the machine is first validated and
+  queued durably in its outbox (`store.db`, table `outbox`) under a mid the
+  spoke mints from its own id counter (`<spoke>:<id>`), with its thread
+  resolved from what the spoke holds. With the link up and nothing older
+  queued it is sent at once, so a refusal from the inbox machine still
+  reaches the caller and nothing stays queued. Otherwise the caller gets
+  `queued: true` and the outbox drains in order whenever the link comes up,
+  and survives a spoke restart. An `ask` or `ask-human` sent while down
+  waits on the spoke as any ask does; its Inbox item opens on the inbox
+  machine when it arrives, and a queued ask carries what is left of its
+  `timeout_ms`. `link-send` carries the spoke's `mid` and `thread_id`; the
+  inbox machine accepts only mids prefixed with the link's own machine
+  name (`forbidden` otherwise), stores the message under that mid, takes
+  the spoke's thread only for a reply whose parent it does not hold, and
+  drops a mid it already holds (returning the held copy, no second ask
+  edge, no rate-limit token): at-least-once both ways, mid-deduped. While
+  draining, `rate_limited` and `mailbox_full` keep the entry and retry on a
+  later heartbeat; any other refusal drops it and is told: an ask still
+  waiting gets the error itself; anything else becomes a **bounce** in the
+  sender's own mailbox on the spoke, from `mailai`, kind reply, `reply_to`
+  the queued mid, its body written by the daemon (`not delivered to <to>:
+  <code>: <hint>`), never verified and not rate limited. The agent learns
+  of it through the usual one-line notice, which names only `mailai`.
+  `mailai ping` on a spoke shows the outbox count. Approvals are never
+  queued: with the link down `hold-approval` is refused `offline` and the
+  harness falls back to its own prompt.
+- **Offline.** The inbox machine refuses `name@m` for a machine that never
+  linked.
 - **Not in v1.** Answering from a spoke, relay between spokes without the
   inbox machine, grants that cross machines, hold policy, `machine add`,
   service install, upgrades over the link.

@@ -85,6 +85,10 @@ func cmdSend(args []string) error {
 	if jsonOut {
 		return printJSON(res.Message)
 	}
+	if res.Queued {
+		fmt.Printf("queued %s for %s: the link to the inbox machine is down; it goes when the link is back\n", res.Message.MID, res.Message.To)
+		return nil
+	}
 	fmt.Printf("sent #%d (%s) to %s\n", res.Message.ID, res.Message.MID, orNotice(res.Message))
 	return nil
 }
@@ -136,6 +140,10 @@ func cmdReply(args []string) error {
 	}
 	if jsonOut {
 		return printJSON(res.Message)
+	}
+	if res.Queued {
+		fmt.Printf("queued reply %s for %s: the link to the inbox machine is down; it goes when the link is back\n", res.Message.MID, recipient)
+		return nil
 	}
 	fmt.Printf("replied #%d (%s) to %s in thread %s\n", res.Message.ID, res.Message.MID, recipient, res.Message.ThreadID)
 	return nil
@@ -285,7 +293,7 @@ func cmdPing(args []string) error {
 	fmt.Println("pong", r.Pong)
 	switch {
 	case r.Inbox != "":
-		fmt.Printf("machine %s, spoke: link to inbox machine %s is %s\n", r.Machine, r.Inbox, r.Link)
+		fmt.Printf("machine %s, spoke: link to inbox machine %s is %s; outbox: %d waiting to send\n", r.Machine, r.Inbox, r.Link, r.Outbox)
 	case r.Machine != "":
 		links := "none"
 		if len(r.Links) > 0 {

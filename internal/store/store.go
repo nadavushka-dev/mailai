@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"sort"
-	"strings"
 	"sync"
 	"time"
 )
@@ -62,6 +61,9 @@ type SendRequest struct {
 	Origin     string
 	OriginHost string
 	Verified   string
+	// NoLimit is for what the daemon writes itself (a bounce): no sender's
+	// rate-limit bucket applies.
+	NoLimit bool
 }
 
 // ReadQuery selects messages from one mailbox, oldest first.
@@ -89,6 +91,8 @@ type Store struct {
 	p      Persister
 	att    *attention
 	grants *grants
+	// outbox is a spoke's queue of off-machine sends (SPEC §13a).
+	outbox []Outgoing
 }
 
 type mailbox struct {
@@ -141,6 +145,18 @@ func Load(o Options, p Persister) (*Store, error) {
 			return nil, err
 		}
 	}
+	if op, ok := p.(OutboxPersister); ok {
+		out, err := op.LoadOutbox()
+		if err != nil {
+			return nil, err
+		}
+		for _, o := range out {
+			if o.ID > s.nextID {
+				s.nextID = o.ID
+			}
+		}
+		s.outbox = out
+	}
 	return s, nil
 }
 
@@ -160,26 +176,31 @@ func newStore(o Options) *Store {
 // Send validates a request and stores it in the recipient's mailbox, or the
 // session's notice box when there is no recipient. It returns a copy.
 func (s *Store) Send(r SendRequest) (Message, error) {
-	if r.From == "" {
-		return Message{}, ErrNoSender
+	m, _, err := s.send(r, "", "")
+	return m, err
+}
+
+// SendMID stores a message another machine minted (a spoke's queued send,
+// SPEC §13a) under that machine's mid. A mid already held is not stored
+// twice and spends nothing: fresh is false and the held copy is returned.
+// thread is the sender's thread id, used only for a reply whose parent is
+// not held here.
+func (s *Store) SendMID(r SendRequest, mid, thread string) (Message, bool, error) {
+	if mid == "" {
+		return Message{}, false, fmt.Errorf("no mid")
 	}
-	if strings.TrimSpace(r.Text) == "" {
-		return Message{}, ErrEmptyText
-	}
-	if len(r.Text) > MaxText {
-		return Message{}, ErrTextTooLong
-	}
-	if strings.ContainsAny(r.Subject, "\r\n") {
-		return Message{}, ErrSubjectNotOneLine
-	}
-	if len(r.Subject) > MaxSubject {
-		return Message{}, ErrSubjectTooLong
+	return s.send(r, mid, thread)
+}
+
+func (s *Store) send(r SendRequest, mid, thread string) (Message, bool, error) {
+	if err := validate(r); err != nil {
+		return Message{}, false, err
 	}
 	box := r.To
 	kind := r.Kind
 	if r.To == "" {
 		if r.Session == "" {
-			return Message{}, ErrNoRecipient
+			return Message{}, false, ErrNoRecipient
 		}
 		box = NoticeBox(r.Session)
 		kind = KindNotice
@@ -188,20 +209,28 @@ func (s *Store) Send(r SendRequest) (Message, error) {
 	}
 	if r.ReplyTo != "" {
 		if kind != KindMail && kind != KindReply {
-			return Message{}, ErrKindMismatch
+			return Message{}, false, ErrKindMismatch
 		}
 		kind = KindReply
 	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if err := s.lim.take(r.From, r.Remote, s.now()); err != nil {
-		return Message{}, err
+	if held, ok := s.byMID[mid]; ok && mid != "" {
+		return *held, false, nil
+	}
+	if !r.NoLimit {
+		if err := s.lim.take(r.From, r.Remote, s.now()); err != nil {
+			return Message{}, false, err
+		}
 	}
 	s.nextID++
+	if mid == "" {
+		mid = fmt.Sprintf("%s:%d", s.machine, s.nextID)
+	}
 	m := &Message{
 		ID:          s.nextID,
-		MID:         fmt.Sprintf("%s:%d", s.machine, s.nextID),
+		MID:         mid,
 		Kind:        kind,
 		Session:     r.Session,
 		From:        r.From,
@@ -226,6 +255,9 @@ func (s *Store) Send(r SendRequest) (Message, error) {
 			m.ThreadID = parent.ThreadID
 		} else {
 			m.ThreadID = r.ReplyTo
+			if thread != "" {
+				m.ThreadID = thread
+			}
 			m.ReplyToMissing = true
 		}
 	}
@@ -233,19 +265,19 @@ func (s *Store) Send(r SendRequest) (Message, error) {
 	mb := s.box(box)
 	if err := s.makeRoom(box, mb, m.size()); err != nil {
 		s.nextID--
-		return Message{}, err
+		return Message{}, false, err
 	}
 	if s.p != nil {
 		if err := s.p.Insert(box, m); err != nil {
 			s.nextID--
-			return Message{}, err
+			return Message{}, false, err
 		}
 	}
 	mb.msgs = append(mb.msgs, m)
 	mb.bytes += m.size()
 	s.byMID[m.MID] = m
 	s.attend(m)
-	return *m, nil
+	return *m, true, nil
 }
 
 // Accept stores a message minted on another machine (SPEC §13a) in box,

@@ -45,6 +45,10 @@ type LinkSendArgs struct {
 	// TimeoutMS is how long an ask waits on the spoke; the inbox machine
 	// holds the ask's edge in its graph that long, 24 h at most.
 	TimeoutMS int64 `json:"timeout_ms,omitempty"`
+	// MID is the spoke's own mid for a queued send ("<spoke>:<id>"), the
+	// dedupe key; ThreadID is its thread as the spoke resolved it.
+	MID      string `json:"mid,omitempty"`
+	ThreadID string `json:"thread_id,omitempty"`
 }
 
 type LinkSendResult struct {
@@ -177,23 +181,47 @@ func (d *Daemon) linkSend(c *conn, a LinkSendArgs) (any, error) {
 	default:
 		return nil, proto.Errorf(proto.CodeBadRequest, "kind %q does not cross machines", a.Kind)
 	}
+	if a.MID != "" {
+		// A spoke mints mids only under its own name; a resend is dropped.
+		if !strings.HasPrefix(a.MID, c.link+":") {
+			return nil, errForbidden("a link sends only %s's own mids, not %q", c.link, a.MID)
+		}
+		if held, ok := d.st.Get(a.MID); ok {
+			return d.linkSendResult(held), nil
+		}
+	}
 	if a.Kind == store.KindAsk {
 		if err := d.openLinkAsk(from, to); err != nil {
 			return nil, err
 		}
 	}
-	m, err := d.st.Send(store.SendRequest{From: from, To: to, Kind: a.Kind, Subject: a.Subject, Text: a.Text,
-		ReplyTo: a.ReplyTo, Options: a.Options, Remote: true, Proof: store.ProofLink, Origin: "link", OriginHost: c.link})
-	if err != nil {
+	req := store.SendRequest{From: from, To: to, Kind: a.Kind, Subject: a.Subject, Text: a.Text,
+		ReplyTo: a.ReplyTo, Options: a.Options, Remote: true, Proof: store.ProofLink, Origin: "link", OriginHost: c.link}
+	var m store.Message
+	fresh := true
+	if a.MID != "" {
+		m, fresh, err = d.st.SendMID(req, a.MID, a.ThreadID)
+	} else {
+		m, err = d.st.Send(req)
+	}
+	if err != nil || !fresh {
 		if a.Kind == store.KindAsk {
 			d.releaseAsk(from, to)
 		}
-		return nil, err
+		if err != nil {
+			return nil, err
+		}
+		return d.linkSendResult(m), nil
 	}
 	if a.Kind == store.KindAsk {
 		d.holdLinkAsk(m, linkAskTimeout(a.TimeoutMS))
 	}
 	d.publish(m)
+	return d.linkSendResult(m), nil
+}
+
+// linkSendResult is the stored message and the Inbox item it opened.
+func (d *Daemon) linkSendResult(m store.Message) LinkSendResult {
 	res := LinkSendResult{Message: m}
 	for _, it := range d.st.Items(false) {
 		if it.MID == m.MID {
@@ -201,7 +229,7 @@ func (d *Daemon) linkSend(c *conn, a LinkSendArgs) (any, error) {
 			res.Item = &it
 		}
 	}
-	return res, nil
+	return res
 }
 
 func (d *Daemon) linkAck(c *conn, a LinkAckArgs) (any, error) {
@@ -297,22 +325,6 @@ func (d *Daemon) errOffline() error {
 	return proto.Errorf(proto.CodeOffline, "the link to the inbox machine %s is down; try again when `mailai ping` says it is up", d.inboxTarget)
 }
 
-// relay sends over the link; a dropped link is offline, not internal.
-func (d *Daemon) relay(a LinkSendArgs) (LinkSendResult, error) {
-	var r LinkSendResult
-	cl := d.uplink()
-	if cl == nil {
-		return r, d.errOffline()
-	}
-	if err := cl.Call("link-send", a, &r); err != nil {
-		if client.Code(err) == "" {
-			return r, d.errOffline()
-		}
-		return r, err
-	}
-	return r, nil
-}
-
 // heldReply finds a reply to from already delivered in thread, for an ask
 // that registered its wait after the reply landed.
 func (d *Daemon) heldReply(thread string, from store.Address) (store.Message, bool) {
@@ -324,8 +336,9 @@ func (d *Daemon) heldReply(thread string, from store.Address) (store.Message, bo
 	return store.Message{}, false
 }
 
-// waitThread blocks for a reply to from in thread, or the timeout.
-func (d *Daemon) waitThread(ch chan store.Message, thread string, from store.Address, timeout time.Duration, what string) (store.Message, error) {
+// waitThread blocks for a reply to from in thread, the inbox machine
+// refusing the queued ask (fail), or the timeout.
+func (d *Daemon) waitThread(ch chan store.Message, fail chan error, thread string, from store.Address, timeout time.Duration, what string) (store.Message, error) {
 	if m, ok := d.heldReply(thread, from); ok {
 		d.st.Read(store.ReadQuery{Mailbox: from, IDs: []uint64{m.ID}, Mark: true})
 		return m, nil
@@ -343,6 +356,8 @@ func (d *Daemon) waitThread(ch chan store.Message, thread string, from store.Add
 				d.st.Read(store.ReadQuery{Mailbox: from, IDs: []uint64{r.ID}, Mark: true})
 				return r, nil
 			}
+		case err := <-fail:
+			return store.Message{}, err
 		case <-timer:
 			return store.Message{}, proto.Errorf(proto.CodeTimeout, "no reply %s within %s", what, timeout)
 		}
@@ -357,24 +372,53 @@ func (d *Daemon) registerWait(thread string) chan store.Message {
 	return ch
 }
 
-// askRemote is an ask that leaves the machine: sent over the link without
-// holding it, then waited for here, so a dropped link does not end it.
+// outWait is an off-machine ask, queued, with its wait registered before
+// it could leave, so neither a fast reply nor a refusal is missed.
+type outWait struct {
+	o     store.Outgoing
+	r     LinkSendResult
+	qd    bool
+	ch    chan store.Message
+	fail  chan error
+	close func()
+}
+
+func (d *Daemon) queueAndWait(o store.Outgoing) (*outWait, error) {
+	o, err := d.st.Enqueue(o)
+	if err != nil {
+		return nil, err
+	}
+	w := &outWait{o: o, ch: d.registerWait(o.ThreadID), fail: d.registerFail(o.ThreadID)}
+	w.close = func() { d.unwait(o.ThreadID, w.ch); d.unregisterFail(o.ThreadID, w.fail) }
+	w.r, w.qd, err = d.outSend(o)
+	if err != nil {
+		w.close()
+		return nil, err
+	}
+	if w.qd {
+		w.r.Message = outMessage(o)
+	}
+	return w, nil
+}
+
+// askRemote is an ask that leaves the machine: queued and sent over the
+// link without holding it, then waited for here, so a dropped link (or one
+// that is down when it is asked) does not end it.
 func (d *Daemon) askRemote(from store.Address, a AskArgs) (any, error) {
 	if err := d.checkAsk(from, a.To); err != nil {
 		return nil, err
 	}
 	defer d.releaseAsk(from, a.To)
-	r, err := d.relay(LinkSendArgs{From: from, To: a.To, Kind: store.KindAsk, Subject: a.Subject, Text: a.Text, TimeoutMS: a.TimeoutMS})
+	w, err := d.queueAndWait(store.Outgoing{From: from, To: a.To, Kind: store.KindAsk, Subject: a.Subject, Text: a.Text, TimeoutMS: a.TimeoutMS})
 	if err != nil {
 		return nil, err
 	}
-	ch := d.registerWait(r.Message.ThreadID)
-	defer d.unwait(r.Message.ThreadID, ch)
-	reply, err := d.waitThread(ch, r.Message.ThreadID, from, time.Duration(a.TimeoutMS)*time.Millisecond, "from "+string(a.To))
+	defer w.close()
+	reply, err := d.waitThread(w.ch, w.fail, w.o.ThreadID, from, time.Duration(a.TimeoutMS)*time.Millisecond, "from "+string(a.To))
 	if err != nil {
 		return nil, err
 	}
-	return AskResult{Ask: r.Message, Reply: reply}, nil
+	return AskResult{Ask: w.r.Message, Reply: reply}, nil
 }
 
 func (d *Daemon) askHumanRemote(from store.Address, a AskHumanArgs) (any, error) {
@@ -385,20 +429,19 @@ func (d *Daemon) askHumanRemote(from store.Address, a AskHumanArgs) (any, error)
 		return nil, err
 	}
 	defer d.releaseAsk(from, store.Human)
-	r, err := d.relay(LinkSendArgs{From: from, To: store.Human, Kind: store.KindAskHuman, Subject: a.Subject, Text: a.Text, Options: a.Options})
+	w, err := d.queueAndWait(store.Outgoing{From: from, To: store.Human, Kind: store.KindAskHuman, Subject: a.Subject, Text: a.Text, Options: a.Options})
 	if err != nil {
 		return nil, err
 	}
+	defer w.close()
 	var item store.Item
-	if r.Item != nil {
-		item = *r.Item
+	if w.r.Item != nil {
+		item = *w.r.Item
 	}
 	if a.NoWait {
-		return AskHumanResult{Item: item}, nil
+		return AskHumanResult{Item: item, Queued: w.qd}, nil
 	}
-	ch := d.registerWait(r.Message.ThreadID)
-	defer d.unwait(r.Message.ThreadID, ch)
-	reply, err := d.waitThread(ch, r.Message.ThreadID, from, time.Duration(a.TimeoutMS)*time.Millisecond, "from the person")
+	reply, err := d.waitThread(w.ch, w.fail, w.o.ThreadID, from, time.Duration(a.TimeoutMS)*time.Millisecond, "from the person")
 	if err != nil {
 		return nil, err
 	}
@@ -508,6 +551,7 @@ func (d *Daemon) serveUplink(ctx context.Context, rwc io.ReadWriteCloser) (bool,
 	d.hubName = hr.Machine
 	d.mu.Unlock()
 	d.log.Printf("link up: inbox machine %s via %s", hr.Machine, d.inboxTarget)
+	d.kickOutbox()
 	defer func() {
 		d.mu.Lock()
 		if d.up == cl {
@@ -540,6 +584,10 @@ func (d *Daemon) serveUplink(ctx context.Context, rwc io.ReadWriteCloser) (bool,
 			if err := callWithin(cl, 3*d.heartbeat, "link-flush", nil, nil); err != nil {
 				return true, err
 			}
+			// And retries what the inbox machine was too busy to take.
+			if len(d.st.Outbox()) > 0 {
+				d.kickOutbox()
+			}
 		}
 	}
 }
@@ -550,6 +598,8 @@ type LinkStatus struct {
 	Inbox   string   `json:"inbox,omitempty"`
 	Link    string   `json:"link,omitempty"`
 	Links   []string `json:"links,omitempty"`
+	// Outbox is how many sends a spoke holds for the inbox machine.
+	Outbox int `json:"outbox,omitempty"`
 }
 
 func (d *Daemon) linkStatus() LinkStatus {
@@ -560,6 +610,7 @@ func (d *Daemon) linkStatus() LinkStatus {
 		if d.linkUp() {
 			s.Link = "up"
 		}
+		s.Outbox = len(d.st.Outbox())
 		return s
 	}
 	d.mu.Lock()

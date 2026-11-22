@@ -105,6 +105,11 @@ type Daemon struct {
 
 	// linkAsks are spokes' asks held in the graph, by thread (SPEC §13a).
 	linkAsks map[string][]*linkAsk
+	// The spoke outbox: obMu orders sends, obKick wakes the drain, outFail
+	// are queued asks waiting by thread, told if the inbox machine refuses.
+	obMu    sync.Mutex
+	obKick  chan struct{}
+	outFail map[string][]chan error
 }
 
 // New makes a Daemon; Serve starts it.
@@ -138,7 +143,7 @@ func New(o Options) *Daemon {
 	}
 	d := &Daemon{st: o.Store, placer: o.Placer, now: o.Now, log: o.Log, maxAsk: o.MaxAsks, stash: o.Stash, tokens: o.Tokens,
 		adapter: o.Adapter, wake: o.Wake, poll: o.PollEvery, agents: newAgents(), marks: map[store.Address]noticeMark{}, approvals: map[uint64]chan approvalDecision{}, webSubs: map[chan proto.Event]bool{},
-		subs: map[*conn]bool{}, asks: newAskGraph(), linkAsks: map[string][]*linkAsk{}, waits: map[string][]chan store.Message{},
+		subs: map[*conn]bool{}, asks: newAskGraph(), linkAsks: map[string][]*linkAsk{}, obKick: make(chan struct{}, 1), outFail: map[string][]chan error{}, waits: map[string][]chan store.Message{},
 		name: o.Name, inboxTarget: o.Inbox, dial: o.Dial, linkRetry: o.LinkRetry, heartbeat: o.Heartbeat, knownFile: o.MachinesFile,
 		links: map[string]*conn{}, known: map[string]string{}, key: o.MachineKey}
 	d.loadKnown()
@@ -182,6 +187,7 @@ func (d *Daemon) Serve(ctx context.Context) error {
 	go d.runWakes(ctx)
 	if d.isSpoke() {
 		go d.runUplink(ctx)
+		go d.runOutbox(ctx)
 	}
 	go func() {
 		t := time.NewTicker(wakeTick)
@@ -508,9 +514,17 @@ func (d *Daemon) send(c *conn, a SendArgs) (any, error) {
 		if len(a.Attachments) > 0 {
 			return nil, proto.Errorf(proto.CodeBadRequest, "attachments do not cross machines yet")
 		}
-		r, err := d.relay(LinkSendArgs{From: from, To: a.To, Subject: a.Subject, Text: a.Text, ReplyTo: a.ReplyTo})
+		// Queued first, so a link that is down only delays it (SPEC §13a).
+		o, err := d.st.Enqueue(store.Outgoing{From: from, To: a.To, Subject: a.Subject, Text: a.Text, ReplyTo: a.ReplyTo})
 		if err != nil {
 			return nil, err
+		}
+		r, queued, err := d.outSend(o)
+		if err != nil {
+			return nil, err
+		}
+		if queued {
+			return SendResult{Message: outMessage(o), Queued: true}, nil
 		}
 		return SendResult{Message: r.Message}, nil
 	}

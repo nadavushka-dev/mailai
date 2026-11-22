@@ -44,6 +44,10 @@ func cmdAskHuman(args []string) error {
 	if jsonOut {
 		return printJSON(r)
 	}
+	if r.Reply == nil && r.Queued {
+		fmt.Println("queued: the link to the inbox machine is down; the question reaches the Inbox when it is back, and the answer arrives as mail")
+		return nil
+	}
 	if r.Reply == nil {
 		fmt.Printf("asked as item #%d; come back with: mailai ask-human --wait-for %d\n", r.Item.ID, r.Item.ID)
 		return nil
