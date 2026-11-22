@@ -489,7 +489,18 @@ many machines but answers from one.
   never a link, a detached caller or an agent (`not_human`).
 - **Asks wait at home.** A spoke's `ask` and `ask-human` send over the link
   without blocking it, then wait on the spoke for the reply in the thread.
-  A dropped link or a sleeping laptop does not end the wait.
+  A dropped link or a sleeping laptop does not end the wait. A spoke's
+  `ask-human` resumes as a local one does (decided 2026-11-20): on
+  timeout it fails `timeout` with "no answer yet; come back with
+  --wait-for <id>", where `<id>` is the inbox machine's item id that
+  `link-send` returned, or, for a question still in the outbox, a local
+  handle (2^40 + the queued send's id, so it never meets an item id;
+  `--no-wait` returns the same id). `ask-human --wait-for <id>` on the
+  spoke waits on that thread again, returns at once when the answer is
+  already held there (read or not; it is marked read), and gets the inbox
+  machine's refusal if the queued question was refused. The spoke keeps
+  these ids in memory: after a spoke restart `--wait-for` is `not_found`
+  and the answer arrives as mail.
 - **Asks across machines** (decided 2026-11-20). The inbox machine enters
   every `ask` that arrives over a link in its own ask graph (§7), as an edge
   from `name@spoke` to the target, beside its own agents' asks. An ask that

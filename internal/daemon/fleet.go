@@ -441,7 +441,7 @@ func (d *Daemon) askRemote(from store.Address, a AskArgs) (any, error) {
 
 func (d *Daemon) askHumanRemote(from store.Address, a AskHumanArgs) (any, error) {
 	if a.WaitFor != 0 {
-		return nil, proto.Errorf(proto.CodeBadRequest, "--wait-for is not supported on a spoke; the answer arrives as mail")
+		return d.resumeAskHuman(from, a)
 	}
 	if err := d.checkAsk(from, store.Human); err != nil {
 		return nil, err
@@ -455,13 +455,21 @@ func (d *Daemon) askHumanRemote(from store.Address, a AskHumanArgs) (any, error)
 	var item store.Item
 	if w.r.Item != nil {
 		item = *w.r.Item
+	} else {
+		// Queued: no item yet, so a local handle stands in for its id.
+		m := w.r.Message
+		item = store.Item{ID: localHandleBase + w.o.ID, Kind: store.ItemAskHuman, MID: m.MID, ThreadID: m.ThreadID,
+			From: from, Subject: m.Subject, Question: m.Text, Options: m.Options}
 	}
+	d.mu.Lock()
+	d.spokeAsks[item.ID] = &spokeAsk{from: from, thread: w.o.ThreadID}
+	d.mu.Unlock()
 	if a.NoWait {
 		return AskHumanResult{Item: item, Queued: w.qd}, nil
 	}
 	reply, err := d.waitThread(w.ch, w.fail, w.o.ThreadID, from, time.Duration(a.TimeoutMS)*time.Millisecond, "from the person")
 	if err != nil {
-		return nil, err
+		return nil, comeBack(err, item.ID)
 	}
 	item.ClosedBy, item.Answer = "answered", reply.MID
 	return AskHumanResult{Item: item, Reply: &reply}, nil

@@ -130,6 +130,7 @@ func (d *Daemon) drainOutbox() {
 // refused tells whoever waits on o that the inbox machine will not take
 // it: a waiting ask gets the error; otherwise the sender gets a bounce.
 func (d *Daemon) refused(o store.Outgoing, err error) {
+	d.spokeAskRefused(o.ThreadID, err)
 	d.mu.Lock()
 	fails := d.outFail[o.ThreadID]
 	d.mu.Unlock()

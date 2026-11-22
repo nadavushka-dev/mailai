@@ -114,6 +114,8 @@ type Daemon struct {
 	obMu    sync.Mutex
 	obKick  chan struct{}
 	outFail map[string][]chan error
+	// spokeAsks are this spoke's ask-humans by the id --wait-for takes.
+	spokeAsks map[uint64]*spokeAsk
 
 	// Delivery to spokes (inbox machine): when each unacknowledged mid was
 	// last pushed, and how long before a heartbeat resends it.
@@ -160,7 +162,7 @@ func New(o Options) *Daemon {
 	}
 	d := &Daemon{st: o.Store, placer: o.Placer, now: o.Now, log: o.Log, maxAsk: o.MaxAsks, stash: o.Stash, tokens: o.Tokens,
 		adapter: o.Adapter, wake: o.Wake, poll: o.PollEvery, agents: newAgents(), marks: map[store.Address]noticeMark{}, approvals: map[uint64]chan approvalDecision{}, webSubs: map[chan proto.Event]bool{},
-		subs: map[*conn]bool{}, asks: newAskGraph(), linkAsks: map[string][]*linkAsk{}, obKick: make(chan struct{}, 1), outFail: map[string][]chan error{},
+		subs: map[*conn]bool{}, asks: newAskGraph(), linkAsks: map[string][]*linkAsk{}, obKick: make(chan struct{}, 1), outFail: map[string][]chan error{}, spokeAsks: map[uint64]*spokeAsk{},
 		pushed: map[string]time.Time{}, resendAfter: o.ResendAfter, waits: map[string][]chan store.Message{},
 		name: o.Name, inboxTarget: o.Inbox, dial: o.Dial, linkRetry: o.LinkRetry, heartbeat: o.Heartbeat, knownFile: o.MachinesFile,
 		links: map[string]*conn{}, known: map[string]string{}, key: o.MachineKey}
