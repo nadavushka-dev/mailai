@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/nadavushka-dev/mailai/internal/adapter"
+	"github.com/nadavushka-dev/mailai/internal/proto"
 	"github.com/nadavushka-dev/mailai/internal/store"
 )
 
@@ -31,6 +32,11 @@ type ReportStateArgs struct {
 	Harness string        `json:"harness,omitempty"`
 	Session string        `json:"session,omitempty"`
 	Label   string        `json:"label,omitempty"`
+	// Signal is what the harness event means beyond the state, from its
+	// manifest: prompt, tool_ran or turn_ended (SPEC §7a). Tool names the
+	// tool that ran.
+	Signal string `json:"signal,omitempty"`
+	Tool   string `json:"tool,omitempty"`
 }
 
 type AgentsResult struct {
@@ -58,9 +64,20 @@ func (d *Daemon) refreshAgents(ctx context.Context) {
 		d.log.Printf("adapter %s: %v", d.adapter.Name(), err)
 		return
 	}
+	for _, p := range d.mergeAgents(list) {
+		// Blocked -> working with an ask open: maybe answered in the
+		// session (SPEC §7a).
+		d.markMaybe(p)
+	}
+}
+
+// mergeAgents folds an adapter snapshot into the registry and returns the
+// agents it saw go from blocked to working.
+func (d *Daemon) mergeAgents(list []adapter.Agent) []store.Address {
 	now := d.now().UnixNano()
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	var resumed []store.Address
 	seen := map[store.Address]bool{}
 	for _, a := range list {
 		seen[a.Principal] = true
@@ -76,6 +93,9 @@ func (d *Daemon) refreshAgents(ctx context.Context) {
 				rec.Label = a.Label
 			}
 			continue
+		}
+		if rec.State == adapter.Blocked && a.State == adapter.Working {
+			resumed = append(resumed, a.Principal)
 		}
 		hookHarness := rec.Harness
 		rec.Agent = a
@@ -94,6 +114,7 @@ func (d *Daemon) refreshAgents(ctx context.Context) {
 			delete(d.agents.byName, name)
 		}
 	}
+	return resumed
 }
 
 // reportState records what a hook says about the calling agent. The
@@ -107,6 +128,9 @@ func (d *Daemon) reportState(c *conn, a ReportStateArgs) (any, error) {
 	case adapter.Idle, adapter.Working, adapter.Blocked, adapter.Done, adapter.Unknown:
 	default:
 		return nil, errForbidden("state must be one of idle, working, blocked, done, unknown")
+	}
+	if !validSignal(a.Signal) {
+		return nil, proto.Errorf(proto.CodeBadRequest, "signal must be one of prompt, tool_ran, turn_ended")
 	}
 	d.mu.Lock()
 	rec := d.agents.byName[who]
@@ -129,6 +153,7 @@ func (d *Daemon) reportState(c *conn, a ReportStateArgs) (any, error) {
 	snapshot := *rec
 	d.mu.Unlock()
 	d.publishAgent(snapshot)
+	d.onSignal(who, a.Signal, a.Tool)
 	return snapshot, nil
 }
 

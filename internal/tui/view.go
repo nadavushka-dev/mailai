@@ -131,12 +131,23 @@ func (m Model) listTitle() string {
 
 func (m Model) listBody(w, h int) string {
 	if m.view == ViewInbox {
-		if len(m.items) == 0 {
+		strip := !m.showAll && len(m.recent) > 0
+		if len(m.items) == 0 && !strip {
 			return center(styleDim.Render("inbox empty: nothing waits on you"), w, h)
 		}
 		var rows []string
+		if len(m.items) == 0 {
+			rows = append(rows, styleDim.Render("inbox empty: nothing waits on you"))
+		}
 		for i, it := range m.items {
 			rows = append(rows, m.itemRow(it, w, i == m.cursor))
+		}
+		// Recently closed (§7a): dim, not selectable, newest first.
+		if strip {
+			rows = append(rows, "", styleDim.Render(fit("── Recently closed "+strings.Repeat("─", w), w)))
+			for _, it := range m.recent {
+				rows = append(rows, m.recentRow(it, w))
+			}
 		}
 		return strings.Join(window(rows, m.cursor, h), "\n")
 	}
@@ -183,6 +194,9 @@ func (m Model) itemRow(it store.Item, w int, sel bool) string {
 		q = it.Subject + ": " + it.Question
 	}
 	state := styleWarn.Render("waiting " + ago(m.now(), it.OpenedAt))
+	if it.MaybeInSessionAt != 0 {
+		state = styleSuper.Render(daemon.MaybeBadge)
+	}
 	if it.ClosedAt != 0 {
 		state = styleDim.Render(it.ClosedBy)
 		if it.DecidedBy != "" && it.DecidedBy != "human" {
@@ -201,6 +215,22 @@ func (m Model) itemRow(it store.Item, w int, sel bool) string {
 	}
 	return row
 }
+
+// recentRow is one dim line of the Recently closed strip: what, who, how,
+// how long ago.
+func (m Model) recentRow(it store.Item, w int) string {
+	q := it.Question
+	if it.Kind == store.ItemApproval {
+		q = it.Subject + ": " + it.Question
+	}
+	how := daemon.ClosedHow(it) + " · " + ago(m.now(), it.ClosedAt)
+	left := fmt.Sprintf("#%-3d %s %s ", it.ID, fit(string(it.Kind), 14), fit(string(it.From), 22))
+	room := w - lipgloss.Width(left) - lipgloss.Width(how) - 2
+	return styleDim.Render(padBetween(left+fit(oneLine(q), room), how, w))
+}
+
+// clock is the local time of day of a timestamp, for notes.
+func clock(ns int64) string { return time.Unix(0, ns).Format("15:04") }
 
 func (m Model) threadRow(t daemon.ThreadRow, w int, sel bool) string {
 	mark := " "
@@ -272,12 +302,19 @@ func (m Model) detailBody(w, h int) string {
 		}
 		row("session", it.Session)
 		row("asked", ago(m.now(), it.OpenedAt)+" ago")
+		if it.ClosedAt == 0 && it.MaybeInSessionAt != 0 {
+			row("note", styleSuper.Render("maybe answered in the session at "+clock(it.MaybeInSessionAt))+styleDim.Render("; d dismisses"))
+		}
 		if it.ClosedAt != 0 {
-			who := it.DecidedBy
-			if who == "" {
-				who = "human"
+			if it.ClosedBy == store.ClosedInSession {
+				row("closed", "answered in the session at "+clock(it.ClosedAt))
+			} else {
+				who := it.DecidedBy
+				if who == "" {
+					who = "human"
+				}
+				row("closed", fmt.Sprintf("%s by %s", it.ClosedBy, who))
 			}
-			row("closed", fmt.Sprintf("%s by %s", it.ClosedBy, who))
 		}
 		b.WriteString("\n")
 		if it.Kind == store.ItemApproval {
@@ -347,6 +384,16 @@ func (m Model) threadBody(w, h int) string {
 			lines = append(lines, s)
 		}
 		lines = append(lines, "")
+	}
+	// One-line notes rendered from the thread's items, never stored as
+	// messages (§7a).
+	for _, it := range m.openItems {
+		switch {
+		case it.ClosedBy == store.ClosedInSession:
+			lines = append(lines, styleDim.Render(fmt.Sprintf("── #%d answered in the session at %s", it.ID, clock(it.ClosedAt))))
+		case it.ClosedAt == 0 && it.MaybeInSessionAt != 0:
+			lines = append(lines, styleDim.Render(fmt.Sprintf("── #%d maybe answered in the session at %s", it.ID, clock(it.MaybeInSessionAt))))
+		}
 	}
 	top := m.openTop
 	if top > len(lines)-h {

@@ -48,12 +48,20 @@ func (d *Daemon) holdApproval(c *conn, a HoldApprovalArgs) (any, error) {
 	}
 	// On a spoke the person decides on the inbox machine (SPEC §13a).
 	if d.isSpoke() {
-		return d.holdRemote(who, a)
+		return d.holdRemoteIn(c.gone, who, a)
 	}
-	return d.holdApprovalAs(who, a)
+	return d.holdApprovalGone(who, a, c.gone)
 }
 
+// holdApprovalAs holds for a link, whose connection dropping is not the
+// person answering anywhere.
 func (d *Daemon) holdApprovalAs(who store.Address, a HoldApprovalArgs) (any, error) {
+	return d.holdApprovalGone(who, a, nil)
+}
+
+// holdApprovalGone holds until a decision, the timeout, or gone closing (the
+// holding hook died: answered in the session, SPEC §7a).
+func (d *Daemon) holdApprovalGone(who store.Address, a HoldApprovalArgs, gone <-chan struct{}) (any, error) {
 	if a.Tool == "" {
 		return nil, proto.Errorf(proto.CodeBadRequest, "hold-approval needs the tool name")
 	}
@@ -94,6 +102,9 @@ func (d *Daemon) holdApprovalAs(who store.Address, a HoldApprovalArgs) (any, err
 		it, _ := d.st.CloseItem(item.ID, "timeout", "")
 		d.publishItem(it)
 		return HoldApprovalResult{Item: it}, nil
+	case <-gone:
+		d.closeInSession(item.ID)
+		return nil, errClientGone
 	}
 }
 
@@ -104,11 +115,10 @@ func (d *Daemon) decideApproval(it store.Item, decision, message, by string) (st
 	d.mu.Lock()
 	ch := d.approvals[it.ID]
 	d.mu.Unlock()
-	closed, err := d.st.CloseItem(it.ID, "answered", decision)
+	closed, err := d.st.CloseItemBy(it.ID, "answered", decision, by)
 	if err != nil {
 		return store.Item{}, proto.Errorf(proto.CodeNotFound, "no open item #%d", it.ID)
 	}
-	closed.DecidedBy = by
 	if ch != nil {
 		select {
 		case ch <- approvalDecision{Decision: decision, Message: message, By: by}:

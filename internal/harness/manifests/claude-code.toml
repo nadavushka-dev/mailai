@@ -11,13 +11,16 @@ notice = true
 [events.UserPromptSubmit]
 state = "working"
 notice = true
+signal = "prompt"
 
 [events.PostToolUse]
 state = "working"
 notice = true
+signal = "tool_ran"
 
 [events.Stop]
 state = "done"
+signal = "turn_ended"
 
 [events.SubagentStop]
 

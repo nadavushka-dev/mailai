@@ -54,6 +54,10 @@ type Event struct {
 	State adapter.State `toml:"state"`
 	// Notice says the hook should add the mail notice line on this event.
 	Notice bool `toml:"notice"`
+	// Signal is what the event says beyond the state (SPEC §7a): "prompt"
+	// (the agent got a new prompt), "tool_ran" (a tool finished; the
+	// payload's tool_name names it) or "turn_ended". Needs a state.
+	Signal string `toml:"signal"`
 	// Matcher is the harness's tool matcher for this entry, when it has one.
 	Matcher string `toml:"matcher"`
 	// Timeout in seconds for the hook command, when the harness takes one.
@@ -140,6 +144,14 @@ func parse(b []byte) (*Manifest, error) {
 		case "", adapter.Idle, adapter.Working, adapter.Blocked, adapter.Done, adapter.Unknown:
 		default:
 			return nil, fmt.Errorf("event %s: state %q is not one of idle, working, blocked, done, unknown", ev, e.State)
+		}
+		switch e.Signal {
+		case "", "prompt", "tool_ran", "turn_ended":
+		default:
+			return nil, fmt.Errorf("event %s: signal %q is not one of prompt, tool_ran, turn_ended", ev, e.Signal)
+		}
+		if e.Signal != "" && e.State == "" {
+			return nil, fmt.Errorf("event %s: a signal needs a state", ev)
 		}
 	}
 	return &m, nil

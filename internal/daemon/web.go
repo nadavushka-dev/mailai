@@ -219,7 +219,8 @@ func (d *Daemon) apiMe(w http.ResponseWriter, r *http.Request) {
 }
 
 func (d *Daemon) apiInbox(w http.ResponseWriter, r *http.Request) {
-	res, err := d.inbox(d.person(), InboxArgs{All: r.URL.Query().Get("all") == "1"})
+	q := r.URL.Query()
+	res, err := d.inbox(d.person(), InboxArgs{All: q.Get("all") == "1", Closed: q.Get("closed") == "1"})
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -233,12 +234,18 @@ func (d *Daemon) apiThreads(w http.ResponseWriter, r *http.Request) {
 }
 
 func (d *Daemon) apiThread(w http.ResponseWriter, r *http.Request) {
-	res, err := d.read(d.person(), ReadArgs{Thread: r.URL.Query().Get("id")})
+	id := r.URL.Query().Get("id")
+	res, err := d.read(d.person(), ReadArgs{Thread: id})
 	if err != nil {
 		writeErr(w, err)
 		return
 	}
-	writeJSON(w, res)
+	// The thread's items, for its one-line notes (SPEC §7a).
+	items, _ := d.inbox(d.person(), InboxArgs{Thread: id})
+	writeJSON(w, struct {
+		ReadResult
+		Items []store.Item `json:"items"`
+	}{res.(ReadResult), items.(InboxResult).Items})
 }
 
 func (d *Daemon) apiAnswer(w http.ResponseWriter, r *http.Request) {

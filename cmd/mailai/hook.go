@@ -72,7 +72,13 @@ func cmdHook(args []string) error {
 				}
 			}
 		}
-		c.Call("report-state", daemon.ReportStateArgs{State: adapter.State(ev.State), Harness: m.Name, Label: label}, nil)
+		// The signal (SPEC §7a) lets the daemon see the person answered in
+		// the session; it adds nothing to the agent's context.
+		tool := ""
+		if ev.Signal == daemon.SignalToolRan {
+			tool, _ = payload["tool_name"].(string)
+		}
+		c.Call("report-state", daemon.ReportStateArgs{State: adapter.State(ev.State), Harness: m.Name, Label: label, Signal: ev.Signal, Tool: tool}, nil)
 	}
 	if !ev.Notice {
 		return nil

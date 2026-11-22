@@ -13,6 +13,10 @@ import (
 // ItemKind is the closed set of what can wait on the person.
 type ItemKind string
 
+// ClosedInSession is how an item closes when the person answered in the
+// agent's own session instead of the Inbox (SPEC §7a).
+const ClosedInSession = "in_session"
+
 const (
 	ItemAsk      ItemKind = "ask"       // an ask addressed to human
 	ItemAskHuman ItemKind = "ask_human" // ask-human: a question with fixed answers
@@ -34,8 +38,14 @@ type Item struct {
 	Options  []string `json:"options,omitempty"`
 	OpenedAt int64    `json:"opened_at"`
 	ClosedAt int64    `json:"closed_at,omitempty"`
-	// ClosedBy says how: "answered", "dismissed", "resolved" (the agent moved on).
+	// ClosedBy says how: "answered", "dismissed", "resolved" (the agent
+	// moved on), "timeout" (an approval nobody decided), "in_session" (the
+	// person answered in the agent's own session, §7a).
 	ClosedBy string `json:"closed_by,omitempty"`
+	// MaybeInSessionAt is set on an open ask when the agent moved on in a way
+	// that suggests the person answered in its session (§7a). The item stays
+	// open and answerable.
+	MaybeInSessionAt int64 `json:"maybe_in_session_at,omitempty"`
 	// Answer is the mid of the reply that closed it, when answered; for an
 	// approval, the decision ("allow" or "deny").
 	Answer string `json:"answer,omitempty"`
@@ -148,10 +158,18 @@ func (s *Store) Item(id uint64) (Item, bool) {
 func (s *Store) CloseItem(id uint64, by, answer string) (Item, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.closeItem(id, by, answer)
+	return s.closeItem(id, by, answer, "")
 }
 
-func (s *Store) closeItem(id uint64, by, answer string) (Item, error) {
+// CloseItemBy closes an item and records who decided: human or
+// supervisor:<name>.
+func (s *Store) CloseItemBy(id uint64, by, answer, decidedBy string) (Item, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.closeItem(id, by, answer, decidedBy)
+}
+
+func (s *Store) closeItem(id uint64, by, answer, decidedBy string) (Item, error) {
 	it, ok := s.att.items[id]
 	if !ok || it.ClosedAt != 0 {
 		return Item{}, ErrNoItem
@@ -159,10 +177,70 @@ func (s *Store) closeItem(id uint64, by, answer string) (Item, error) {
 	it.ClosedAt = s.now().UnixNano()
 	it.ClosedBy = by
 	it.Answer = answer
+	it.DecidedBy = decidedBy
 	if err := s.att.put(it); err != nil {
 		return Item{}, err
 	}
 	return *it, nil
+}
+
+// MarkMaybeInSession stamps the open asks of from (ask and ask_human, not
+// approvals) as maybe answered in its session, once, and returns the items
+// it stamped (§7a).
+func (s *Store) MarkMaybeInSession(from Address) []Item {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []Item
+	now := s.now().UnixNano()
+	for _, it := range s.att.items {
+		if it.ClosedAt != 0 || it.From != from || it.MaybeInSessionAt != 0 {
+			continue
+		}
+		if it.Kind != ItemAsk && it.Kind != ItemAskHuman {
+			continue
+		}
+		it.MaybeInSessionAt = now
+		if err := s.att.put(it); err != nil {
+			it.MaybeInSessionAt = 0
+			continue
+		}
+		out = append(out, *it)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out
+}
+
+// RecentlyClosed returns the items closed at or after since, newest first.
+func (s *Store) RecentlyClosed(since int64) []Item {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []Item
+	for _, it := range s.att.items {
+		if it.ClosedAt != 0 && it.ClosedAt >= since {
+			out = append(out, *it)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].ClosedAt != out[j].ClosedAt {
+			return out[i].ClosedAt > out[j].ClosedAt
+		}
+		return out[i].ID > out[j].ID
+	})
+	return out
+}
+
+// ItemsInThread returns every item, open or closed, opened in a thread.
+func (s *Store) ItemsInThread(thread string) []Item {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []Item
+	for _, it := range s.att.items {
+		if thread != "" && it.ThreadID == thread {
+			out = append(out, *it)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out
 }
 
 // itemFor is the open item a message opened, if any.

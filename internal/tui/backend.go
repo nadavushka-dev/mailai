@@ -14,6 +14,10 @@ import (
 type Backend interface {
 	Whoami() (daemon.WhoamiResult, error)
 	Inbox(all bool) ([]store.Item, error)
+	// Recent is what closed in the last hour, newest first (SPEC §7a).
+	Recent() ([]store.Item, error)
+	// ThreadItems are the items opened in a thread, open or closed.
+	ThreadItems(id string) ([]store.Item, error)
 	Threads() ([]daemon.ThreadRow, error)
 	Thread(id string) ([]store.Message, error)
 	Answer(item uint64, text, message string) error
@@ -35,6 +39,18 @@ func (l Live) Whoami() (daemon.WhoamiResult, error) {
 func (l Live) Inbox(all bool) ([]store.Item, error) {
 	var r daemon.InboxResult
 	err := l.C.Call("inbox", daemon.InboxArgs{All: all}, &r)
+	return r.Items, err
+}
+
+func (l Live) Recent() ([]store.Item, error) {
+	var r daemon.InboxResult
+	err := l.C.Call("inbox", daemon.InboxArgs{Closed: true}, &r)
+	return r.Items, err
+}
+
+func (l Live) ThreadItems(id string) ([]store.Item, error) {
+	var r daemon.InboxResult
+	err := l.C.Call("inbox", daemon.InboxArgs{Thread: id}, &r)
 	return r.Items, err
 }
 

@@ -260,6 +260,51 @@ target is doing; none puts reply text into a pane:
    on the target and is how a supervisor hands out work; mail is how it
    gets answers.
 
+## 7a. Answered in the session (decided 2026-11-22)
+
+The person sometimes answers an agent in its own pane instead of the
+Inbox. mailai cannot see that answer, only its traces; it says what it
+knows, and tells the agent nothing (D12).
+
+- **Certain: the item closes, `closed_by: in_session`.**
+  - The connection of a blocking `ask human` or `ask-human` closes before
+    a reply: the person pressed Esc in the harness and answered there,
+    which killed the CLI. Only that blocking connection counts: a
+    `--no-wait` item, or one waited on with `--wait-for`, stays open. An
+    ask to another agent has no item; its ask-graph edge is released.
+  - A held approval of agent X while X's hooks say the tool ran
+    (`tool_ran` for the same tool) or the turn ended (`turn_ended`), or
+    the holding hook's connection closes: the person answered the
+    harness's own dialog. The hook is released with no decision, so the
+    harness keeps what the person chose.
+- **Likely: the item is marked, not closed.** X's hook reports a new
+  prompt (`prompt`), or with Herdr X goes `blocked` → `working`, while X
+  has an open ask item: it gets `maybe_in_session_at`, shown as "maybe
+  answered in session". It stays open and answerable; dismissing closes it.
+- **Signals** are the manifest's (D14): an event may carry
+  `signal = "prompt" | "tool_ran" | "turn_ended"` beside its state, which
+  the hook sends with `report-state` (and the tool name for `tool_ran`).
+  Identity is the connection's: an agent's signals touch only its own
+  items, and a caller with no principal sends none.
+- **What the person sees.** The Inbox (TUI and web) has a dim "Recently
+  closed" strip: items closed in the last hour, newest first, with how (by
+  you, by supervisor:<name>, timeout, in session, dismissed). Open items
+  carry the maybe badge. A Mail thread shows a one-line note rendered from
+  its item ("answered in the session at 10:42"); no message is stored.
+  `mailai inbox` shows the badge, `mailai inbox --closed` lists recently
+  closed with how; `--json` carries `closed_by`, `decided_by` and
+  `maybe_in_session_at`.
+- **Star (§13a).** The item lives on the inbox machine. When a spoke's
+  blocking ask connection closes, or a held approval's tool ran, turn
+  ended or hook died, the spoke sends `link-withdraw {mid}` or
+  `link-withdraw {from, tool}` (retried while the link is down, up to an
+  hour). The inbox machine accepts it only for items whose asker is
+  `name@<that link's machine>`. A likely mark is not relayed in v1.
+- **Known limit.** A harness that kills a blocking `ask-human` on its own
+  tool timeout looks like Esc and closes the item `in_session`; an agent
+  that may wait longer than its tool timeout uses `--timeout` below it, or
+  `--no-wait`.
+
 ## 8. Adapters and harnesses (D8)
 
 An adapter answers three questions: which agents exist and in which session,
@@ -403,7 +448,7 @@ CLI (every command takes `--json`):
 | `mailai ask <to> <text> [--timeout MS]` · `mailai ask-human <text> -o A -o B [--no-wait]` | Send and wait. |
 | `mailai reply <mid> [text]` | Reply in a thread. |
 | `mailai queue <to> <text>` · `queue ls` · `queue rm` | Typed when the agent comes to rest. |
-| `mailai inbox [--all] [--session S]` · `mailai answer <item> <text\|choice>` · `mailai dismiss <item>` | The Inbox from the CLI. |
+| `mailai inbox [--all] [--closed] [--session S]` · `mailai answer <item> <text\|choice>` · `mailai dismiss <item>` | The Inbox from the CLI. `--closed`: what closed in the last hour, and how (§7a). |
 | `mailai agents` · `mailai whoami` | What the adapter sees; how the daemon places this caller. |
 | `mailai status` | Daemon, adapter, links, and per agent the context cost: notice lines injected, messages and bytes read, asks and their wait time (D12). |
 | `mailai grant <principal> <rights> [--scope S] [--once]` · `grant ls` · `grant rm` | Grants. `human` only. |
@@ -423,7 +468,9 @@ TUI (D13): two views, `i` Inbox and `m` Mail. The Inbox is one list of
 attention items across sessions and machines, oldest first,
 with the item's kind, who is waiting, where, and for how long. `enter` opens
 the pane's thread, `r` replies (signed as the person), `a`/`d` approve or
-deny a held request, `x` dismisses, `o` jumps to the oldest item. Mail
+deny a held request, `x` dismisses (`d` too, on an item marked maybe
+answered in session), `o` jumps to the oldest item. Under the open items, a
+dim Recently closed strip says what closed in the last hour and how (§7a). Mail
 lists every thread with filters by session, machine, principal and unread.
 Plain mail from an agent to `human` is Mail, not Inbox: an agent that needs
 an answer uses `ask-human` or `ask human`, and that is what the Inbox lists. Supervisor answers show in their own colour.
@@ -614,3 +661,4 @@ Each milestone ends with all tests passing and a review in tuicr.
 | Herdr `blocked` panes without mailai hooks | Not Inbox items (D13). |
 | Plain mail to `human` | Mail view only; asks are the Inbox (D13). |
 | What is risky | Whatever the harness's payload says; no mailai rule list (§8). |
+| The person answered in the agent's own session | Certain signs (the blocking ask's connection died; the held approval's tool ran, turn ended or hook died) close the item `in_session`; likely ones (new prompt, Herdr blocked → working) mark it `maybe_in_session_at`. A Recently closed strip and a render-only thread note show it; the agent is told nothing (§7a). |

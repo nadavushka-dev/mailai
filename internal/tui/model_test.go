@@ -22,6 +22,9 @@ type fake struct {
 	replied  []string
 	dismiss  []uint64
 	failNext error
+	// recent is what closed lately; byThread the items of a thread (§7a).
+	recent   []store.Item
+	byThread map[string][]store.Item
 }
 
 func (f *fake) Whoami() (daemon.WhoamiResult, error)      { return f.who, nil }
