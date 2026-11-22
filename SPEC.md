@@ -103,8 +103,21 @@ Two advantages, both design goals (D12):
 - One static Go binary, `mailai`, with subcommands. macOS and Linux, amd64
   and arm64.
 - **daemon:** one per machine, started by launchd or a systemd user unit.
-  Owns all state on that machine. Every mailbox lives on the machine its
-  principal runs on; other machines hold only what is in flight to it.
+  `mailai service install` writes and starts it: on macOS the launchd agent
+  `~/Library/LaunchAgents/dev.mailai.daemon.plist` (`RunAtLoad`,
+  `KeepAlive`), on Linux the systemd user unit
+  `~/.config/systemd/user/mailai.service` (`Restart=on-failure`, enabled
+  for `default.target`). Either runs `<absolute path of mailai> daemon run`
+  at login and again after a crash, with stdout and stderr appended to the
+  data dir's `daemon.log`, and carries `MAILAI_HOME`, `MAILAI_SOCKET`,
+  `XDG_CONFIG_HOME` and `XDG_DATA_HOME` into the service when they are set
+  at install. Installing again replaces the definition and restarts the
+  daemon; `service uninstall` stops it and removes the file; `service
+  status` reports installed, loaded (launchd: bootstrapped; systemd:
+  enabled), running, and the path. Linux linger is not enabled: a user
+  unit runs while the user is logged in.
+  The daemon owns all state on that machine. Every mailbox lives on the
+  machine its principal runs on; other machines hold only what is in flight to it.
 - **bridge:** what a peer runs over ssh: copies bytes between ssh's
   stdin/stdout and the local daemon's socket. Nothing listens on the network.
 - **clients:** CLI, TUI, hook entrypoints and the MCP server all speak the
@@ -398,7 +411,7 @@ CLI (every command takes `--json`):
 | `mailai integration install\|uninstall\|status [harness]… [--mcp] [--mcp-write]` | Harness hooks. |
 | `mailai mcp [--write]` | MCP server over stdio. |
 | `mailai init` · `machine add <ssh-alias>` · `machine list\|remove\|rename\|alias` · `status` · `doctor` | Fleet. |
-| `mailai service install\|uninstall` · `mailai update` | Daemon lifecycle. |
+| `mailai service install\|uninstall\|status` · `mailai update` | Daemon lifecycle (§4). |
 | `mailai tui`, or plain `mailai` | The Inbox TUI. |
 | `mailai --skill [TOPIC]` | The short guide an agent reads to use mailai. |
 
@@ -482,9 +495,13 @@ many machines but answers from one.
 - **Offline.** A spoke whose link is down refuses a send off the machine
   with `offline`. (A spoke outbox is not in v1.) The inbox machine refuses
   `name@m` for a machine that never linked.
+- **Kept running.** Every machine, inbox or spoke, runs
+  `mailai service install` once (§4); its daemon then starts at login and
+  after a crash, and a spoke's link comes back with it. The person runs it
+  on each machine by hand (no `machine add`).
 - **Not in v1.** Answering from a spoke, relay between spokes without the
   inbox machine, grants that cross machines, hold policy, `machine add`,
-  service install, upgrades over the link.
+  upgrades over the link.
 
 ## 14. Engineering
 

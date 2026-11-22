@@ -5,6 +5,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/nadavushka-dev/mailai/internal/buildinfo"
@@ -44,6 +45,8 @@ harnesses
 
 daemon
   daemon run              run the daemon in the foreground
+  service install|uninstall|status
+                          keep the daemon running at login and after a crash (launchd / systemd user unit)
   ping                    is the daemon up, and this machine's link in the star
   bridge                  what a spoke runs over ssh to reach this machine's daemon
   whoami                  how the daemon places this caller
@@ -73,6 +76,8 @@ func main() {
 	switch cmd {
 	case "daemon":
 		err = cmdDaemon(args)
+	case "service":
+		err = cmdService(args)
 	case "send":
 		err = cmdSend(args)
 	case "read":
@@ -157,8 +162,10 @@ func connect() (*client.Client, error) {
 	return client.Dial(p.Socket(), os.Getenv("MAILAI_TOKEN"))
 }
 
-func printJSON(v any) error {
-	enc := json.NewEncoder(os.Stdout)
+func printJSON(v any) error { return writeJSON(os.Stdout, v) }
+
+func writeJSON(w io.Writer, v any) error {
+	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	return enc.Encode(v)
 }
