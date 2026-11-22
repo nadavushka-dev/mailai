@@ -1,2 +1,5 @@
 (D) 2026-10-29 M6 fleet (rest of SPEC §13 after the star): service install, machine add, spoke outbox, answering from a spoke, mesh relay, hold policy, upgrades, doctor +m6
 (D) 2026-10-29 M7 polish: MCP server, selectors/--select, stash across machines, notifications, docker e2e, goreleaser + install.sh +m7
+(B) 2026-11-22 decide: colour probe costs 5 s per CLI command at a terminal that never answers (bubbletea init); separate mailai-tui binary? +polish
+(C) 2026-11-22 run mailai service install/status/uninstall against real systemd (ubuntu1-3) and launchd (Mac) +m6
+(D) 2026-11-22 web: clicking a Recently closed row opens its thread +polish
