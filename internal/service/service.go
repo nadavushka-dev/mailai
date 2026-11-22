@@ -141,12 +141,19 @@ func Install(o Options) error {
 		_, err := run.Run("launchctl", "bootstrap", o.domain(), p)
 		return err
 	default: // linux
+		prev, hadPrev := os.ReadFile(p)
 		if err := writeFile(p, Unit(o)); err != nil {
 			return err
 		}
 		for _, args := range [][]string{{"daemon-reload"}, {"enable", UnitName}, {"restart", UnitName}} {
 			if _, err := run.Run("systemctl", append([]string{"--user"}, args...)...); err != nil {
-				return err
+				// Leave things as they were: no half-installed unit.
+				if hadPrev == nil {
+					writeFile(p, string(prev))
+				} else {
+					removeIfExists(p)
+				}
+				return fmt.Errorf("%w (no usable systemd user session? then run `mailai daemon run` under your own supervisor)", err)
 			}
 		}
 		return nil
@@ -167,11 +174,13 @@ func Uninstall(o Options) error {
 		return removeIfExists(p)
 	default: // linux
 		installed := fileExists(p)
-		_, _ = run.Run("systemctl", "--user", "disable", "--now", UnitName) // not enabled is fine
+		_, derr := run.Run("systemctl", "--user", "disable", "--now", UnitName) // not enabled is fine
 		if err := removeIfExists(p); err != nil {
 			return err
 		}
-		if _, err := run.Run("systemctl", "--user", "daemon-reload"); err != nil && installed {
+		// When systemd cannot even be asked to disable, there is nothing
+		// running to stop and nothing to reload: removing the unit is all.
+		if _, err := run.Run("systemctl", "--user", "daemon-reload"); err != nil && installed && derr == nil {
 			return err
 		}
 		return nil

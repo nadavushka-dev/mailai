@@ -24,7 +24,9 @@ asperson() {
 	b=$1; shift
 	cmd=""
 	for a in "$@"; do cmd="$cmd '$(printf '%s' "$a" | sed "s/'/'\\\\''/g")'"; done
-	docker exec -i -u dev -e HOME=/home/dev "$(cname "$b")" script -qec "$cmd" /dev/null </dev/null | tr -d '\r'
+	# TERM=dumb skips bubbletea's terminal colour probe, which waits 5 s on a
+	# script(1) terminal that never answers it.
+	docker exec -i -u dev -e HOME=/home/dev -e TERM=dumb "$(cname "$b")" script -qec "$cmd" /dev/null </dev/null | tr -d '\r'
 }
 start_daemon() {
 	docker exec -d -u dev -e HOME=/home/dev "$(cname "$1")" sh -c 'mailai daemon run >>/home/dev/mailai.log 2>&1'

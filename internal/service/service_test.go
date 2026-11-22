@@ -210,6 +210,53 @@ func TestInstallSystemdFailureIsAnError(t *testing.T) {
 	}
 }
 
+// Found in the sandbox (no systemd in the box): a failed install must not
+// leave a unit behind, and must say what to do instead.
+func TestInstallSystemdFailureLeavesNothing(t *testing.T) {
+	o, r := opts(t, "linux")
+	r.fail = map[string]bool{"systemctl --user daemon-reload": true}
+	err := Install(o)
+	if err == nil || !strings.Contains(err.Error(), "mailai daemon run") {
+		t.Fatalf("error should point at running the daemon by hand: %v", err)
+	}
+	if fileExists(File(o)) {
+		t.Fatal("a failed install left the unit file")
+	}
+	// A failed reinstall puts the previous unit back as it was.
+	r.fail = nil
+	if err := Install(o); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := os.ReadFile(File(o))
+	o.Bin = "/new/mailai"
+	r.fail = map[string]bool{"systemctl --user restart " + UnitName: true}
+	if err := Install(o); err == nil {
+		t.Fatal("restart failure swallowed")
+	}
+	if after, _ := os.ReadFile(File(o)); string(after) != string(before) {
+		t.Fatalf("failed reinstall changed the unit:\n%s", after)
+	}
+}
+
+// With no systemd to talk to, uninstall still removes the unit and is not
+// an error: there is nothing left to stop.
+func TestUninstallWithoutSystemdRemovesQuietly(t *testing.T) {
+	o, r := opts(t, "linux")
+	if err := writeFile(File(o), Unit(o)); err != nil {
+		t.Fatal(err)
+	}
+	r.fail = map[string]bool{
+		"systemctl --user disable --now " + UnitName: true,
+		"systemctl --user daemon-reload":             true,
+	}
+	if err := Uninstall(o); err != nil {
+		t.Fatal(err)
+	}
+	if fileExists(File(o)) {
+		t.Fatal("unit still there")
+	}
+}
+
 func TestUninstallLaunchd(t *testing.T) {
 	o, r := opts(t, "darwin")
 	if err := Install(o); err != nil {

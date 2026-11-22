@@ -34,7 +34,9 @@ run_as_person() {
 	box=$1; shift
 	cmd=""
 	for a in "$@"; do cmd="$cmd '$(printf '%s' "$a" | sed "s/'/'\\\\''/g")'"; done
-	docker exec -i -u dev -e HOME=/home/dev "$(cname "$box")" script -qec "$cmd" /dev/null </dev/null
+	# TERM=dumb: script(1) is a terminal nobody answers, so the colour probe
+	# bubbletea runs at start would wait 5 s and leave escapes in the output.
+	docker exec -i -u dev -e HOME=/home/dev -e TERM=dumb "$(cname "$box")" script -qec "$cmd" /dev/null </dev/null
 }
 # WEBPORT on this Mac reaches the web UI on s1 (loopback inside the box, forwarded by socat).
 WEBPORT=${MAILAI_SANDBOX_WEBPORT:-8471}
@@ -134,7 +136,8 @@ web() {
 	# eth0 as 8472, which docker publishes to 127.0.0.1:$WEBPORT here. That is
 	# the "your own tunnel" of SPEC §12a, sandbox edition.
 	docker exec -d "$(cname s1)" sh -c 'pgrep -x socat >/dev/null || socat TCP-LISTEN:8472,bind=0.0.0.0,fork,reuseaddr TCP:127.0.0.1:8471'
-	url=$(run s1 mailai web --port 8471 --json | sed -n 's/.*"url": "\([^"]*\)".*/\1/p')
+	# Only the person (at a terminal) may open the web page (SPEC §9).
+	url=$(run_as_person s1 mailai web --port 8471 --json | tr -d '\r' | sed -n 's/.*"url": "\([^"]*\)".*/\1/p')
 	[ -n "$url" ] || { echo "could not start the web UI; e2e/sandbox.sh log s1"; exit 1; }
 	echo "open on this Mac (one-time link, session lasts 12 h):"
 	echo "  $(echo "$url" | sed "s#127.0.0.1:8471#127.0.0.1:$WEBPORT#")"
