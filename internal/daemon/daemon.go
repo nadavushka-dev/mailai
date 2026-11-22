@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/nadavushka-dev/mailai/internal/adapter"
@@ -54,13 +55,20 @@ type Options struct {
 	// heartbeat (15 s).
 	LinkRetry time.Duration
 	Heartbeat time.Duration
-	// MachinesFile remembers which spokes have linked; memory only when "".
+	// MachinesFile remembers which spokes have linked and their pinned
+	// keys; memory only when "".
 	MachinesFile string
 
 	// Notifier tells the person a new Inbox item opened here (SPEC §12b);
 	// nil notifies nobody. NotifyEvery is the coalescing window (3 s).
 	Notifier    notify.Notifier
 	NotifyEvery time.Duration
+	// MachineKey is what this machine presents in link-hello (machine.key);
+	// a random one for this process when nil.
+	MachineKey []byte
+	// ResendAfter is how long mail pushed to a spoke waits unacknowledged
+	// before a heartbeat resends it (60 s).
+	ResendAfter time.Duration
 }
 
 // Daemon serves one machine.
@@ -93,9 +101,11 @@ type Daemon struct {
 	linkRetry   time.Duration
 	heartbeat   time.Duration
 	knownFile   string
-	links       map[string]*conn // inbox machine: spoke -> its link
-	known       map[string]bool  // inbox machine: spokes that ever linked
-	up          *client.Client   // spoke: the link, nil when down
+	knownMu     sync.Mutex        // serializes writes of knownFile
+	key         []byte            // this machine's key, sent in link-hello
+	links       map[string]*conn  // inbox machine: spoke -> its link
+	known       map[string]string // inbox machine: spokes that ever linked -> pinned key hash
+	up          *client.Client    // spoke: the link, nil when down
 	hubName     string
 
 	mu    sync.Mutex
@@ -104,7 +114,27 @@ type Daemon struct {
 	waits map[string][]chan store.Message // thread id -> waiting asks
 	ln    net.Listener
 	wg    sync.WaitGroup
+
+	// linkAsks are spokes' asks held in the graph, by thread (SPEC §13a).
+	linkAsks map[string][]*linkAsk
+	// The spoke outbox: obMu orders sends, obKick wakes the drain, outFail
+	// are queued asks waiting by thread, told if the inbox machine refuses.
+	obMu    sync.Mutex
+	obKick  chan struct{}
+	outFail map[string][]chan error
+	// spokeAsks are this spoke's ask-humans by the id --wait-for takes.
+	spokeAsks map[uint64]*spokeAsk
+
+	// Delivery to spokes (inbox machine): when each unacknowledged mid was
+	// last pushed, and how long before a heartbeat resends it.
+	pushed      map[string]time.Time
+	resendAfter time.Duration
+	// ackCalls counts link-acks received (inbox machine).
+	ackCalls atomic.Int64
 }
+
+// ackWindow is how long a spoke gathers deliveries into one link-ack.
+const ackWindow = 100 * time.Millisecond
 
 // New makes a Daemon; Serve starts it.
 func New(o Options) *Daemon {
@@ -132,11 +162,18 @@ func New(o Options) *Daemon {
 	if o.Heartbeat == 0 {
 		o.Heartbeat = 15 * time.Second
 	}
+	if o.ResendAfter == 0 {
+		o.ResendAfter = 60 * time.Second
+	}
+	if o.MachineKey == nil {
+		o.MachineKey = newMachineKey()
+	}
 	d := &Daemon{st: o.Store, placer: o.Placer, now: o.Now, log: o.Log, maxAsk: o.MaxAsks, stash: o.Stash, tokens: o.Tokens,
 		adapter: o.Adapter, wake: o.Wake, poll: o.PollEvery, agents: newAgents(), marks: map[store.Address]noticeMark{}, approvals: map[uint64]chan approvalDecision{}, webSubs: map[chan proto.Event]bool{},
-		subs: map[*conn]bool{}, asks: newAskGraph(), waits: map[string][]chan store.Message{},
+		subs: map[*conn]bool{}, asks: newAskGraph(), linkAsks: map[string][]*linkAsk{}, obKick: make(chan struct{}, 1), outFail: map[string][]chan error{}, spokeAsks: map[uint64]*spokeAsk{},
+		pushed: map[string]time.Time{}, resendAfter: o.ResendAfter, waits: map[string][]chan store.Message{},
 		name: o.Name, inboxTarget: o.Inbox, dial: o.Dial, linkRetry: o.LinkRetry, heartbeat: o.Heartbeat, knownFile: o.MachinesFile,
-		links: map[string]*conn{}, known: map[string]bool{}}
+		links: map[string]*conn{}, known: map[string]string{}, key: o.MachineKey}
 	if o.Notifier != nil {
 		if o.NotifyEvery == 0 {
 			o.NotifyEvery = 3 * time.Second
@@ -187,6 +224,7 @@ func (d *Daemon) Serve(ctx context.Context) error {
 	go d.runWakes(ctx)
 	if d.isSpoke() {
 		go d.runUplink(ctx)
+		go d.runOutbox(ctx)
 	}
 	go func() {
 		t := time.NewTicker(wakeTick)
@@ -343,7 +381,8 @@ func (d *Daemon) handle(c *conn, req proto.Request) (any, error) {
 		}
 		return d.linkHold(c, a)
 	case "link-flush":
-		go d.flushTo(c.link)
+		// In line: the resends go down this link before the answer.
+		d.flushTo(c.link, true)
 		return map[string]bool{"ok": true}, nil
 	case "link-withdraw":
 		a, err := decode[LinkWithdrawArgs](req.Args)
@@ -478,6 +517,8 @@ func (d *Daemon) handle(c *conn, req proto.Request) (any, error) {
 		return d.stashVerb(req.Verb, req.Args)
 	case "token-new", "token-list", "token-revoke":
 		return d.tokenVerb(c, req.Verb, req.Args)
+	case "machine-list", "machine-forget":
+		return d.machineVerb(c, req.Verb, req.Args)
 	}
 	return nil, proto.Errorf(proto.CodeUnknownVerb, "%q", req.Verb)
 }
@@ -521,9 +562,17 @@ func (d *Daemon) send(c *conn, a SendArgs) (any, error) {
 		if len(a.Attachments) > 0 {
 			return nil, proto.Errorf(proto.CodeBadRequest, "attachments do not cross machines yet")
 		}
-		r, err := d.relay(LinkSendArgs{From: from, To: a.To, Subject: a.Subject, Text: a.Text, ReplyTo: a.ReplyTo})
+		// Queued first, so a link that is down only delays it (SPEC §13a).
+		o, err := d.st.Enqueue(store.Outgoing{From: from, To: a.To, Subject: a.Subject, Text: a.Text, ReplyTo: a.ReplyTo})
 		if err != nil {
 			return nil, err
+		}
+		r, queued, err := d.outSend(o)
+		if err != nil {
+			return nil, err
+		}
+		if queued {
+			return SendResult{Message: outMessage(o), Queued: true}, nil
 		}
 		return SendResult{Message: r.Message}, nil
 	}
@@ -604,6 +653,7 @@ func (d *Daemon) publish(m store.Message) {
 	}
 	d.mu.Unlock()
 	d.fanout(proto.Event{Event: "mail", Data: data})
+	d.replyReleases(m)
 	for _, w := range waiters {
 		select {
 		case w <- m:

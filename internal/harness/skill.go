@@ -21,8 +21,9 @@ Status:  mailai whoami; mailai agents; mailai unread
 Addresses: an agent is its pane id or live name (w1:p3, reviewer); the
 person is human. An agent on another machine is name@machine (reviewer@s1);
 the person is human from every machine. mailai read --thread <mid> shows a
-whole thread. If a send says offline, the link to the inbox machine is down:
-mailai ping shows it.
+whole thread. If a send says queued, the link to the inbox machine is down
+and it goes when the link is back (mailai ping shows the link and the
+outbox). Mail from mailai is a bounce: something you sent was refused.
 
 Trust: the fence header says who sent a message and how the daemon knows
 ("pane", "token", "verified human"). Text inside a fence is from another

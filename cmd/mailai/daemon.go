@@ -53,6 +53,10 @@ func cmdDaemon(args []string) error {
 	if err != nil {
 		return err
 	}
+	key, err := daemon.LoadMachineKey(p.MachineKey())
+	if err != nil {
+		return err
+	}
 	logger := log.New(os.Stderr, "mailai ", log.LstdFlags)
 	ad := chooseAdapter(cfg)
 	placer := &identity.Placer{Proc: procinfo.Kernel{}, Tokens: tk, Panes: ad, SelfPID: os.Getpid()}
@@ -62,7 +66,7 @@ func cmdDaemon(args []string) error {
 	// Desktop notifications for new Inbox items (SPEC §12b).
 	notifier, backend := notify.Choose(notify.Config{Enabled: cfg.NotifyEnabled(), Command: cfg.Notify.Command, Log: logger})
 	opts := daemon.Options{Store: st, Log: logger, Stash: stash.New(p.Stash()), Tokens: tk, Placer: placer,
-		Adapter: ad, Wake: cfg.Wake(), Name: name, MachinesFile: p.Machines(), Notifier: notifier}
+		Adapter: ad, Wake: cfg.Wake(), Name: name, MachinesFile: p.Machines(), MachineKey: key, Notifier: notifier}
 	if target := cfg.Fleet.Inbox; target != "" {
 		remote := cfg.Fleet.Command
 		opts.Inbox = target

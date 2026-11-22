@@ -424,6 +424,9 @@ Supervisors are the one new idea against TUIOS. The rules:
 - `store.db`: mailboxes, attention items, grants, sessions, outbox (§13).
 - `stash/<session>/`: stashed attachments, removed when the session ends.
 - `tokens/`: issued agent tokens, hashed.
+- `machine.key` (`0600`): this machine's random 32-byte key, presented
+  when it links (§13a). `machines.json`: on the inbox machine, the spokes
+  that have linked and the sha256 of each one's pinned key.
 - `mailai.sock` (`0700`), `daemon.log`, `daemon.pid`.
 
 Config in `$XDG_CONFIG_HOME/mailai/config.toml`: `adapter`, `[mail] wake`,
@@ -558,23 +561,94 @@ many machines but answers from one.
   `<claimed>@<machine>`; a link cannot claim `human` or an `@`.
   Messages delivered to a spoke keep the inbox machine's `verified` mark:
   the spoke trusts its inbox machine (joining is trusting, §13).
+- **Machine keys** (decided 2026-11-20). Every daemon creates a random
+  32-byte key once, `machine.key` (`0600`) in its data dir, and a spoke
+  presents it in `link-hello {machine, key}`. The inbox machine pins
+  sha256(key) per machine name in `machines.json` on the first hello that
+  carries a key (trust on first use). A later hello for that name with a
+  different key, or none, is refused `forbidden`, with a hint naming
+  `mailai machine forget <name>`; the linked machine is untouched. A name
+  with no pin (a `machines.json` from before keys, which was a bare list of
+  names and is read as such, or a keyless hello from an older spoke) is
+  pinned by its next hello with a key. `mailai machine ls` lists each
+  machine that has linked: linked now or not, key pinned or not.
+  `mailai machine forget <name>` drops the record and closes its link, so
+  the next hello pins afresh; until then `name@<it>` is refused as never
+  linked, and mail already held for it stays. Both are the person's only:
+  never a link, a detached caller or an agent (`not_human`).
 - **Asks wait at home.** A spoke's `ask` and `ask-human` send over the link
   without blocking it, then wait on the spoke for the reply in the thread.
-  A dropped link or a sleeping laptop does not end the wait.
+  A dropped link or a sleeping laptop does not end the wait. A spoke's
+  `ask-human` resumes as a local one does (decided 2026-11-20): on
+  timeout it fails `timeout` with "no answer yet; come back with
+  --wait-for <id>", where `<id>` is the inbox machine's item id that
+  `link-send` returned, or, for a question still in the outbox, a local
+  handle (2^40 + the queued send's id, so it never meets an item id;
+  `--no-wait` returns the same id). `ask-human --wait-for <id>` on the
+  spoke waits on that thread again, returns at once when the answer is
+  already held there (read or not; it is marked read), and gets the inbox
+  machine's refusal if the queued question was refused. The spoke keeps
+  these ids in memory: after a spoke restart `--wait-for` is `not_found`
+  and the answer arrives as mail.
+- **Asks across machines** (decided 2026-11-20). The inbox machine enters
+  every `ask` that arrives over a link in its own ask graph (§7), as an edge
+  from `name@spoke` to the target, beside its own agents' asks. An ask that
+  would close a cycle there is refused `ask_cycle`, and a spoke relays the
+  refusal to its waiting caller unchanged; so are A@s2 → B@s1 → A@s2 and
+  A@s2 → C@s3 → A@s2. `link-send` carries the ask's `timeout_ms`; the edge
+  goes when a reply in the ask's thread addressed to the asker reaches the
+  inbox machine (what ends the wait on the spoke), or when the timeout
+  passes, 24 h when none is given and never more. The ask limit (16 per
+  sender) stays the spoke's to enforce. Edges are memory only, gone if the
+  inbox machine restarts. A cycle that closes through an ask local to a
+  spoke (A@s2 → B@s1 → C@s2, then C asks A on s2) is not seen by either
+  graph and ends by timeout.
 - **Delivery.** The inbox machine keeps mail for `name@spoke` in that box,
   unread until the spoke acknowledges it, and pushes it on the link. On
-  every `link-hello` and every heartbeat (15 s) it resends what is still
-  unread. A spoke drops a mid it already holds: at-least-once, mid-deduped.
+  every `link-hello` it resends everything still unacknowledged; on a
+  heartbeat (15 s) only what was last pushed more than 60 s ago and is
+  still unacknowledged (decided 2026-11-20; it was everything, every
+  heartbeat). The spoke acknowledges in bursts: the first delivery opens a
+  100 ms window and one `link-ack` carries every mid that arrived in it. A
+  spoke drops a mid it already holds but acknowledges it again:
+  at-least-once, mid-deduped.
 - **Approvals.** A spoke's held permission request is held on the inbox
   machine through the link and decided from its Inbox. If the link drops,
   the hook gets no decision and the harness falls back to its own prompt.
-- **Offline.** A spoke whose link is down refuses a send off the machine
-  with `offline`. (A spoke outbox is not in v1.) The inbox machine refuses
-  `name@m` for a machine that never linked.
 - **Kept running.** Every machine, inbox or spoke, runs
   `mailai service install` once (§4); its daemon then starts at login and
   after a crash, and a spoke's link comes back with it. The person runs it
   on each machine by hand (no `machine add`).
+- **Spoke outbox** (decided 2026-11-20; it replaces "a spoke whose link is
+  down refuses a send off the machine with `offline`"). Every mail, reply,
+  ask and ask-human a spoke sends off the machine is first validated and
+  queued durably in its outbox (`store.db`, table `outbox`) under a mid the
+  spoke mints from its own id counter (`<spoke>:<id>`), with its thread
+  resolved from what the spoke holds. With the link up and nothing older
+  queued it is sent at once, so a refusal from the inbox machine still
+  reaches the caller and nothing stays queued. Otherwise the caller gets
+  `queued: true` and the outbox drains in order whenever the link comes up,
+  and survives a spoke restart. An `ask` or `ask-human` sent while down
+  waits on the spoke as any ask does; its Inbox item opens on the inbox
+  machine when it arrives, and a queued ask carries what is left of its
+  `timeout_ms`. `link-send` carries the spoke's `mid` and `thread_id`; the
+  inbox machine accepts only mids prefixed with the link's own machine
+  name (`forbidden` otherwise), stores the message under that mid, takes
+  the spoke's thread only for a reply whose parent it does not hold, and
+  drops a mid it already holds (returning the held copy, no second ask
+  edge, no rate-limit token): at-least-once both ways, mid-deduped. While
+  draining, `rate_limited` and `mailbox_full` keep the entry and retry on a
+  later heartbeat; any other refusal drops it and is told: an ask still
+  waiting gets the error itself; anything else becomes a **bounce** in the
+  sender's own mailbox on the spoke, from `mailai`, kind reply, `reply_to`
+  the queued mid, its body written by the daemon (`not delivered to <to>:
+  <code>: <hint>`), never verified and not rate limited. The agent learns
+  of it through the usual one-line notice, which names only `mailai`.
+  `mailai ping` on a spoke shows the outbox count. Approvals are never
+  queued: with the link down `hold-approval` is refused `offline` and the
+  harness falls back to its own prompt.
+- **Offline.** The inbox machine refuses `name@m` for a machine that never
+  linked.
 - **Not in v1.** Answering from a spoke, relay between spokes without the
   inbox machine, grants that cross machines, hold policy, `machine add`,
   upgrades over the link.
@@ -613,6 +687,12 @@ many machines but answers from one.
     live test behind `HERDR_ENV=1`.
   - End-to-end: 3 Linux Docker containers with sshd and a mailai daemon
     plus the Mac, as Enigma does; cut links to test relay and outbox.
+    For the star (§13a), `e2e/fleet.sh` (`make e2e-fleet`) runs against
+    the sandbox (`e2e/sandbox.sh`): ask-human from a spoke answered on the
+    inbox machine, mail both ways, spoke-to-spoke ask, an approval held
+    on a spoke, a link drop under a waiting ask, the spoke outbox across
+    an inbox-machine restart, and a refused machine key; one PASS/FAIL
+    line per flow, non-zero exit on any failure.
   - Always `go test -race ./...`, `gofmt -l .`, `go vet ./...`.
 - **Releases:** goreleaser, darwin/linux × amd64/arm64, `checksums.txt`,
   `install.sh`, `mailai update`.

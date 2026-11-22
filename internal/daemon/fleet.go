@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"regexp"
 	"sort"
 	"strings"
@@ -25,6 +24,8 @@ import (
 type LinkHelloArgs struct {
 	Machine string `json:"machine"`
 	Version string `json:"version,omitempty"`
+	// Key is the spoke's machine key; the inbox machine pins its hash.
+	Key []byte `json:"key,omitempty"`
 }
 
 type LinkHelloResult struct {
@@ -41,6 +42,13 @@ type LinkSendArgs struct {
 	Text    string        `json:"text"`
 	ReplyTo string        `json:"reply_to,omitempty"`
 	Options []string      `json:"options,omitempty"`
+	// TimeoutMS is how long an ask waits on the spoke; the inbox machine
+	// holds the ask's edge in its graph that long, 24 h at most.
+	TimeoutMS int64 `json:"timeout_ms,omitempty"`
+	// MID is the spoke's own mid for a queued send ("<spoke>:<id>"), the
+	// dedupe key; ThreadID is its thread as the spoke resolved it.
+	MID      string `json:"mid,omitempty"`
+	ThreadID string `json:"thread_id,omitempty"`
 }
 
 type LinkSendResult struct {
@@ -100,7 +108,7 @@ func (d *Daemon) checkRoute(to store.Address) error {
 		return nil
 	}
 	d.mu.Lock()
-	known := d.known[m]
+	_, known := d.known[m]
 	d.mu.Unlock()
 	if !known {
 		return proto.Errorf(proto.CodeOffline, "%s is on machine %q, which has never linked to this inbox machine", to, m)
@@ -118,22 +126,29 @@ func (d *Daemon) linkHello(c *conn, a LinkHelloArgs) (any, error) {
 	if !machineName.MatchString(a.Machine) || a.Machine == d.name {
 		return nil, proto.Errorf(proto.CodeBadRequest, "bad machine name %q", a.Machine)
 	}
+	if len(a.Key) != 0 && len(a.Key) != MachineKeySize {
+		return nil, proto.Errorf(proto.CodeBadRequest, "a machine key is %d bytes", MachineKeySize)
+	}
+	d.mu.Lock()
+	save, err := d.checkPin(a.Machine, a.Key)
+	if err != nil {
+		d.mu.Unlock()
+		d.log.Printf("link refused: %s presented another machine key", a.Machine)
+		return nil, err
+	}
 	c.link = a.Machine
 	c.pl = Placement{Proof: store.ProofLink}
-	d.mu.Lock()
 	old := d.links[a.Machine]
 	d.links[a.Machine] = c
-	isNew := !d.known[a.Machine]
-	d.known[a.Machine] = true
 	d.mu.Unlock()
 	if old != nil && old != c {
 		old.Close()
 	}
-	if isNew {
+	if save {
 		d.saveKnown()
 	}
 	d.log.Printf("link up: %s", a.Machine)
-	go d.flushTo(a.Machine)
+	go d.flushTo(a.Machine, false)
 	return LinkHelloResult{Machine: d.name}, nil
 }
 
@@ -166,11 +181,47 @@ func (d *Daemon) linkSend(c *conn, a LinkSendArgs) (any, error) {
 	default:
 		return nil, proto.Errorf(proto.CodeBadRequest, "kind %q does not cross machines", a.Kind)
 	}
-	m, err := d.store(c.pl, store.SendRequest{From: from, To: to, Kind: a.Kind, Subject: a.Subject, Text: a.Text,
-		ReplyTo: a.ReplyTo, Options: a.Options, Remote: true, Proof: store.ProofLink, Origin: "link", OriginHost: c.link})
-	if err != nil {
-		return nil, err
+	if a.MID != "" {
+		// A spoke mints mids only under its own name; a resend is dropped.
+		if !strings.HasPrefix(a.MID, c.link+":") {
+			return nil, errForbidden("a link sends only %s's own mids, not %q", c.link, a.MID)
+		}
+		if held, ok := d.st.Get(a.MID); ok {
+			return d.linkSendResult(held), nil
+		}
 	}
+	if a.Kind == store.KindAsk {
+		if err := d.openLinkAsk(from, to); err != nil {
+			return nil, err
+		}
+	}
+	req := store.SendRequest{From: from, To: to, Kind: a.Kind, Subject: a.Subject, Text: a.Text,
+		ReplyTo: a.ReplyTo, Options: a.Options, Remote: true, Proof: store.ProofLink, Origin: "link", OriginHost: c.link}
+	var m store.Message
+	fresh := true
+	if a.MID != "" {
+		m, fresh, err = d.st.SendMID(req, a.MID, a.ThreadID)
+	} else {
+		m, err = d.st.Send(req)
+	}
+	if err != nil || !fresh {
+		if a.Kind == store.KindAsk {
+			d.releaseAsk(from, to)
+		}
+		if err != nil {
+			return nil, err
+		}
+		return d.linkSendResult(m), nil
+	}
+	if a.Kind == store.KindAsk {
+		d.holdLinkAsk(m, linkAskTimeout(a.TimeoutMS))
+	}
+	d.publish(m)
+	return d.linkSendResult(m), nil
+}
+
+// linkSendResult is the stored message and the Inbox item it opened.
+func (d *Daemon) linkSendResult(m store.Message) LinkSendResult {
 	res := LinkSendResult{Message: m}
 	for _, it := range d.st.Items(false) {
 		if it.MID == m.MID {
@@ -178,12 +229,16 @@ func (d *Daemon) linkSend(c *conn, a LinkSendArgs) (any, error) {
 			res.Item = &it
 		}
 	}
-	return res, nil
+	return res
 }
 
 func (d *Daemon) linkAck(c *conn, a LinkAckArgs) (any, error) {
+	d.ackCalls.Add(1)
 	n := 0
 	for _, mid := range a.MIDs {
+		d.mu.Lock()
+		delete(d.pushed, mid)
+		d.mu.Unlock()
 		m, ok := d.st.Get(mid)
 		if !ok {
 			continue
@@ -223,11 +278,16 @@ func (d *Daemon) route(m store.Message) {
 	if err != nil {
 		return
 	}
+	d.mu.Lock()
+	d.pushed[m.MID] = d.now()
+	d.mu.Unlock()
 	c.write(proto.Event{Event: "deliver", Data: data})
 }
 
-// flushTo resends everything a spoke has not acknowledged, oldest first.
-func (d *Daemon) flushTo(machine string) {
+// flushTo resends what a spoke has not acknowledged, oldest first: all of
+// it on link-hello, only what was pushed longer than resendAfter ago on a
+// heartbeat (staleOnly), so a quiet link stays quiet.
+func (d *Daemon) flushTo(machine string, staleOnly bool) {
 	var pending []store.Message
 	for _, box := range d.st.Mailboxes() {
 		if _, host := splitAddr(box); host != machine {
@@ -237,7 +297,16 @@ func (d *Daemon) flushTo(machine string) {
 		pending = append(pending, msgs...)
 	}
 	sort.Slice(pending, func(i, j int) bool { return pending[i].ID < pending[j].ID })
+	now := d.now()
 	for _, m := range pending {
+		if staleOnly {
+			d.mu.Lock()
+			at, ok := d.pushed[m.MID]
+			d.mu.Unlock()
+			if ok && now.Sub(at) < d.resendAfter {
+				continue
+			}
+		}
 		d.route(m)
 	}
 }
@@ -260,40 +329,6 @@ func (d *Daemon) hasLink(machine string) bool {
 	return d.links[machine] != nil
 }
 
-func (d *Daemon) loadKnown() {
-	if d.knownFile == "" {
-		return
-	}
-	b, err := os.ReadFile(d.knownFile)
-	if err != nil {
-		return
-	}
-	var names []string
-	if json.Unmarshal(b, &names) == nil {
-		for _, n := range names {
-			d.known[n] = true
-		}
-	}
-}
-
-func (d *Daemon) saveKnown() {
-	if d.knownFile == "" {
-		return
-	}
-	d.mu.Lock()
-	var names []string
-	for n := range d.known {
-		names = append(names, n)
-	}
-	d.mu.Unlock()
-	sort.Strings(names)
-	b, _ := json.Marshal(names)
-	tmp := d.knownFile + ".tmp"
-	if os.WriteFile(tmp, b, 0o600) == nil {
-		os.Rename(tmp, d.knownFile)
-	}
-}
-
 // ---- the spoke's side ----
 
 func (d *Daemon) uplink() *client.Client {
@@ -308,22 +343,6 @@ func (d *Daemon) errOffline() error {
 	return proto.Errorf(proto.CodeOffline, "the link to the inbox machine %s is down; try again when `mailai ping` says it is up", d.inboxTarget)
 }
 
-// relay sends over the link; a dropped link is offline, not internal.
-func (d *Daemon) relay(a LinkSendArgs) (LinkSendResult, error) {
-	var r LinkSendResult
-	cl := d.uplink()
-	if cl == nil {
-		return r, d.errOffline()
-	}
-	if err := cl.Call("link-send", a, &r); err != nil {
-		if client.Code(err) == "" {
-			return r, d.errOffline()
-		}
-		return r, err
-	}
-	return r, nil
-}
-
 // heldReply finds a reply to from already delivered in thread, for an ask
 // that registered its wait after the reply landed.
 func (d *Daemon) heldReply(thread string, from store.Address) (store.Message, bool) {
@@ -335,9 +354,10 @@ func (d *Daemon) heldReply(thread string, from store.Address) (store.Message, bo
 	return store.Message{}, false
 }
 
-// waitThread blocks for a reply to from in thread, the timeout, or the
-// asker going away (errClientGone).
-func (d *Daemon) waitThread(gone <-chan struct{}, ch chan store.Message, thread string, from store.Address, timeout time.Duration, what string) (store.Message, error) {
+// waitThread blocks for a reply to from in thread, the inbox machine
+// refusing the queued ask (fail), the timeout, or the asker going away
+// (errClientGone, §7a).
+func (d *Daemon) waitThread(gone <-chan struct{}, ch chan store.Message, fail chan error, thread string, from store.Address, timeout time.Duration, what string) (store.Message, error) {
 	if m, ok := d.heldReply(thread, from); ok {
 		d.st.Read(store.ReadQuery{Mailbox: from, IDs: []uint64{m.ID}, Mark: true})
 		return m, nil
@@ -355,6 +375,8 @@ func (d *Daemon) waitThread(gone <-chan struct{}, ch chan store.Message, thread 
 				d.st.Read(store.ReadQuery{Mailbox: from, IDs: []uint64{r.ID}, Mark: true})
 				return r, nil
 			}
+		case err := <-fail:
+			return store.Message{}, err
 		case <-timer:
 			return store.Message{}, proto.Errorf(proto.CodeTimeout, "no reply %s within %s", what, timeout)
 		case <-gone:
@@ -371,56 +393,108 @@ func (d *Daemon) registerWait(thread string) chan store.Message {
 	return ch
 }
 
-// askRemote is an ask that leaves the machine: sent over the link without
-// holding it, then waited for here, so a dropped link does not end it.
+// outWait is an off-machine ask, queued, with its wait registered before
+// it could leave, so neither a fast reply nor a refusal is missed.
+type outWait struct {
+	o     store.Outgoing
+	r     LinkSendResult
+	qd    bool
+	ch    chan store.Message
+	fail  chan error
+	close func()
+}
+
+// withdrawOut ends an off-machine ask whose asker went away (§7a): still
+// in the outbox, it is dropped and never leaves; already sent, the inbox
+// machine closes its item. Both, since a drain may be sending it now.
+func (d *Daemon) withdrawOut(w *outWait) {
+	queued := false
+	for _, o := range d.st.Outbox() {
+		if o.ID == w.o.ID {
+			queued = true
+		}
+	}
+	if queued {
+		d.st.Dequeue(w.o.ID)
+	}
+	d.withdrawRemote(LinkWithdrawArgs{MID: w.r.Message.MID})
+}
+
+func (d *Daemon) queueAndWait(o store.Outgoing) (*outWait, error) {
+	o, err := d.st.Enqueue(o)
+	if err != nil {
+		return nil, err
+	}
+	w := &outWait{o: o, ch: d.registerWait(o.ThreadID), fail: d.registerFail(o.ThreadID)}
+	w.close = func() { d.unwait(o.ThreadID, w.ch); d.unregisterFail(o.ThreadID, w.fail) }
+	w.r, w.qd, err = d.outSend(o)
+	if err != nil {
+		w.close()
+		return nil, err
+	}
+	if w.qd {
+		w.r.Message = outMessage(o)
+	}
+	return w, nil
+}
+
+// askRemote is an ask that leaves the machine: queued and sent over the
+// link without holding it, then waited for here, so a dropped link (or one
+// that is down when it is asked) does not end it.
 func (d *Daemon) askRemote(gone <-chan struct{}, from store.Address, a AskArgs) (any, error) {
 	if err := d.checkAsk(from, a.To); err != nil {
 		return nil, err
 	}
 	defer d.releaseAsk(from, a.To)
-	r, err := d.relay(LinkSendArgs{From: from, To: a.To, Kind: store.KindAsk, Subject: a.Subject, Text: a.Text})
+	w, err := d.queueAndWait(store.Outgoing{From: from, To: a.To, Kind: store.KindAsk, Subject: a.Subject, Text: a.Text, TimeoutMS: a.TimeoutMS})
 	if err != nil {
 		return nil, err
 	}
-	ch := d.registerWait(r.Message.ThreadID)
-	defer d.unwait(r.Message.ThreadID, ch)
-	reply, err := d.waitThread(gone, ch, r.Message.ThreadID, from, time.Duration(a.TimeoutMS)*time.Millisecond, "from "+string(a.To))
+	defer w.close()
+	reply, err := d.waitThread(gone, w.ch, w.fail, w.o.ThreadID, from, time.Duration(a.TimeoutMS)*time.Millisecond, "from "+string(a.To))
 	if err == errClientGone && a.To == store.Human {
-		d.withdrawRemote(LinkWithdrawArgs{MID: r.Message.MID}) // §7a
+		d.withdrawOut(w) // §7a
 	}
 	if err != nil {
 		return nil, err
 	}
-	return AskResult{Ask: r.Message, Reply: reply}, nil
+	return AskResult{Ask: w.r.Message, Reply: reply}, nil
 }
 
 func (d *Daemon) askHumanRemote(gone <-chan struct{}, from store.Address, a AskHumanArgs) (any, error) {
 	if a.WaitFor != 0 {
-		return nil, proto.Errorf(proto.CodeBadRequest, "--wait-for is not supported on a spoke; the answer arrives as mail")
+		return d.resumeAskHuman(from, a)
 	}
 	if err := d.checkAsk(from, store.Human); err != nil {
 		return nil, err
 	}
 	defer d.releaseAsk(from, store.Human)
-	r, err := d.relay(LinkSendArgs{From: from, To: store.Human, Kind: store.KindAskHuman, Subject: a.Subject, Text: a.Text, Options: a.Options})
+	w, err := d.queueAndWait(store.Outgoing{From: from, To: store.Human, Kind: store.KindAskHuman, Subject: a.Subject, Text: a.Text, Options: a.Options})
 	if err != nil {
 		return nil, err
 	}
+	defer w.close()
 	var item store.Item
-	if r.Item != nil {
-		item = *r.Item
+	if w.r.Item != nil {
+		item = *w.r.Item
+	} else {
+		// Queued: no item yet, so a local handle stands in for its id.
+		m := w.r.Message
+		item = store.Item{ID: localHandleBase + w.o.ID, Kind: store.ItemAskHuman, MID: m.MID, ThreadID: m.ThreadID,
+			From: from, Subject: m.Subject, Question: m.Text, Options: m.Options}
 	}
+	d.mu.Lock()
+	d.spokeAsks[item.ID] = &spokeAsk{from: from, thread: w.o.ThreadID}
+	d.mu.Unlock()
 	if a.NoWait {
-		return AskHumanResult{Item: item}, nil
+		return AskHumanResult{Item: item, Queued: w.qd}, nil
 	}
-	ch := d.registerWait(r.Message.ThreadID)
-	defer d.unwait(r.Message.ThreadID, ch)
-	reply, err := d.waitThread(gone, ch, r.Message.ThreadID, from, time.Duration(a.TimeoutMS)*time.Millisecond, "from the person")
+	reply, err := d.waitThread(gone, w.ch, w.fail, w.o.ThreadID, from, time.Duration(a.TimeoutMS)*time.Millisecond, "from the person")
 	if err == errClientGone {
-		d.withdrawRemote(LinkWithdrawArgs{MID: r.Message.MID}) // §7a
+		d.withdrawOut(w) // §7a
 	}
 	if err != nil {
-		return nil, err
+		return nil, comeBack(err, item.ID)
 	}
 	item.ClosedBy, item.Answer = "answered", reply.MID
 	return AskHumanResult{Item: item, Reply: &reply}, nil
@@ -520,7 +594,7 @@ func (d *Daemon) serveUplink(ctx context.Context, rwc io.ReadWriteCloser) (bool,
 	}
 	defer cl.Close()
 	var hr LinkHelloResult
-	if err := callWithin(cl, 15*time.Second, "link-hello", LinkHelloArgs{Machine: d.name}, &hr); err != nil {
+	if err := callWithin(cl, 15*time.Second, "link-hello", LinkHelloArgs{Machine: d.name, Key: d.key}, &hr); err != nil {
 		return false, err
 	}
 	d.mu.Lock()
@@ -528,6 +602,7 @@ func (d *Daemon) serveUplink(ctx context.Context, rwc io.ReadWriteCloser) (bool,
 	d.hubName = hr.Machine
 	d.mu.Unlock()
 	d.log.Printf("link up: inbox machine %s via %s", hr.Machine, d.inboxTarget)
+	d.kickOutbox()
 	defer func() {
 		d.mu.Lock()
 		if d.up == cl {
@@ -538,6 +613,8 @@ func (d *Daemon) serveUplink(ctx context.Context, rwc io.ReadWriteCloser) (bool,
 	beat := time.NewTicker(d.heartbeat)
 	defer beat.Stop()
 	events := cl.Events()
+	var acks []string
+	var ackTimer <-chan time.Time
 	for {
 		select {
 		case <-ctx.Done():
@@ -554,11 +631,24 @@ func (d *Daemon) serveUplink(ctx context.Context, rwc io.ReadWriteCloser) (bool,
 				continue
 			}
 			d.accept(m)
-			go cl.Call("link-ack", LinkAckArgs{MIDs: []string{m.MID}}, nil)
+			// One link-ack per burst: the first delivery opens a short
+			// window, and what arrives in it is acknowledged together.
+			acks = append(acks, m.MID)
+			if ackTimer == nil {
+				ackTimer = time.After(ackWindow)
+			}
+		case <-ackTimer:
+			mids := acks
+			acks, ackTimer = nil, nil
+			go cl.Call("link-ack", LinkAckArgs{MIDs: mids}, nil)
 		case <-beat.C:
 			// The heartbeat also asks for anything not yet acknowledged.
 			if err := callWithin(cl, 3*d.heartbeat, "link-flush", nil, nil); err != nil {
 				return true, err
+			}
+			// And retries what the inbox machine was too busy to take.
+			if len(d.st.Outbox()) > 0 {
+				d.kickOutbox()
 			}
 		}
 	}
@@ -570,6 +660,8 @@ type LinkStatus struct {
 	Inbox   string   `json:"inbox,omitempty"`
 	Link    string   `json:"link,omitempty"`
 	Links   []string `json:"links,omitempty"`
+	// Outbox is how many sends a spoke holds for the inbox machine.
+	Outbox int `json:"outbox,omitempty"`
 }
 
 func (d *Daemon) linkStatus() LinkStatus {
@@ -580,6 +672,7 @@ func (d *Daemon) linkStatus() LinkStatus {
 		if d.linkUp() {
 			s.Link = "up"
 		}
+		s.Outbox = len(d.st.Outbox())
 		return s
 	}
 	d.mu.Lock()

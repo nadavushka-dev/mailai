@@ -18,6 +18,8 @@ type SendArgs struct {
 
 type SendResult struct {
 	Message store.Message `json:"message"`
+	// Queued says a spoke holds it in its outbox until the link is back.
+	Queued bool `json:"queued,omitempty"`
 }
 
 type ReadArgs struct {

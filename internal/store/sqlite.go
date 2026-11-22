@@ -36,6 +36,10 @@ CREATE TABLE IF NOT EXISTS grants (
   id   INTEGER PRIMARY KEY,
   body TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS outbox (
+  id   INTEGER PRIMARY KEY,
+  body TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS meta (
   key   TEXT PRIMARY KEY,
   value INTEGER NOT NULL
@@ -199,6 +203,52 @@ func (p *SQLite) Insert(box Address, m *Message) error {
 		return err
 	}
 	return tx.Commit()
+}
+
+// LoadOutbox implements OutboxPersister.
+func (p *SQLite) LoadOutbox() ([]Outgoing, error) {
+	rows, err := p.db.Query(`SELECT body FROM outbox ORDER BY id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Outgoing
+	for rows.Next() {
+		var body string
+		if err := rows.Scan(&body); err != nil {
+			return nil, err
+		}
+		var o Outgoing
+		if err := json.Unmarshal([]byte(body), &o); err != nil {
+			return nil, err
+		}
+		out = append(out, o)
+	}
+	return out, rows.Err()
+}
+
+func (p *SQLite) PutOutgoing(o *Outgoing) error {
+	body, err := json.Marshal(o)
+	if err != nil {
+		return err
+	}
+	tx, err := p.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`INSERT INTO outbox(id, body) VALUES(?,?)`, o.ID, string(body)); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`INSERT INTO meta(key, value) VALUES('last_id', ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, o.ID); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (p *SQLite) DeleteOutgoing(id uint64) error {
+	_, err := p.db.Exec(`DELETE FROM outbox WHERE id=?`, id)
+	return err
 }
 
 func (p *SQLite) Mark(mid string, readAt, seenAt int64) error {
