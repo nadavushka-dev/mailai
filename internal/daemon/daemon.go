@@ -53,8 +53,12 @@ type Options struct {
 	// heartbeat (15 s).
 	LinkRetry time.Duration
 	Heartbeat time.Duration
-	// MachinesFile remembers which spokes have linked; memory only when "".
+	// MachinesFile remembers which spokes have linked and their pinned
+	// keys; memory only when "".
 	MachinesFile string
+	// MachineKey is what this machine presents in link-hello (machine.key);
+	// a random one for this process when nil.
+	MachineKey []byte
 }
 
 // Daemon serves one machine.
@@ -85,9 +89,11 @@ type Daemon struct {
 	linkRetry   time.Duration
 	heartbeat   time.Duration
 	knownFile   string
-	links       map[string]*conn // inbox machine: spoke -> its link
-	known       map[string]bool  // inbox machine: spokes that ever linked
-	up          *client.Client   // spoke: the link, nil when down
+	knownMu     sync.Mutex        // serializes writes of knownFile
+	key         []byte            // this machine's key, sent in link-hello
+	links       map[string]*conn  // inbox machine: spoke -> its link
+	known       map[string]string // inbox machine: spokes that ever linked -> pinned key hash
+	up          *client.Client    // spoke: the link, nil when down
 	hubName     string
 
 	mu    sync.Mutex
@@ -124,11 +130,14 @@ func New(o Options) *Daemon {
 	if o.Heartbeat == 0 {
 		o.Heartbeat = 15 * time.Second
 	}
+	if o.MachineKey == nil {
+		o.MachineKey = newMachineKey()
+	}
 	d := &Daemon{st: o.Store, placer: o.Placer, now: o.Now, log: o.Log, maxAsk: o.MaxAsks, stash: o.Stash, tokens: o.Tokens,
 		adapter: o.Adapter, wake: o.Wake, poll: o.PollEvery, agents: newAgents(), marks: map[store.Address]noticeMark{}, approvals: map[uint64]chan approvalDecision{}, webSubs: map[chan proto.Event]bool{},
 		subs: map[*conn]bool{}, asks: newAskGraph(), waits: map[string][]chan store.Message{},
 		name: o.Name, inboxTarget: o.Inbox, dial: o.Dial, linkRetry: o.LinkRetry, heartbeat: o.Heartbeat, knownFile: o.MachinesFile,
-		links: map[string]*conn{}, known: map[string]bool{}}
+		links: map[string]*conn{}, known: map[string]string{}, key: o.MachineKey}
 	d.loadKnown()
 	return d
 }
@@ -451,6 +460,8 @@ func (d *Daemon) handle(c *conn, req proto.Request) (any, error) {
 		return d.stashVerb(req.Verb, req.Args)
 	case "token-new", "token-list", "token-revoke":
 		return d.tokenVerb(c, req.Verb, req.Args)
+	case "machine-list", "machine-forget":
+		return d.machineVerb(c, req.Verb, req.Args)
 	}
 	return nil, proto.Errorf(proto.CodeUnknownVerb, "%q", req.Verb)
 }

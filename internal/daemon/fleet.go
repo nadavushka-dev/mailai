@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"regexp"
 	"sort"
 	"strings"
@@ -25,6 +24,8 @@ import (
 type LinkHelloArgs struct {
 	Machine string `json:"machine"`
 	Version string `json:"version,omitempty"`
+	// Key is the spoke's machine key; the inbox machine pins its hash.
+	Key []byte `json:"key,omitempty"`
 }
 
 type LinkHelloResult struct {
@@ -100,7 +101,7 @@ func (d *Daemon) checkRoute(to store.Address) error {
 		return nil
 	}
 	d.mu.Lock()
-	known := d.known[m]
+	_, known := d.known[m]
 	d.mu.Unlock()
 	if !known {
 		return proto.Errorf(proto.CodeOffline, "%s is on machine %q, which has never linked to this inbox machine", to, m)
@@ -118,18 +119,25 @@ func (d *Daemon) linkHello(c *conn, a LinkHelloArgs) (any, error) {
 	if !machineName.MatchString(a.Machine) || a.Machine == d.name {
 		return nil, proto.Errorf(proto.CodeBadRequest, "bad machine name %q", a.Machine)
 	}
+	if len(a.Key) != 0 && len(a.Key) != MachineKeySize {
+		return nil, proto.Errorf(proto.CodeBadRequest, "a machine key is %d bytes", MachineKeySize)
+	}
+	d.mu.Lock()
+	save, err := d.checkPin(a.Machine, a.Key)
+	if err != nil {
+		d.mu.Unlock()
+		d.log.Printf("link refused: %s presented another machine key", a.Machine)
+		return nil, err
+	}
 	c.link = a.Machine
 	c.pl = Placement{Proof: store.ProofLink}
-	d.mu.Lock()
 	old := d.links[a.Machine]
 	d.links[a.Machine] = c
-	isNew := !d.known[a.Machine]
-	d.known[a.Machine] = true
 	d.mu.Unlock()
 	if old != nil && old != c {
 		old.Close()
 	}
-	if isNew {
+	if save {
 		d.saveKnown()
 	}
 	d.log.Printf("link up: %s", a.Machine)
@@ -258,40 +266,6 @@ func (d *Daemon) hasLink(machine string) bool {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	return d.links[machine] != nil
-}
-
-func (d *Daemon) loadKnown() {
-	if d.knownFile == "" {
-		return
-	}
-	b, err := os.ReadFile(d.knownFile)
-	if err != nil {
-		return
-	}
-	var names []string
-	if json.Unmarshal(b, &names) == nil {
-		for _, n := range names {
-			d.known[n] = true
-		}
-	}
-}
-
-func (d *Daemon) saveKnown() {
-	if d.knownFile == "" {
-		return
-	}
-	d.mu.Lock()
-	var names []string
-	for n := range d.known {
-		names = append(names, n)
-	}
-	d.mu.Unlock()
-	sort.Strings(names)
-	b, _ := json.Marshal(names)
-	tmp := d.knownFile + ".tmp"
-	if os.WriteFile(tmp, b, 0o600) == nil {
-		os.Rename(tmp, d.knownFile)
-	}
 }
 
 // ---- the spoke's side ----
@@ -511,7 +485,7 @@ func (d *Daemon) serveUplink(ctx context.Context, rwc io.ReadWriteCloser) (bool,
 	}
 	defer cl.Close()
 	var hr LinkHelloResult
-	if err := callWithin(cl, 15*time.Second, "link-hello", LinkHelloArgs{Machine: d.name}, &hr); err != nil {
+	if err := callWithin(cl, 15*time.Second, "link-hello", LinkHelloArgs{Machine: d.name, Key: d.key}, &hr); err != nil {
 		return false, err
 	}
 	d.mu.Lock()

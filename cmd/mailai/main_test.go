@@ -474,3 +474,25 @@ func TestCLI_IntegrationInstallStatusUninstall(t *testing.T) {
 		t.Fatal(out)
 	}
 }
+
+// SPEC §13a: the daemon keeps a machine key in its data dir, and the person
+// lists and forgets machines.
+func TestCLI_MachineKeyAndMachineVerbs(t *testing.T) {
+	e := startEnv(t)
+	fi, err := os.Stat(filepath.Join(e.home, "data", "machine.key"))
+	if err != nil || fi.Size() != 32 || fi.Mode().Perm() != 0o600 {
+		t.Fatalf("%v %v", fi, err)
+	}
+	if out := e.must("machine", "ls"); strings.TrimSpace(out) != "no machines have linked here" {
+		t.Fatalf("%q", out)
+	}
+	if out, err := e.run("machine", "forget", "s9"); err == nil || !strings.Contains(out, "not_found") {
+		t.Fatalf("%q %v", out, err)
+	}
+	tok := strings.TrimSpace(strings.SplitN(e.must("token", "new", "worker"), "\n", 2)[0])
+	agent := e.cmd("machine", "ls")
+	agent.Env = append(agent.Env, "MAILAI_TOKEN="+tok)
+	if out, err := agent.CombinedOutput(); err == nil || !strings.Contains(string(out), "not_human") {
+		t.Fatalf("%q %v", out, err)
+	}
+}

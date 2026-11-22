@@ -46,6 +46,7 @@ daemon
   daemon run              run the daemon in the foreground
   ping                    is the daemon up, and this machine's link in the star
   bridge                  what a spoke runs over ssh to reach this machine's daemon
+  machine ls|forget <m>   spokes linked to this inbox machine; forget one to re-pin its key (person only)
   whoami                  how the daemon places this caller
   version
 
@@ -101,6 +102,8 @@ func main() {
 		err = cmdQueue(args)
 	case "token":
 		err = cmdToken(args)
+	case "machine":
+		err = cmdMachine(args)
 	case "grant":
 		err = cmdGrant(args)
 	case "hook":

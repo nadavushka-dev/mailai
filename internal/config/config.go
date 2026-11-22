@@ -53,6 +53,7 @@ func (p Paths) Identity() string   { return filepath.Join(p.Data, "identity.toml
 func (p Paths) ConfigFile() string { return filepath.Join(p.Config, "config.toml") }
 func (p Paths) Log() string        { return filepath.Join(p.Data, "daemon.log") }
 func (p Paths) Machines() string   { return filepath.Join(p.Data, "machines.json") }
+func (p Paths) MachineKey() string { return filepath.Join(p.Data, "machine.key") }
 
 // Config is config.toml.
 type Config struct {

@@ -52,6 +52,10 @@ func cmdDaemon(args []string) error {
 	if err != nil {
 		return err
 	}
+	key, err := daemon.LoadMachineKey(p.MachineKey())
+	if err != nil {
+		return err
+	}
 	logger := log.New(os.Stderr, "mailai ", log.LstdFlags)
 	ad := chooseAdapter(cfg)
 	placer := &identity.Placer{Proc: procinfo.Kernel{}, Tokens: tk, Panes: ad, SelfPID: os.Getpid()}
@@ -59,7 +63,7 @@ func cmdDaemon(args []string) error {
 		placer.TTY = procinfo.Kernel{}
 	}
 	opts := daemon.Options{Store: st, Log: logger, Stash: stash.New(p.Stash()), Tokens: tk, Placer: placer,
-		Adapter: ad, Wake: cfg.Wake(), Name: name, MachinesFile: p.Machines()}
+		Adapter: ad, Wake: cfg.Wake(), Name: name, MachinesFile: p.Machines(), MachineKey: key}
 	if target := cfg.Fleet.Inbox; target != "" {
 		remote := cfg.Fleet.Command
 		opts.Inbox = target

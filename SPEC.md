@@ -365,6 +365,9 @@ Supervisors are the one new idea against TUIOS. The rules:
 - `store.db`: mailboxes, attention items, grants, sessions, outbox (§13).
 - `stash/<session>/`: stashed attachments, removed when the session ends.
 - `tokens/`: issued agent tokens, hashed.
+- `machine.key` (`0600`): this machine's random 32-byte key, presented
+  when it links (§13a). `machines.json`: on the inbox machine, the spokes
+  that have linked and the sha256 of each one's pinned key.
 - `mailai.sock` (`0700`), `daemon.log`, `daemon.pid`.
 
 Config in `$XDG_CONFIG_HOME/mailai/config.toml`: `adapter`, `[mail] wake`,
@@ -469,6 +472,21 @@ many machines but answers from one.
   `<claimed>@<machine>`; a link cannot claim `human` or an `@`.
   Messages delivered to a spoke keep the inbox machine's `verified` mark:
   the spoke trusts its inbox machine (joining is trusting, §13).
+- **Machine keys** (decided 2026-11-20). Every daemon creates a random
+  32-byte key once, `machine.key` (`0600`) in its data dir, and a spoke
+  presents it in `link-hello {machine, key}`. The inbox machine pins
+  sha256(key) per machine name in `machines.json` on the first hello that
+  carries a key (trust on first use). A later hello for that name with a
+  different key, or none, is refused `forbidden`, with a hint naming
+  `mailai machine forget <name>`; the linked machine is untouched. A name
+  with no pin (a `machines.json` from before keys, which was a bare list of
+  names and is read as such, or a keyless hello from an older spoke) is
+  pinned by its next hello with a key. `mailai machine ls` lists each
+  machine that has linked: linked now or not, key pinned or not.
+  `mailai machine forget <name>` drops the record and closes its link, so
+  the next hello pins afresh; until then `name@<it>` is refused as never
+  linked, and mail already held for it stays. Both are the person's only:
+  never a link, a detached caller or an agent (`not_human`).
 - **Asks wait at home.** A spoke's `ask` and `ask-human` send over the link
   without blocking it, then wait on the spoke for the reply in the thread.
   A dropped link or a sleeping laptop does not end the wait.
