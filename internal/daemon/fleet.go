@@ -148,7 +148,7 @@ func (d *Daemon) linkHello(c *conn, a LinkHelloArgs) (any, error) {
 		d.saveKnown()
 	}
 	d.log.Printf("link up: %s", a.Machine)
-	go d.flushTo(a.Machine)
+	go d.flushTo(a.Machine, false)
 	return LinkHelloResult{Machine: d.name}, nil
 }
 
@@ -233,8 +233,12 @@ func (d *Daemon) linkSendResult(m store.Message) LinkSendResult {
 }
 
 func (d *Daemon) linkAck(c *conn, a LinkAckArgs) (any, error) {
+	d.ackCalls.Add(1)
 	n := 0
 	for _, mid := range a.MIDs {
+		d.mu.Lock()
+		delete(d.pushed, mid)
+		d.mu.Unlock()
 		m, ok := d.st.Get(mid)
 		if !ok {
 			continue
@@ -274,11 +278,16 @@ func (d *Daemon) route(m store.Message) {
 	if err != nil {
 		return
 	}
+	d.mu.Lock()
+	d.pushed[m.MID] = d.now()
+	d.mu.Unlock()
 	c.write(proto.Event{Event: "deliver", Data: data})
 }
 
-// flushTo resends everything a spoke has not acknowledged, oldest first.
-func (d *Daemon) flushTo(machine string) {
+// flushTo resends what a spoke has not acknowledged, oldest first: all of
+// it on link-hello, only what was pushed longer than resendAfter ago on a
+// heartbeat (staleOnly), so a quiet link stays quiet.
+func (d *Daemon) flushTo(machine string, staleOnly bool) {
 	var pending []store.Message
 	for _, box := range d.st.Mailboxes() {
 		if _, host := splitAddr(box); host != machine {
@@ -288,7 +297,16 @@ func (d *Daemon) flushTo(machine string) {
 		pending = append(pending, msgs...)
 	}
 	sort.Slice(pending, func(i, j int) bool { return pending[i].ID < pending[j].ID })
+	now := d.now()
 	for _, m := range pending {
+		if staleOnly {
+			d.mu.Lock()
+			at, ok := d.pushed[m.MID]
+			d.mu.Unlock()
+			if ok && now.Sub(at) < d.resendAfter {
+				continue
+			}
+		}
 		d.route(m)
 	}
 }
@@ -562,6 +580,8 @@ func (d *Daemon) serveUplink(ctx context.Context, rwc io.ReadWriteCloser) (bool,
 	beat := time.NewTicker(d.heartbeat)
 	defer beat.Stop()
 	events := cl.Events()
+	var acks []string
+	var ackTimer <-chan time.Time
 	for {
 		select {
 		case <-ctx.Done():
@@ -578,7 +598,16 @@ func (d *Daemon) serveUplink(ctx context.Context, rwc io.ReadWriteCloser) (bool,
 				continue
 			}
 			d.accept(m)
-			go cl.Call("link-ack", LinkAckArgs{MIDs: []string{m.MID}}, nil)
+			// One link-ack per burst: the first delivery opens a short
+			// window, and what arrives in it is acknowledged together.
+			acks = append(acks, m.MID)
+			if ackTimer == nil {
+				ackTimer = time.After(ackWindow)
+			}
+		case <-ackTimer:
+			mids := acks
+			acks, ackTimer = nil, nil
+			go cl.Call("link-ack", LinkAckArgs{MIDs: mids}, nil)
 		case <-beat.C:
 			// The heartbeat also asks for anything not yet acknowledged.
 			if err := callWithin(cl, 3*d.heartbeat, "link-flush", nil, nil); err != nil {

@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/nadavushka-dev/mailai/internal/adapter"
@@ -59,6 +60,9 @@ type Options struct {
 	// MachineKey is what this machine presents in link-hello (machine.key);
 	// a random one for this process when nil.
 	MachineKey []byte
+	// ResendAfter is how long mail pushed to a spoke waits unacknowledged
+	// before a heartbeat resends it (60 s).
+	ResendAfter time.Duration
 }
 
 // Daemon serves one machine.
@@ -110,7 +114,17 @@ type Daemon struct {
 	obMu    sync.Mutex
 	obKick  chan struct{}
 	outFail map[string][]chan error
+
+	// Delivery to spokes (inbox machine): when each unacknowledged mid was
+	// last pushed, and how long before a heartbeat resends it.
+	pushed      map[string]time.Time
+	resendAfter time.Duration
+	// ackCalls counts link-acks received (inbox machine).
+	ackCalls atomic.Int64
 }
+
+// ackWindow is how long a spoke gathers deliveries into one link-ack.
+const ackWindow = 100 * time.Millisecond
 
 // New makes a Daemon; Serve starts it.
 func New(o Options) *Daemon {
@@ -138,12 +152,16 @@ func New(o Options) *Daemon {
 	if o.Heartbeat == 0 {
 		o.Heartbeat = 15 * time.Second
 	}
+	if o.ResendAfter == 0 {
+		o.ResendAfter = 60 * time.Second
+	}
 	if o.MachineKey == nil {
 		o.MachineKey = newMachineKey()
 	}
 	d := &Daemon{st: o.Store, placer: o.Placer, now: o.Now, log: o.Log, maxAsk: o.MaxAsks, stash: o.Stash, tokens: o.Tokens,
 		adapter: o.Adapter, wake: o.Wake, poll: o.PollEvery, agents: newAgents(), marks: map[store.Address]noticeMark{}, approvals: map[uint64]chan approvalDecision{}, webSubs: map[chan proto.Event]bool{},
-		subs: map[*conn]bool{}, asks: newAskGraph(), linkAsks: map[string][]*linkAsk{}, obKick: make(chan struct{}, 1), outFail: map[string][]chan error{}, waits: map[string][]chan store.Message{},
+		subs: map[*conn]bool{}, asks: newAskGraph(), linkAsks: map[string][]*linkAsk{}, obKick: make(chan struct{}, 1), outFail: map[string][]chan error{},
+		pushed: map[string]time.Time{}, resendAfter: o.ResendAfter, waits: map[string][]chan store.Message{},
 		name: o.Name, inboxTarget: o.Inbox, dial: o.Dial, linkRetry: o.LinkRetry, heartbeat: o.Heartbeat, knownFile: o.MachinesFile,
 		links: map[string]*conn{}, known: map[string]string{}, key: o.MachineKey}
 	d.loadKnown()
@@ -340,7 +358,8 @@ func (d *Daemon) handle(c *conn, req proto.Request) (any, error) {
 		}
 		return d.linkHold(c, a)
 	case "link-flush":
-		go d.flushTo(c.link)
+		// In line: the resends go down this link before the answer.
+		d.flushTo(c.link, true)
 		return map[string]bool{"ok": true}, nil
 	case "hello":
 		a, err := decode[HelloArgs](req.Args)

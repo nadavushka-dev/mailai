@@ -505,8 +505,13 @@ many machines but answers from one.
   graph and ends by timeout.
 - **Delivery.** The inbox machine keeps mail for `name@spoke` in that box,
   unread until the spoke acknowledges it, and pushes it on the link. On
-  every `link-hello` and every heartbeat (15 s) it resends what is still
-  unread. A spoke drops a mid it already holds: at-least-once, mid-deduped.
+  every `link-hello` it resends everything still unacknowledged; on a
+  heartbeat (15 s) only what was last pushed more than 60 s ago and is
+  still unacknowledged (decided 2026-11-20; it was everything, every
+  heartbeat). The spoke acknowledges in bursts: the first delivery opens a
+  100 ms window and one `link-ack` carries every mid that arrived in it. A
+  spoke drops a mid it already holds but acknowledges it again:
+  at-least-once, mid-deduped.
 - **Approvals.** A spoke's held permission request is held on the inbox
   machine through the link and decided from its Inbox. If the link drops,
   the hook gets no decision and the harness falls back to its own prompt.
