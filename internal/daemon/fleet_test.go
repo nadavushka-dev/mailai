@@ -25,12 +25,13 @@ type star struct {
 	refuse             bool
 }
 
-func newStar(t *testing.T) *star {
+// newStar builds the pair; tweak, when given, adjusts either's options.
+func newStar(t *testing.T, tweak ...func(hub, spoke *Options)) *star {
 	t.Helper()
 	s := &star{}
-	s.hubSock, s.hub = startDaemonWith(t, Options{Name: "s1", Store: store.New(store.Options{MachineID: "s1"}),
-		Placer: placed(Placement{Proof: store.ProofToken, Principal: "reviewer"})})
-	s.spokeSock, s.spoke = startDaemonWith(t, Options{Name: "s2", Store: store.New(store.Options{MachineID: "s2"}),
+	hub := Options{Name: "s1", Store: store.New(store.Options{MachineID: "s1"}),
+		Placer: placed(Placement{Proof: store.ProofToken, Principal: "reviewer"})}
+	spoke := Options{Name: "s2", Store: store.New(store.Options{MachineID: "s2"}),
 		Placer: placed(Placement{Proof: store.ProofToken, Principal: "worker"}),
 		Inbox:  "s1", LinkRetry: 20 * time.Millisecond, Heartbeat: 50 * time.Millisecond,
 		Dial: func(ctx context.Context) (io.ReadWriteCloser, error) {
@@ -47,7 +48,12 @@ func newStar(t *testing.T) *star {
 				s.mu.Unlock()
 			}
 			return c, err
-		}})
+		}}
+	for _, f := range tweak {
+		f(&hub, &spoke)
+	}
+	s.hubSock, s.hub = startDaemonWith(t, hub)
+	s.spokeSock, s.spoke = startDaemonWith(t, spoke)
 	s.waitLink(t, true)
 	return s
 }

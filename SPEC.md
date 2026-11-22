@@ -403,7 +403,7 @@ CLI (every command takes `--json`):
 | `mailai --skill [TOPIC]` | The short guide an agent reads to use mailai. |
 
 Desktop notifications (`[notify]`, on by default) fire for Human Inbox
-items only, never for Mail traffic.
+items only, never for Mail traffic (§12b).
 
 TUI (D13): two views, `i` Inbox and `m` Mail. The Inbox is one list of
 attention items across sessions and machines, oldest first,
@@ -433,6 +433,34 @@ do, the web UI can do, and nothing more.
   Serve or `ssh -L` is the supported story; the phone case is the point.
 - **Scope guard:** the web UI may show only what `inbox`, `read` and the
   mailbox verbs return. Anything about pane output belongs to Herdr.
+
+## 12b. Notifications
+
+An agent blocked on the person must not wait unnoticed. When a new Inbox
+item opens on a daemon (an ask to `human`, an `ask-human`, a held
+approval), that daemon pops one desktop notification: title `mailai`, body
+one line such as `ask_human from builder@s2: Merge PR 51? [yes|no]` or
+`risky approval from w1:p3: Bash: git push`, at most 120 bytes, control and
+bidi characters removed, the question cut before the options. Items from a
+spoke open on the inbox machine (§13a), so only the machine holding the
+item notifies. Mail, closed and answered items never notify. Bursts
+coalesce: at most one notification per 3 s; the rest of a window becomes
+one summary (`two? (+2 more waiting)`), leaving out items closed meanwhile.
+The text goes to the person, never into an agent's context (D12).
+
+- **Backends:** `[notify] command`, else `osascript` on macOS, else
+  `notify-send` on Linux, whichever is installed; with none, nothing.
+  `[notify] enabled` defaults to true; the daemon log names the backend.
+- **`command`** is an argv, e.g. `["ntfy", "publish", "--title={title}",
+  "mytopic", "{body}"]`: `{title}` and `{body}` are replaced wherever they
+  appear (one pass); with neither placeholder, title and body are appended
+  as the last two arguments.
+- **Safety:** no shell, ever, and no text inside script source. osascript
+  runs a fixed script reading `argv`:
+  `osascript -e 'on run argv' -e 'display notification (item 1 of argv) with title (item 2 of argv)' -e 'end run' -- <body> <title>`;
+  notify-send gets `--` before its text. Each run is asynchronous and
+  killed after 5 s; a failing backend is logged and never blocks or stops
+  the daemon.
 
 ## 13. Fleet (D6)
 
@@ -502,6 +530,7 @@ many machines but answers from one.
   - `internal/fleet`: records, routing, outbox, catch-up
   - `internal/daemon`: the process, socket server
   - `internal/mcp`
+  - `internal/notify`: desktop notifications (§12b)
   - `internal/service`: launchd and systemd
   - `internal/tui`
 - **Testing:**
@@ -563,7 +592,7 @@ Each milestone ends with all tests passing and a review in tuicr.
 | Herdr pane identity without a shell pid | tty match, then token fallback (§9). |
 | Headless agents | Tokens only in v1 (§5). |
 | Retention | Gone when evicted (§6). |
-| Desktop notifications | Yes, Inbox items only, `[notify]` (§12). |
+| Desktop notifications | Yes, Inbox items only, `[notify]` (§12b). |
 | Herdr `blocked` panes without mailai hooks | Not Inbox items (D13). |
 | Plain mail to `human` | Mail view only; asks are the Inbox (D13). |
 | What is risky | Whatever the harness's payload says; no mailai rule list (§8). |

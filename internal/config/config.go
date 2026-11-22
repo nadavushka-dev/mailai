@@ -60,8 +60,12 @@ type Config struct {
 	Mail    struct {
 		Wake *bool `toml:"wake"`
 	} `toml:"mail"`
+	// Notify is desktop notifications for the Human Inbox (SPEC §12b).
 	Notify struct {
 		Enabled *bool `toml:"enabled"`
+		// Command is an argv run per notification instead of the platform's
+		// own; {title} and {body} are substituted, else both are appended.
+		Command []string `toml:"command"`
 	} `toml:"notify"`
 	Identity struct {
 		RequireTerminal *bool `toml:"require_terminal"`
@@ -94,6 +98,10 @@ func (c Config) MachineName() string {
 
 // Wake says whether resting agents are woken (default true).
 func (c Config) Wake() bool { return c.Mail.Wake == nil || *c.Mail.Wake }
+
+// NotifyEnabled says whether to notify the person (default true; a
+// machine with no backend notifies nobody anyway).
+func (c Config) NotifyEnabled() bool { return c.Notify.Enabled == nil || *c.Notify.Enabled }
 
 // RequireTerminal says only a caller at a terminal is the person (§9);
 // on unless [identity] require_terminal = false (test rigs).

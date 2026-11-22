@@ -15,6 +15,7 @@ import (
 	"github.com/nadavushka-dev/mailai/internal/daemon"
 	"github.com/nadavushka-dev/mailai/internal/identity"
 	"github.com/nadavushka-dev/mailai/internal/link"
+	"github.com/nadavushka-dev/mailai/internal/notify"
 	"github.com/nadavushka-dev/mailai/internal/procinfo"
 	"github.com/nadavushka-dev/mailai/internal/stash"
 	"github.com/nadavushka-dev/mailai/internal/store"
@@ -58,8 +59,10 @@ func cmdDaemon(args []string) error {
 	if cfg.RequireTerminal() {
 		placer.TTY = procinfo.Kernel{}
 	}
+	// Desktop notifications for new Inbox items (SPEC §12b).
+	notifier, backend := notify.Choose(notify.Config{Enabled: cfg.NotifyEnabled(), Command: cfg.Notify.Command, Log: logger})
 	opts := daemon.Options{Store: st, Log: logger, Stash: stash.New(p.Stash()), Tokens: tk, Placer: placer,
-		Adapter: ad, Wake: cfg.Wake(), Name: name, MachinesFile: p.Machines()}
+		Adapter: ad, Wake: cfg.Wake(), Name: name, MachinesFile: p.Machines(), Notifier: notifier}
 	if target := cfg.Fleet.Inbox; target != "" {
 		remote := cfg.Fleet.Command
 		opts.Inbox = target
@@ -70,7 +73,7 @@ func cmdDaemon(args []string) error {
 	if cfg.Fleet.Inbox != "" {
 		role = "spoke of " + cfg.Fleet.Inbox
 	}
-	logger.Printf("machine %s (%s), adapter %s, wake %v", name, role, ad.Name(), cfg.Wake())
+	logger.Printf("machine %s (%s), adapter %s, wake %v, notify %s", name, role, ad.Name(), cfg.Wake(), backend)
 	if err := d.Listen(p.Socket()); err != nil {
 		return err
 	}
