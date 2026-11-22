@@ -47,8 +47,13 @@ type Attachment struct {
 	MediaType string `json:"media_type,omitempty"`
 	Bytes     int64  `json:"bytes,omitempty"`
 	Stashed   bool   `json:"stashed,omitempty"`
-	// Missing is resolved at read time, never trusted from send time.
+	// ModTime is the file's modification time when it was sent (ns), so a
+	// reader can tell it changed since.
+	ModTime int64 `json:"mtime,omitempty"`
+	// Missing and Changed are resolved at read time, never trusted from
+	// send time.
 	Missing bool `json:"missing,omitempty"`
+	Changed bool `json:"changed,omitempty"`
 }
 
 // Message is one immutable record (SPEC §6). Fields after SentAt are set by

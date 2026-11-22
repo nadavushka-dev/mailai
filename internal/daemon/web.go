@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"mime"
 	"net"
 	"net/http"
 	"strings"
@@ -89,6 +90,7 @@ func (d *Daemon) webStart(port int) (any, error) {
 		mux.HandleFunc("/api/dismiss", d.webAuth(d.apiDismiss))
 		mux.HandleFunc("/api/reply", d.webAuth(d.apiReply))
 		mux.HandleFunc("/api/mark-read", d.webAuth(d.apiMarkRead))
+		mux.HandleFunc("/api/artifact", d.webAuth(d.apiArtifact))
 		mux.HandleFunc("/api/events", d.webAuth(d.apiEvents))
 		d.web.srv = &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 		d.web.ln = ln
@@ -179,8 +181,33 @@ func (d *Daemon) webAuth(h http.HandlerFunc) http.HandlerFunc {
 			http.Error(w, `{"error":"no session"}`, http.StatusUnauthorized)
 			return
 		}
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			if code, why := foreignWrite(r); code != 0 {
+				http.Error(w, `{"error":"`+why+`"}`, code)
+				return
+			}
+		}
 		h(w, r)
 	}
+}
+
+// foreignWrite refuses a write that did not come from the page itself.
+// Cookies ignore ports, so a page on another localhost port (an agent's dev
+// server) or an attachment in its sandbox could carry the session. A write
+// must be JSON, which a foreign origin cannot send without a CORS preflight
+// this server never grants; and when the browser says where it comes from
+// (Origin, Sec-Fetch-Site), that must be this origin.
+func foreignWrite(r *http.Request) (int, string) {
+	if mt, _, err := mime.ParseMediaType(r.Header.Get("Content-Type")); err != nil || mt != "application/json" {
+		return http.StatusUnsupportedMediaType, "writes are JSON"
+	}
+	if o := r.Header.Get("Origin"); o != "" && o != "http://"+r.Host {
+		return http.StatusForbidden, "not from this page"
+	}
+	if s := r.Header.Get("Sec-Fetch-Site"); s != "" && s != "same-origin" {
+		return http.StatusForbidden, "not from this page"
+	}
+	return 0, ""
 }
 
 func writeJSON(w http.ResponseWriter, v any) {

@@ -167,7 +167,7 @@ subject       string   one line, ≤ 120 chars
 text          string   ≤ 64 KB
 reply_to      mid      zero when it answers nothing
 thread_id     mid      resolved at send time; a thread starter carries its own mid
-attachments   []ref    {kind, path, media_type, bytes, stashed, missing}
+attachments   []ref    {kind, path, media_type, bytes, mtime, stashed, missing, changed}
 sent_at       int64    ns, sender's clock
 origin        local | link
 origin_host   string   claim, shown as one
@@ -185,7 +185,10 @@ Rules, all kept from TUIOS:
   when the root ages out. A reply to a forgotten parent roots at the
   parent's id and sets `reply_to_missing`.
 - Attachments are references, never bytes. A sender-owned path may be gone
-  by read time (`missing`, resolved at read). A path put in the **stash**
+  by read time (`missing`, resolved at read), or modified since it was sent
+  (`changed`: size or `mtime` differ, resolved at read); a reader sees the
+  file as it is now. `ask-human` takes attachments too, shown on the Inbox
+  item: the way an agent shows the person a screenshot, report or log. A path put in the **stash**
   (`mailai stash put`) is daemon-owned and lives until the session ends;
   across machines the stash is copied over the link on `stash get`.
 - Seen sits between unread and read. A peek of one's own inbox marks seen,
@@ -453,7 +456,7 @@ CLI (every command takes `--json`):
 |---|---|
 | `mailai send <to> [text] [--subject S] [--reply-to MID] [--attach PATH]… [--select SEL]` | Leave a message. Text from stdin when omitted. |
 | `mailai read [--unread] [--peek] [--summary] [--thread MID] [--from P] [-w PRINCIPAL]` | Read, inside the fence. `--summary` prints one line per message (id, sender, proof, subject) so an agent triages before paying for bodies. |
-| `mailai ask <to> <text> [--timeout MS]` · `mailai ask-human <text> -o A -o B [--no-wait]` | Send and wait. |
+| `mailai ask <to> <text> [--timeout MS]` · `mailai ask-human <text> -o A -o B [--no-wait] [--attach PATH]…` | Send and wait. |
 | `mailai reply <mid> [text]` | Reply in a thread. |
 | `mailai queue <to> <text>` · `queue ls` · `queue rm` | Typed when the agent comes to rest. |
 | `mailai inbox [--all] [--closed] [--session S]` · `mailai answer <item> <text\|choice>` · `mailai dismiss <item>` | The Inbox from the CLI. `--closed`: what closed in the last hour, and how (§7a). |
@@ -504,11 +507,25 @@ do, the web UI can do, and nothing more.
   carrying a one-time token that becomes a session cookie. The token is
   never in an environment, log or screen other than that line. Replies
   through a valid session are `verified: human`. Sessions expire after 12 h
-  or on `mailai web --revoke`.
+  or on `mailai web --revoke`. Cookies ignore ports, so a write must also
+  come from the page itself: JSON only (a foreign origin cannot send it
+  without a CORS preflight, never granted), and an `Origin` or
+  `Sec-Fetch-Site` header, when the browser sends one, must say this origin.
+  A page an agent serves on another localhost port, or an attachment in its
+  sandbox, cannot act with the person's session.
 - **Remote:** the daemon never binds a non-loopback address. Tailscale
   Serve or `ssh -L` is the supported story; the phone case is the point.
 - **Scope guard:** the web UI may show only what `inbox`, `read` and the
   mailbox verbs return. Anything about pane output belongs to Herdr.
+- **Attachments:** `/api/artifact?mid=M&i=N` reads the Nth attachment of
+  message M from its path when it is opened: only a path a message
+  attached, only a regular file, ranges allowed, never cached. Pictures and
+  PDFs open as themselves; anything else a browser could run (HTML, SVG,
+  text) is served under `Content-Security-Policy: sandbox` without
+  `allow-same-origin`, so its scripts run in an opaque origin that cannot
+  reach the session (the cookie is `SameSite=Strict`). The TUI lists the
+  same files, numbered, and `v` opens one with the system viewer, or says
+  where it is when there is none (over ssh).
 
 ## 12b. Notifications
 

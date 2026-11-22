@@ -31,6 +31,8 @@ func Fence(m store.Message) string {
 			switch {
 			case a.Missing:
 				b.WriteString(" (missing)")
+			case a.Changed:
+				fmt.Fprintf(&b, " (%s, changed since sent)", humanBytes(a.Bytes))
 			case a.Bytes > 0:
 				fmt.Fprintf(&b, " (%s)", humanBytes(a.Bytes))
 			}

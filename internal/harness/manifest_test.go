@@ -71,7 +71,7 @@ func TestManifestValidation(t *testing.T) {
 // the person answering in the session, which closes the Inbox item. The
 // skill tells agents to time out first and resume.
 func TestSkillTellsAgentsToOutwaitTheHarnessTimeout(t *testing.T) {
-	for _, want := range []string{"--timeout", "--wait-for"} {
+	for _, want := range []string{"--timeout", "--wait-for", "--attach", "Show the person a file"} {
 		if !strings.Contains(Skill, want) {
 			t.Fatalf("skill lacks %q", want)
 		}

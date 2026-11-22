@@ -21,6 +21,9 @@ type AskHumanArgs struct {
 	// WaitFor resumes waiting on an earlier ask-human by its item id.
 	WaitFor   uint64 `json:"wait_for,omitempty"`
 	TimeoutMS int64  `json:"timeout_ms,omitempty"`
+	// Attachments are files for the person to look at: references, shown
+	// on the Inbox item (SPEC §6).
+	Attachments []store.Attachment `json:"attachments,omitempty"`
 }
 
 type AskHumanResult struct {
@@ -76,6 +79,9 @@ func (d *Daemon) askHuman(c *conn, a AskHumanArgs) (any, error) {
 		if err := validAskHuman(a); err != nil {
 			return nil, err
 		}
+		if len(a.Attachments) > 0 {
+			return nil, proto.Errorf(proto.CodeBadRequest, "attachments do not cross machines yet")
+		}
 		return d.askHumanRemote(c.gone, from, a)
 	}
 	timeout := time.Duration(a.TimeoutMS) * time.Millisecond
@@ -94,6 +100,10 @@ func (d *Daemon) askHuman(c *conn, a AskHumanArgs) (any, error) {
 		if err := validAskHuman(a); err != nil {
 			return nil, err
 		}
+		atts, err := d.prepareAttachments(a.Attachments)
+		if err != nil {
+			return nil, err
+		}
 		if err := d.checkAsk(from, store.Human); err != nil {
 			return nil, err
 		}
@@ -101,7 +111,7 @@ func (d *Daemon) askHuman(c *conn, a AskHumanArgs) (any, error) {
 		ch := make(chan store.Message, 1)
 		d.mu.Lock()
 		m, err := d.st.Send(store.SendRequest{From: from, To: store.Human, Subject: a.Subject, Text: a.Text, Options: a.Options,
-			Kind: store.KindAskHuman, Proof: c.pl.Proof})
+			Kind: store.KindAskHuman, Proof: c.pl.Proof, Attachments: atts})
 		if err != nil {
 			d.mu.Unlock()
 			return nil, err
@@ -201,6 +211,10 @@ func (d *Daemon) inbox(c *conn, a InboxArgs) (any, error) {
 	items := []store.Item{}
 	for _, it := range list {
 		if d.canSee(c, it) {
+			if m, ok := d.st.Get(it.MID); ok && len(m.Attachments) > 0 {
+				it.Attachments = append([]store.Attachment(nil), m.Attachments...)
+				resolveFiles(it.Attachments)
+			}
 			items = append(items, it)
 		}
 	}

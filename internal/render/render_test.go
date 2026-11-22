@@ -46,6 +46,11 @@ func TestFence_TrustMarks(t *testing.T) {
 	if !strings.Contains(out, "attachments:\n  /tmp/a (missing)\n  /tmp/b (10 B)") {
 		t.Fatalf("%q", out)
 	}
+	// A reference shows today's file: say when it is not what was sent.
+	m.Attachments = []store.Attachment{{Kind: "file", Path: "/tmp/c", Bytes: 10, Changed: true}}
+	if out := Fence(m); !strings.Contains(out, "  /tmp/c (10 B, changed since sent)\n") {
+		t.Fatalf("%q", out)
+	}
 }
 
 func TestSummary_OneLinePerMessage(t *testing.T) {

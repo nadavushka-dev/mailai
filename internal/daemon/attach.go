@@ -44,22 +44,36 @@ func (d *Daemon) prepareAttachments(in []store.Attachment) ([]store.Attachment, 
 		if strings.HasPrefix(mt, "image/") {
 			kind = "image"
 		}
+		if !st.Mode().IsRegular() {
+			return nil, proto.Errorf(proto.CodeBadRequest, "attachment %s is not a regular file", a.Path)
+		}
 		out = append(out, store.Attachment{
-			Kind: kind, Path: a.Path, MediaType: mt, Bytes: st.Size(),
+			Kind: kind, Path: a.Path, MediaType: mt, Bytes: st.Size(), ModTime: st.ModTime().UnixNano(),
 			Stashed: d.stash != nil && d.stash.Owns(a.Path),
 		})
 	}
 	return out, nil
 }
 
-// resolveMissing stamps Missing on attachments whose file is gone, at read
-// time (SPEC §6: never trusted from send time).
+// resolveMissing stamps Missing on attachments whose file is gone, and
+// Changed on those modified since they were sent, at read time (SPEC §6:
+// never trusted from send time).
 func resolveMissing(ms []store.Message) {
 	for i := range ms {
-		for j := range ms[i].Attachments {
-			if _, err := os.Stat(ms[i].Attachments[j].Path); err != nil {
-				ms[i].Attachments[j].Missing = true
-			}
+		resolveFiles(ms[i].Attachments)
+	}
+}
+
+func resolveFiles(as []store.Attachment) {
+	for j := range as {
+		a := &as[j]
+		st, err := os.Stat(a.Path)
+		if err != nil || !st.Mode().IsRegular() {
+			a.Missing = true
+			continue
+		}
+		if st.Size() != a.Bytes || (a.ModTime != 0 && st.ModTime().UnixNano() != a.ModTime) {
+			a.Changed = true
 		}
 	}
 }

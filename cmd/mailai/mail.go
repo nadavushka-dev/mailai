@@ -5,12 +5,27 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/nadavushka-dev/mailai/internal/daemon"
 	"github.com/nadavushka-dev/mailai/internal/render"
 	"github.com/nadavushka-dev/mailai/internal/store"
 )
+
+// attachments turns --attach paths into references, absolute from where
+// the caller runs: the daemon sees no caller's working directory.
+func attachments(paths []string) ([]store.Attachment, error) {
+	var atts []store.Attachment
+	for _, p := range paths {
+		abs, err := filepath.Abs(p)
+		if err != nil {
+			return nil, err
+		}
+		atts = append(atts, store.Attachment{Kind: "file", Path: abs})
+	}
+	return atts, nil
+}
 
 func newFlags(name string) *flag.FlagSet {
 	fs := flag.NewFlagSet("mailai "+name, flag.ExitOnError)
@@ -58,7 +73,7 @@ func cmdSend(args []string) error {
 	session := fs.String("session", "", "session, for a notice with no recipient")
 	replyTo := fs.String("reply-to", "", "join this message's thread")
 	var attach stringList
-	fs.Var(&attach, "attach", "absolute path to attach (repeatable)")
+	fs.Var(&attach, "attach", "a file to attach (repeatable); a reference, not a copy")
 	rest := parse(fs, args)
 	var to string
 	if len(rest) > 0 && *session == "" {
@@ -68,9 +83,9 @@ func cmdSend(args []string) error {
 	if err != nil {
 		return err
 	}
-	var atts []store.Attachment
-	for _, p := range attach {
-		atts = append(atts, store.Attachment{Kind: "file", Path: p})
+	atts, err := attachments(attach)
+	if err != nil {
+		return err
 	}
 	c, err := connect()
 	if err != nil {

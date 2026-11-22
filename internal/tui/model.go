@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -67,6 +68,8 @@ type Model struct {
 	// scope narrows Mail to the person's own threads or to those between
 	// agents (D13).
 	scope mailScope
+	// opener shows a file with the system viewer; systemOpen by default.
+	opener func(path string) error
 }
 
 type mailScope int
@@ -91,6 +94,8 @@ const (
 	modeReply
 	modeDenyMessage
 	modeFilter
+	// modeFile waits for the number of the file to open.
+	modeFile
 )
 
 // Messages between the program and the model.
@@ -109,7 +114,11 @@ type (
 	}
 	eventMsg  struct{ f proto.Frame }
 	actionMsg struct{ err error }
-	tickMsg   time.Time
+	fileMsg   struct {
+		path string
+		err  error
+	}
+	tickMsg time.Time
 )
 
 // New makes a model over a backend.
@@ -117,7 +126,7 @@ func New(b Backend) Model {
 	in := textinput.New()
 	in.Prompt = "> "
 	in.CharLimit = store.MaxText
-	m := Model{b: b, input: in, now: time.Now, width: 100, height: 30}
+	m := Model{b: b, input: in, now: time.Now, width: 100, height: 30, opener: systemOpen}
 	if w, err := b.Whoami(); err == nil {
 		m.who = w
 		m.person = w.Proof == store.ProofOutsidePane
@@ -216,6 +225,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, m.loadThread(m.openID))
 		}
 		return m, tea.Batch(cmds...)
+	case fileMsg:
+		if msg.err != nil {
+			return m.say("no viewer here (" + msg.err.Error() + "); the file is at " + msg.path), nil
+		}
+		return m.say("opened " + filepath.Base(msg.path)), nil
 	case tickMsg:
 		if m.status != "" && m.now().Sub(m.errAt) > 4*time.Second {
 			m.status = ""
@@ -406,6 +420,8 @@ func (m Model) updateKeys(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "o":
 		m.view, m.cursor, m.open, m.openID = ViewInbox, 0, nil, ""
 		return m, nil
+	case "v":
+		return m.startOpen()
 	case "t":
 		if m.view == ViewMail && m.open == nil {
 			m.scope = (m.scope + 1) % 3
@@ -567,7 +583,68 @@ func (m Model) joinPlaceholder() string {
 	return "join thread as you → " + strings.Join(names, " + ") + hint
 }
 
+// files are what can be opened from here: every attachment of the open
+// thread, in order, or the current Inbox item's.
+func (m Model) files() []store.Attachment {
+	if m.open != nil {
+		var out []store.Attachment
+		for _, x := range m.open {
+			out = append(out, x.Attachments...)
+		}
+		return out
+	}
+	if m.view == ViewInbox {
+		if it, ok := m.current(); ok {
+			return it.Attachments
+		}
+	}
+	return nil
+}
+
+// startOpen opens the only file at once, or asks which by number.
+func (m Model) startOpen() (tea.Model, tea.Cmd) {
+	fs := m.files()
+	switch len(fs) {
+	case 0:
+		return m.say("no files here"), nil
+	case 1:
+		return m.openFile(fs[0])
+	}
+	m.mode = modeFile
+	n := len(fs)
+	if n > 9 {
+		n = 9
+	}
+	m.input.SetValue("")
+	m.input.Placeholder = fmt.Sprintf("open which file? 1-%d  (esc cancels)", n)
+	return m, nil
+}
+
+func (m Model) openFile(a store.Attachment) (tea.Model, tea.Cmd) {
+	if a.Missing {
+		return m.say("gone: " + a.Path), nil
+	}
+	open, path := m.opener, a.Path
+	return m, func() tea.Msg { return fileMsg{path: path, err: open(path)} }
+}
+
+// say shows a line in the status bar for a few seconds.
+func (m Model) say(s string) Model {
+	m.status = s
+	m.errAt = m.now()
+	return m
+}
+
 func (m Model) updateInput(k tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.mode == modeFile {
+		m.mode = modeNone
+		if s := k.String(); len(s) == 1 && s[0] >= '1' && s[0] <= '9' {
+			if fs := m.files(); int(s[0]-'1') < len(fs) {
+				return m.openFile(fs[s[0]-'1'])
+			}
+		}
+		return m, nil
+	}
 	switch k.String() {
 	case "tab":
 		if m.mode == modeReply && len(m.joinTo) > 1 {

@@ -32,6 +32,8 @@ type ThreadRow struct {
 	Verified string `json:"verified,omitempty"`
 	// First is the first line of the root message, for the row.
 	First string `json:"first"`
+	// Files counts the attachments across the thread's messages.
+	Files int `json:"files,omitempty"`
 }
 
 type ThreadsResult struct {
@@ -55,6 +57,7 @@ func (d *Daemon) threads(c *conn) (any, error) {
 				people[m.ThreadID] = map[store.Address]bool{}
 			}
 			r.Count++
+			r.Files += len(m.Attachments)
 			if m.ReadAt == 0 {
 				r.Unread++
 				if box == mine {

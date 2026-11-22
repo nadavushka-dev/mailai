@@ -226,6 +226,44 @@ func TestCLI_AttachAndStash(t *testing.T) {
 	}
 }
 
+// An agent attaches files to a question for the person, by a path relative
+// to where it runs; the item carries the absolute reference.
+func TestCLI_AskHumanAttachesRelativePaths(t *testing.T) {
+	e := startEnv(t)
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "shot.png"), []byte("png"), 0o644)
+	tok := strings.TrimSpace(strings.SplitN(e.must("token", "new", "builder"), "\n", 2)[0])
+	agent := func(args ...string) *exec.Cmd {
+		c := e.cmd(args...)
+		c.Env = append(c.Env, "MAILAI_TOKEN="+tok)
+		c.Dir = dir
+		return c
+	}
+	c := agent("ask-human", "--no-wait", "--attach", "shot.png", "-o", "ship", "-o", "redo", "Ship this design?")
+	if out, err := c.CombinedOutput(); err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	c = agent("send", "human", "--attach", "shot.png", "also here")
+	if out, err := c.CombinedOutput(); err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	var in struct {
+		Items []struct {
+			Attachments []struct{ Path string }
+		}
+	}
+	out := e.must("inbox", "--json")
+	json.Unmarshal([]byte(out), &in)
+	if len(in.Items) != 1 || len(in.Items[0].Attachments) != 1 {
+		t.Fatalf("inbox: %s", out)
+	}
+	got, _ := filepath.EvalSymlinks(in.Items[0].Attachments[0].Path)
+	want, _ := filepath.EvalSymlinks(filepath.Join(dir, "shot.png"))
+	if !filepath.IsAbs(in.Items[0].Attachments[0].Path) || got != want {
+		t.Fatalf("path %q, want %q", in.Items[0].Attachments[0].Path, want)
+	}
+}
+
 // SPEC §9: a token makes a process the agent it was issued to; the person,
 // outside every pane, is verified.
 func TestCLI_TokensPlaceAgents(t *testing.T) {

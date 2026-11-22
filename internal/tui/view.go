@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -98,6 +99,9 @@ func (m Model) footer(w int) string {
 		parts = []string{key("enter", "open"), key("r", "answer"), key("1-8", "pick"), key("a", "allow"), key("d", "deny"), key("x", "dismiss"), key("A", "all"), key("o", "oldest")}
 	default:
 		parts = []string{key("enter", "open"), key("r", "reply"), key("t", "to me/agents"), key("u", "unread"), key("f", "filter"), key("o", "oldest")}
+	}
+	if len(m.files()) > 0 {
+		parts = append([]string{key("v", "open a file")}, parts...)
 	}
 	parts = append(parts, key("tab", "view"), key("q", "quit"))
 	return fit(" "+strings.Join(parts, "  "), w)
@@ -348,6 +352,12 @@ func (m Model) detailBody(w, h int) string {
 				b.WriteString(styleDim.Render("free text: press r to answer") + "\n")
 			}
 		}
+		if len(it.Attachments) > 0 {
+			b.WriteString("\n" + styleDim.Render("files") + "\n")
+			for i, a := range it.Attachments {
+				b.WriteString(fileLine(i+1, a) + "\n")
+			}
+		}
 		return b.String()
 	}
 	threads := m.filteredThreads()
@@ -369,8 +379,32 @@ func orFirst(t daemon.ThreadRow) string {
 	return t.First
 }
 
+// fileLine is one attachment, numbered for v: name, size, what happened to
+// it since it was sent, and where it is.
+func fileLine(n int, a store.Attachment) string {
+	s := fmt.Sprintf("  %s %s  %s", styleAccent.Render(fmt.Sprint(n)), filepath.Base(a.Path), styleDim.Render(fileSize(a.Bytes)))
+	switch {
+	case a.Missing:
+		s += "  " + styleBad.Render("gone")
+	case a.Changed:
+		s += "  " + styleWarn.Render("changed since sent")
+	}
+	return s + "  " + styleDim.Render(a.Path)
+}
+
+func fileSize(n int64) string {
+	switch {
+	case n < 1024:
+		return fmt.Sprintf("%d B", n)
+	case n < 1<<20:
+		return fmt.Sprintf("%.1f KB", float64(n)/1024)
+	}
+	return fmt.Sprintf("%.1f MB", float64(n)/(1<<20))
+}
+
 func (m Model) threadBody(w, h int) string {
 	var lines []string
+	nfile := 0
 	for _, x := range m.open {
 		head := styleDim.Render(fmt.Sprintf("#%d ", x.ID)) + styleBold.Render(string(x.From))
 		switch {
@@ -394,11 +428,8 @@ func (m Model) threadBody(w, h int) string {
 			lines = append(lines, styleDim.Render("│ ")+l)
 		}
 		for _, a := range x.Attachments {
-			s := "  ⎘ " + a.Path
-			if a.Missing {
-				s += styleBad.Render(" (missing)")
-			}
-			lines = append(lines, s)
+			nfile++
+			lines = append(lines, fileLine(nfile, a))
 		}
 		lines = append(lines, "")
 	}

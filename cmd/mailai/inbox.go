@@ -21,7 +21,13 @@ func cmdAskHuman(args []string) error {
 	noWait := fs.Bool("no-wait", false, "return at once; the answer arrives as mail, or come back with --wait-for")
 	waitFor := fs.Uint64("wait-for", 0, "wait for the answer to an earlier ask-human, by item id")
 	timeout := fs.Duration("timeout", 0, "give up after this long (exit 2); forever by default")
+	var attach stringList
+	fs.Var(&attach, "attach", "a file for the person to look at (repeatable); a reference, not a copy")
 	rest := parse(fs, args)
+	atts, err := attachments(attach)
+	if err != nil {
+		return err
+	}
 	text := ""
 	if *waitFor == 0 {
 		var err error
@@ -37,7 +43,7 @@ func cmdAskHuman(args []string) error {
 	defer c.Close()
 	var r daemon.AskHumanResult
 	err = c.Call("ask-human", daemon.AskHumanArgs{From: store.Address(*from), Subject: *subject, Text: text, Options: opts,
-		NoWait: *noWait, WaitFor: *waitFor, TimeoutMS: timeout.Milliseconds()}, &r)
+		NoWait: *noWait, WaitFor: *waitFor, TimeoutMS: timeout.Milliseconds(), Attachments: atts}, &r)
 	if err != nil {
 		return err
 	}

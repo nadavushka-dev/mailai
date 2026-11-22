@@ -54,6 +54,9 @@ type Item struct {
 	Risky   bool   `json:"risky,omitempty"`
 	// DecidedBy says who answered: human or supervisor:<name> (M4).
 	DecidedBy string `json:"decided_by,omitempty"`
+	// Attachments are the asking message's, filled in when items are
+	// listed; never stored with the item.
+	Attachments []Attachment `json:"attachments,omitempty"`
 }
 
 var ErrNoItem = errors.New("no such item")

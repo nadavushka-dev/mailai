@@ -243,6 +243,55 @@
   .note.risk { color: var(--red); background: var(--red-soft); }
   .note.maybe { color: var(--violet); background: var(--violet-soft); }
   .note.maybe b, .note.risk b { color: var(--fg); font-weight: 600; }
+
+  /* Attachments: references to files where they live, read when opened. */
+  .files { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; max-width: 68ch; }
+  .d-body .files { margin-top: 16px; }
+  .thumbs { display: flex; flex-wrap: wrap; gap: 8px; }
+  .thumb {
+    position: relative; display: block; padding: 0; border: 1px solid var(--line-2); border-radius: 10px;
+    overflow: hidden; background: var(--panel-2); cursor: zoom-in; max-width: 100%;
+  }
+  .thumb img { display: block; max-width: min(360px, 100%); max-height: 240px; object-fit: contain; background: #fff1; }
+  .thumb .cap {
+    position: absolute; left: 0; right: 0; bottom: 0; padding: 14px 8px 5px; font-size: 11.5px; color: var(--fg);
+    background: linear-gradient(transparent, rgba(0,0,0,.72)); text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .thumb:hover { border-color: var(--dim); }
+  .file {
+    display: flex; align-items: center; gap: 10px; padding: 7px 8px 7px 10px; border: 1px solid var(--line-2);
+    border-radius: 10px; background: var(--panel); min-width: 0;
+  }
+  .file > .i { width: 18px; height: 18px; color: var(--dim); flex: none; }
+  .file .fn { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+  .file .fn b { font-weight: 560; color: var(--fg); font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .file .fn span { font-size: 12px; color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .file .fa { display: flex; gap: 2px; flex: none; }
+  .file .fa a, .file .fa button {
+    display: grid; place-items: center; width: 30px; height: 30px; border-radius: 8px; border: 0; background: none; color: var(--dim); cursor: pointer;
+  }
+  .file .fa a:hover, .file .fa button:hover, .file .fa button[aria-expanded="true"] { background: var(--hover); color: var(--fg); }
+  .file .fa .i { width: 16px; height: 16px; }
+  .file.gone { opacity: .6; }
+  .file.gone .fn b { text-decoration: line-through; }
+  .ftag { font-size: 11px; padding: 1px 6px; border-radius: 99px; margin-left: 6px; font-weight: 520; }
+  .ftag.changed { color: var(--amber); background: var(--amber-soft); }
+  .ftag.gone { color: var(--red); background: var(--red-soft); }
+  .peek {
+    margin: -2px 0 0; padding: 10px 12px; max-height: 320px; overflow: auto; border: 1px solid var(--line); border-radius: 10px;
+    background: var(--bg-2); font: 12.5px/1.5 var(--mono); color: var(--fg-2); white-space: pre-wrap; overflow-wrap: anywhere;
+  }
+  .peek .more { color: var(--faint); font-family: var(--sans); }
+  #lightbox {
+    position: fixed; inset: 0; z-index: 50; display: grid; grid-template-rows: auto 1fr; background: rgba(5,6,8,.9);
+    backdrop-filter: blur(4px);
+  }
+  #lightbox .lb-bar { display: flex; align-items: center; gap: 10px; padding: 12px 16px; color: var(--fg-2); font-size: 13px; }
+  #lightbox .lb-bar b { color: var(--fg); font-weight: 560; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #lightbox .lb-bar a, #lightbox .lb-bar button { color: var(--fg-2); background: var(--panel-2); border: 1px solid var(--line-2); border-radius: 8px; padding: 5px 10px; display: inline-flex; gap: 6px; align-items: center; cursor: pointer; font: inherit; text-decoration: none; }
+  #lightbox .lb-bar .i { width: 14px; height: 14px; }
+  #lightbox .lb-img { display: grid; place-items: center; padding: 0 16px 16px; min-height: 0; }
+  #lightbox img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 6px; background: #fff1; }
   .note span { color: var(--fg-2); }
   .choices { display: grid; gap: 8px; margin-top: 22px; max-width: 520px; }
   .choice {
@@ -448,6 +497,11 @@
   <symbol id="i-users" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
   <symbol id="i-bot" viewBox="0 0 24 24"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></symbol>
   <symbol id="i-join" viewBox="0 0 24 24"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22z"/><path d="M8 12h8"/><path d="M12 8v8"/></symbol>
+  <symbol id="i-clip" viewBox="0 0 24 24"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.06 12.35a1 1 0 0 1 0-.7 10.75 10.75 0 0 1 19.88 0 1 1 0 0 1 0 .7 10.75 10.75 0 0 1-19.88 0"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-ext" viewBox="0 0 24 24"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></symbol>
   <symbol id="i-maybe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l3 2"/></symbol>
 </svg>
 
@@ -520,6 +574,75 @@
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const localName = a => String(a||'').split('@')[0];
   const hostOf = a => { const s = String(a||''); const i = s.indexOf('@'); return i<0 ? '' : s.slice(i+1); };
+  // Attachments are references: the page reads each file where it lives
+  // when it is opened (/api/artifact), never a copy.
+  const artURL = (mid, i, dl) => `/api/artifact?mid=${encodeURIComponent(mid)}&i=${i}${dl ? '&dl=1' : ''}`;
+  const baseName = p => String(p || '').split('/').pop();
+  const fsize = n => !n ? '0 B' : n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(n < 10240 ? 1 : 0)} KB` : `${(n / 1048576).toFixed(1)} MB`;
+  const PICTURE = /^image\/(png|jpeg|gif|webp|avif|bmp|svg\+xml)$/;
+  const TEXTISH = /\.(md|markdown|txt|log|out|diff|patch|json|jsonl|ya?ml|toml|ini|csv|tsv|go|py|js|mjs|ts|tsx|jsx|rs|rb|java|kt|swift|c|h|cc|cpp|sh|bash|zsh|sql|html?|xml|css|env)$/i;
+  const fileKind = a => { const x = (baseName(a.path).match(/\.([^.]+)$/) || [])[1]; return x ? x.toUpperCase() : (a.media_type || 'file'); };
+  function filesHTML(mid, atts) {
+    if (!mid || !atts?.length) return '';
+    const flag = a => a.missing ? '<span class="ftag gone">gone</span>'
+      : a.changed ? '<span class="ftag changed" title="Modified after it was sent: this is how it looks now.">changed since sent</span>' : '';
+    const pics = [], rest = [];
+    atts.forEach((a, i) => {
+      const name = esc(baseName(a.path));
+      if (!a.missing && PICTURE.test(a.media_type || '')) {
+        pics.push(`<button type="button" class="thumb" data-a="zoom" data-mid="${esc(mid)}" data-i="${i}" data-name="${name}" aria-label="View ${name}"><img loading="lazy" alt="${name}" src="${artURL(mid, i)}"><span class="cap">${name}${a.changed ? ' · changed since sent' : ''}</span></button>`);
+        return;
+      }
+      const peekBtn = !a.missing && (/^text\//.test(a.media_type || '') || TEXTISH.test(a.path))
+        ? `<button type="button" data-a="peek" data-mid="${esc(mid)}" data-i="${i}" aria-expanded="false" title="Preview" aria-label="Preview ${name}">${icon('eye')}</button>` : '';
+      const acts = a.missing ? '' : `<span class="fa">${peekBtn}<a href="${artURL(mid, i)}" target="_blank" rel="noopener" title="Open in a new tab" aria-label="Open ${name}">${icon('ext')}</a><a href="${artURL(mid, i, true)}" title="Download" aria-label="Download ${name}">${icon('download')}</a></span>`;
+      rest.push(`<div class="file${a.missing ? ' gone' : ''}">${icon('file')}<span class="fn"><b title="${esc(a.path)}">${name}${flag(a)}</b><span>${esc(fileKind(a))} · ${fsize(a.bytes)} · ${esc(a.path)}</span></span>${acts}</div>`);
+    });
+    return `<div class="files" aria-label="attachments">${pics.length ? `<div class="thumbs">${pics.join('')}</div>` : ''}${rest.join('')}</div>`;
+  }
+  // peek shows the start of a text file under it, read with a range.
+  const PEEK = 32768;
+  async function peek(b) {
+    const file = b.closest('.file');
+    const open = b.getAttribute('aria-expanded') === 'true';
+    if (file.nextElementSibling?.classList.contains('peek')) file.nextElementSibling.remove();
+    b.setAttribute('aria-expanded', String(!open));
+    if (open) return;
+    const pre = document.createElement('pre');
+    pre.className = 'peek';
+    pre.textContent = 'Loading…';
+    file.after(pre);
+    try {
+      const r = await fetch(artURL(b.dataset.mid, b.dataset.i), {headers: {Range: `bytes=0-${PEEK - 1}`}, credentials: 'same-origin'});
+      if (!r.ok) throw new Error(r.status === 404 ? 'The file is gone.' : `Could not read it (HTTP ${r.status}).`);
+      pre.textContent = await r.text();
+      const total = +((r.headers.get('Content-Range') || '').split('/')[1] || 0);
+      if (total > PEEK) pre.insertAdjacentHTML('beforeend', `<span class="more">\n… ${fsize(total - PEEK)} more: open it for the whole file.</span>`);
+    } catch (err) { pre.textContent = err.message; }
+  }
+  // zoom shows a picture full size on top of the page.
+  function zoom(mid, i, name) {
+    closeZoom();
+    zoom.from = document.activeElement;
+    const lb = document.createElement('div');
+    lb.id = 'lightbox';
+    lb.setAttribute('role', 'dialog');
+    lb.setAttribute('aria-modal', 'true');
+    lb.setAttribute('aria-label', name);
+    lb.innerHTML = `<div class="lb-bar"><b>${esc(name)}</b><a href="${artURL(mid, i)}" target="_blank" rel="noopener">${icon('ext')}Open</a><a href="${artURL(mid, i, true)}">${icon('download')}Download</a><button type="button" class="lb-close">${icon('x')}Close <kbd>esc</kbd></button></div><div class="lb-img"><img alt="${esc(name)}" src="${artURL(mid, i)}"></div>`;
+    lb.addEventListener('click', e => {
+      if (e.target === lb || e.target.classList.contains('lb-img') || e.target.closest('.lb-close')) closeZoom();
+    });
+    document.body.append(lb);
+    lb.querySelector('.lb-close').focus();
+  }
+  function closeZoom() {
+    const lb = $('#lightbox');
+    if (!lb) return false;
+    lb.remove();
+    zoom.from?.focus?.();
+    return true;
+  }
   const ago = ns => { const d = Math.max(0, Date.now() - ns/1e6)/1000; return d<60?`${d|0}s`:d<3600?`${d/60|0}m`:d<86400?`${d/3600|0}h ${String((d/60|0)%60).padStart(2,'0')}m`:`${d/86400|0}d`; };
   const heat = ns => { const m = (Date.now() - ns/1e6)/60000; return m >= 30 ? 'hot' : m >= 5 ? 'warm' : ''; };
   const hhmm = ns => new Date(ns/1e6).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', hour12:false});
@@ -698,6 +821,7 @@
     if (isApproval && it.subject) tags[0] = `<span class="tag k-approval">${icon('shield')}${esc(it.subject)}</span>`;
     if (it.risky) tags.push(`<span class="tag risky">${icon('alert')}risky</span>`);
     if (it.session) tags.push(`<span class="tag">${esc(it.session)}</span>`);
+    if (it.attachments?.length) tags.push(`<span class="tag" title="attached files">${icon('clip')}${it.attachments.length}</span>`);
     if (it.closed_at) tags.push(closedState(it));
     else if (it.maybe_in_session_at) tags.push(maybeBadge);
     const age = it.closed_at ? `<span class="age">${ago(it.closed_at)}</span>` : `<span class="age ${heat(it.opened_at)}">${ago(it.opened_at)}</span>`;
@@ -713,6 +837,7 @@
     const between = !toMe(t);
     const tags = [];
     if (t.count > 1) tags.push(`<span class="tag">${icon('thread')}${t.count}</span>`);
+    if (t.files) tags.push(`<span class="tag" title="attached files">${icon('clip')}${t.files}</span>`);
     if (between && (t.people || []).some(isHuman)) tags.push(`<span class="tag joined">${icon('join')}you stepped in</span>`);
     if (between && t.last_at > agentsMark && !isHuman(t.last_from) && mailScope === 'agents' && !following) tags.push('<span class="tag new">new</span>');
     const people = fromMe
@@ -811,7 +936,7 @@
       const many = m.tos.length > 1;
       const head = many ? '' : receipt(m.tos[0][0], m.tos[0][1]);
       const under = many ? `<div class="rcpts">${m.tos.map(([a, r]) => `<span class="rcpt"><b>${esc(localName(a))}</b>${receipt(a, r)}</span>`).join('')}</div>` : '';
-      return `<div class="msg${mine ? ' me' : ''}">${avatar(m.from)}<div><div class="msg-h"><b>${mine ? 'You' : esc(localName(m.from))}</b>${hostOf(m.from) ? `<span class="host">@${esc(hostOf(m.from))}</span>` : ''}${mine && between ? '<span class="stepped">stepped in</span>' : ''}${trustOf(m)}${to.length ? `<span>→ ${to.map(a => isHuman(a) ? 'you' : esc(a)).join(', ')}</span>` : ''}<span class="t">${m.sent_at ? hhmm(m.sent_at) : ''}</span>${head}</div><pre>${esc(m.text)}</pre>${under}</div></div>`;
+      return `<div class="msg${mine ? ' me' : ''}">${avatar(m.from)}<div><div class="msg-h"><b>${mine ? 'You' : esc(localName(m.from))}</b>${hostOf(m.from) ? `<span class="host">@${esc(hostOf(m.from))}</span>` : ''}${mine && between ? '<span class="stepped">stepped in</span>' : ''}${trustOf(m)}${to.length ? `<span>→ ${to.map(a => isHuman(a) ? 'you' : esc(a)).join(', ')}</span>` : ''}<span class="t">${m.sent_at ? hhmm(m.sent_at) : ''}</span>${head}</div><pre>${esc(m.text)}</pre>${filesHTML(m.mid, m.attachments)}${under}</div></div>`;
     }).join('');
     // One-line notes from the thread's items, never stored messages (§7a).
     const notes = (thItems || []).map(it =>
@@ -860,6 +985,7 @@
     } else {
       body = `<h2 class="d-q">${esc(it.question)}</h2>`;
     }
+    body += filesHTML(it.mid, it.attachments);
     if (!it.closed_at && it.maybe_in_session_at) {
       body += `<div class="note maybe">${icon('maybe')}<div><b>Maybe answered in session</b> <span>at ${hhmm(it.maybe_in_session_at)}: the agent moved on after a prompt. Still open: answer anyway, or <kbd>d</kbd> dismiss.</span></div></div>`;
     }
@@ -1056,6 +1182,8 @@
     if (a === 'unfollow') return unfollow();
     if (a === 'waiting-of') return waitingOf(b.dataset.who);
     if (a === 'join') return startJoin();
+    if (a === 'peek') return peek(b);
+    if (a === 'zoom') return zoom(b.dataset.mid, +b.dataset.i, b.dataset.name);
     const it = items.find(x => String(x.id) === id);
     if (a === 'answer') return answer(it || +id, b.dataset.t);
     if (a === 'deny') return startDeny(id);
@@ -1111,6 +1239,8 @@
   document.addEventListener('focusout', () => setTimeout(() => { if (render.pending && !typing()) { render.pending = false; render(); } }));
   document.addEventListener('keydown', e => {
     if (e.metaKey || e.ctrlKey || e.altKey) return;
+    // A picture open on top: only Escape (and Tab) mean anything.
+    if ($('#lightbox')) { if (e.key === 'Escape') { e.preventDefault(); closeZoom(); } return; }
     if (e.key === 'Escape') {
       if (typing()) {
         e.target.blur();
