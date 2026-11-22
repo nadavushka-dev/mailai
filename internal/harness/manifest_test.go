@@ -67,6 +67,17 @@ func TestManifestValidation(t *testing.T) {
 	}
 }
 
+// §7a: a blocking ask killed by the harness's own tool timeout looks like
+// the person answering in the session, which closes the Inbox item. The
+// skill tells agents to time out first and resume.
+func TestSkillTellsAgentsToOutwaitTheHarnessTimeout(t *testing.T) {
+	for _, want := range []string{"--timeout", "--wait-for"} {
+		if !strings.Contains(Skill, want) {
+			t.Fatalf("skill lacks %q", want)
+		}
+	}
+}
+
 func TestSkillIsShortAndNamesTheCommands(t *testing.T) {
 	if len(Skill) > 2500 {
 		t.Fatalf("skill is %d bytes; keep it short (D12)", len(Skill))

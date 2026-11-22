@@ -16,6 +16,8 @@ Reply:   mailai reply <mid> "text"
 Ask and wait for the answer (you spend nothing while waiting):
          mailai ask <agent> "question"             -> prints the reply alone
          mailai ask-human "question?" -o yes -o no -> the person answers from their Inbox
+         Pass --timeout shorter than your tool's own limit (e.g. --timeout 100s);
+         on timeout it prints the item: resume with mailai ask-human --wait-for <id>.
 Status:  mailai whoami; mailai agents; mailai unread
 
 Addresses: an agent is its pane id or live name (w1:p3, reviewer); the

@@ -303,7 +303,10 @@ knows, and tells the agent nothing (D12).
 - **Known limit.** A harness that kills a blocking `ask-human` on its own
   tool timeout looks like Esc and closes the item `in_session`; an agent
   that may wait longer than its tool timeout uses `--timeout` below it, or
-  `--no-wait`.
+  `--no-wait`; a timed-out ask-human leaves its item open and resumes with
+  `--wait-for <id>` (on a spoke too). The skill text says so. An ask still
+  in a spoke's outbox when its asker goes away is dropped there and never
+  sent.
 
 ## 8. Adapters and harnesses (D8)
 
