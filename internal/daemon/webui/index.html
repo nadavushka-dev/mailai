@@ -99,6 +99,8 @@
   }
   .ghost:hover { color: var(--fg-2); border-color: var(--line-2); }
   .ghost.on { color: var(--amber); border-color: rgba(243,179,64,.4); }
+  .ghost.bell { padding: 5px 9px; }
+  .ghost.bell.blocked { opacity: .55; }
   .live { display: inline-flex; align-items: center; gap: 7px; color: var(--dim); font-size: 12px; }
   .live i { width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 3px var(--green-soft); }
   .live.off i { background: var(--red); box-shadow: 0 0 0 3px var(--red-soft); }
@@ -481,6 +483,7 @@
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <symbol id="i-inbox" viewBox="0 0 24 24"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></symbol>
   <symbol id="i-mail" viewBox="0 0 24 24"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></symbol>
+  <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></symbol>
   <symbol id="i-history" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></symbol>
   <symbol id="i-shield" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></symbol>
   <symbol id="i-ask" viewBox="0 0 24 24"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22z"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></symbol>
@@ -514,6 +517,7 @@
   </nav>
   <span class="spacer"></span>
   <button id="filter-btn" class="ghost" type="button" aria-expanded="false" aria-controls="filters"><svg class="i"><use href="#i-search"/></svg><span class="lbl">Filter</span> <kbd>/</kbd></button>
+  <button id="notify-btn" class="ghost bell" type="button" aria-pressed="false" hidden><svg class="i"><use href="#i-bell"/></svg><span class="lbl">Notify</span></button>
   <span class="live" id="live"><i></i><span>live</span></span>
   <span class="who" id="who"></span>
 </header>
@@ -1122,6 +1126,7 @@
       }
       renderList();
       renderRecent();
+      notifyNew();
       await renderDetail();
     } catch (e) { status(e.message, true); }
   }
@@ -1302,6 +1307,50 @@
     }
   });
   api('/api/me').then(m => { if (m) { me = m.principal; $('#who').textContent = `${m.principal} · ${m.proof}`; } });
+  // Desktop notifications (decided 2026-11-23): a new Inbox item while the
+  // page is in the background. Off until the person turns it on; kept per
+  // browser. The first load only learns what is already open.
+  const NOTIFY_KEY = 'mailai.notify';
+  const notified = new Set();
+  let notifySeeded = false;
+  const canNotify = () => 'Notification' in window;
+  const notifyOn = () => canNotify() && localStorage.getItem(NOTIFY_KEY) === 'on' && Notification.permission === 'granted';
+  const paintBell = () => {
+    const b = $('#notify-btn');
+    if (!canNotify()) { b.hidden = true; return; }
+    b.hidden = false;
+    const on = notifyOn(), blocked = Notification.permission === 'denied';
+    b.classList.toggle('on', on);
+    b.classList.toggle('blocked', blocked);
+    b.setAttribute('aria-pressed', String(on));
+    b.title = blocked ? 'Notifications are blocked for this page: allow them in the browser\'s site settings'
+      : on ? 'Desktop notifications on: click to turn off' : 'Desktop notifications off: click to turn on';
+  };
+  $('#notify-btn').addEventListener('click', async () => {
+    if (notifyOn()) { localStorage.setItem(NOTIFY_KEY, 'off'); paintBell(); status('Notifications off'); return; }
+    let p = Notification.permission;
+    if (p === 'default') p = await Notification.requestPermission();
+    if (p !== 'granted') { paintBell(); status('The browser blocks notifications for this page', true); return; }
+    localStorage.setItem(NOTIFY_KEY, 'on'); paintBell(); status('Notifications on');
+  });
+  const notifyNew = () => {
+    const open = items.filter(it => !it.closed_at);
+    const fresh = open.filter(it => !notified.has(it.id));
+    open.forEach(it => notified.add(it.id));
+    if (!notifySeeded) { notifySeeded = true; return; }
+    if (!notifyOn() || !(document.hidden || !document.hasFocus())) return;
+    for (const it of fresh) {
+      const opts = it.options && it.options.length ? ` [${it.options.join(' | ')}]` : '';
+      const n = new Notification(`${(KIND[it.kind] || [it.kind])[0]} from ${localName(it.from)}`, {body: question(it) + opts, tag: 'mailai-' + it.id});
+      n.onclick = async () => {
+        window.focus(); n.close();
+        await go('inbox', false);
+        const i = visibleItems().findIndex(x => x.id === it.id);
+        if (i >= 0) select(i);
+      };
+    }
+  };
+  paintBell();
   const es = new EventSource('/api/events');
   const live = on => $('#live').classList.toggle('off', !on);
   ['mail','attention','agent_state','wake'].forEach(ev => es.addEventListener(ev, () => render()));

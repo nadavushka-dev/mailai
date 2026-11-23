@@ -602,6 +602,15 @@ do, the web UI can do, and nothing more.
   sandbox, cannot act with the person's session.
 - **Remote:** the daemon never binds a non-loopback address. Tailscale
   Serve or `ssh -L` is the supported story; the phone case is the point.
+- **Desktop notifications (decided 2026-11-23):** a bell in the page's
+  header turns them on per browser (kept in that browser, off until the
+  person turns it on; turning it on asks the browser's permission). While
+  the page is in the background, a new Inbox item raises a desktop
+  notification with its kind, asker, question and options; clicking it
+  brings the page forward on that item. No server and no third party: the
+  page's own live updates drive it, so it works only while the page is open
+  somewhere. The TUI has none (a terminal has no such thing); `[notify]`
+  (§12b) is the always-on path.
 - **Always on (decided 2026-11-23, v0):** `[web] port` serves the page from
   the daemon's start, so an upgrade does not take it away. `[web] url` names
   where the person reaches it through their proxy: login links use it, and

@@ -260,6 +260,21 @@ func TestWeb_WritesOnlyFromThePageItself(t *testing.T) {
 }
 
 // The page knows how to show artifacts.
+// Decided 2026-11-23: the page raises a desktop notification for a new
+// Inbox item while it is in the background, behind a bell toggle that is
+// off until the person turns it on, kept per browser.
+func TestWeb_PageNotifiesWhenAskedTo(t *testing.T) {
+	pl := placed()
+	sock, _ := startDaemon(t, pl)
+	cl, base := webClient(t, dial(t, sock))
+	_, page := get(t, cl, base+"/")
+	for _, want := range []string{`id="notify-btn"`, `id="i-bell"`, "new Notification(", "requestPermission", "'mailai.notify'", "document.hidden"} {
+		if !strings.Contains(page, want) {
+			t.Fatalf("page lacks %q", want)
+		}
+	}
+}
+
 // Parity with the TUI (§12a): G to the last row, gg to the first.
 func TestWeb_PageJumpsWithGAndGG(t *testing.T) {
 	pl := placed()
