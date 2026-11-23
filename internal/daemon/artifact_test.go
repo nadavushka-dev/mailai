@@ -268,7 +268,9 @@ func TestWeb_PageNotifiesWhenAskedTo(t *testing.T) {
 	sock, _ := startDaemon(t, pl)
 	cl, base := webClient(t, dial(t, sock))
 	_, page := get(t, cl, base+"/")
-	for _, want := range []string{`id="notify-btn"`, `id="i-bell"`, "new Notification(", "requestPermission", "'mailai.notify'", "document.hidden"} {
+	for _, want := range []string{`id="notify-btn"`, `id="i-bell"`, "new Notification(", "requestPermission", "'mailai.notify'", "document.hidden",
+		// Turning it on shows one at once, so a blocked chain shows itself.
+		"Notifications are on"} {
 		if !strings.Contains(page, want) {
 			t.Fatalf("page lacks %q", want)
 		}

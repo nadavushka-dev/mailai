@@ -1331,7 +1331,10 @@
     let p = Notification.permission;
     if (p === 'default') p = await Notification.requestPermission();
     if (p !== 'granted') { paintBell(); status('The browser blocks notifications for this page', true); return; }
-    localStorage.setItem(NOTIFY_KEY, 'on'); paintBell(); status('Notifications on');
+    localStorage.setItem(NOTIFY_KEY, 'on'); paintBell();
+    // One at once: if it does not appear, the OS blocks the browser.
+    new Notification('mailai', {body: 'Notifications are on. If you can read this, new questions will pop up here while this page is in the background.', tag: 'mailai-test'});
+    status('Notifications on: a test one was just sent. None appeared? Allow the browser in your system\'s notification settings.');
   });
   const notifyNew = () => {
     const open = items.filter(it => !it.closed_at);
