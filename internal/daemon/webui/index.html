@@ -1126,7 +1126,6 @@
       }
       renderList();
       renderRecent();
-      notifyNew();
       await renderDetail();
     } catch (e) { status(e.message, true); }
   }
@@ -1336,8 +1335,11 @@
     new Notification('mailai', {body: 'Notifications are on. If you can read this, new questions will pop up here while this page is in the background.', tag: 'mailai-test'});
     status('Notifications on: a test one was just sent. None appeared? Allow the browser in your system\'s notification settings.');
   });
-  const notifyNew = () => {
-    const open = items.filter(it => !it.closed_at);
+  // notifyNew gets its own list, not the screen's: the screen holds its
+  // refresh while a text box has the cursor, and a notification must not
+  // wait for that (found on UbCl).
+  const notifyNew = list => {
+    const open = list.filter(it => !it.closed_at);
     const fresh = open.filter(it => !notified.has(it.id));
     open.forEach(it => notified.add(it.id));
     if (!notifySeeded) { notifySeeded = true; return; }
@@ -1353,8 +1355,14 @@
       };
     }
   };
+  const notifyCheck = async () => {
+    try { const r = await api('/api/inbox'); if (r) notifyNew(r.items || []); } catch (e) { /* the screen shows errors */ }
+  };
   paintBell();
+  notifyCheck();
+  setInterval(notifyCheck, 30000);
   const es = new EventSource('/api/events');
+  es.addEventListener('attention', notifyCheck);
   const live = on => $('#live').classList.toggle('off', !on);
   ['mail','attention','agent_state','wake'].forEach(ev => es.addEventListener(ev, () => render()));
   es.onopen = () => live(true);

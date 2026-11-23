@@ -270,7 +270,10 @@ func TestWeb_PageNotifiesWhenAskedTo(t *testing.T) {
 	_, page := get(t, cl, base+"/")
 	for _, want := range []string{`id="notify-btn"`, `id="i-bell"`, "new Notification(", "requestPermission", "'mailai.notify'", "document.hidden",
 		// Turning it on shows one at once, so a blocked chain shows itself.
-		"Notifications are on"} {
+		"Notifications are on",
+		// Its own check, not the screen's refresh, which holds while a text
+		// box has the cursor (found on UbCl).
+		"es.addEventListener('attention', notifyCheck)"} {
 		if !strings.Contains(page, want) {
 			t.Fatalf("page lacks %q", want)
 		}
