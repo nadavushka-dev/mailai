@@ -7,6 +7,9 @@ name = "codex"
 description = "Codex CLI: hooks in ~/.codex/config.toml (manual wiring)"
 config = "~/.codex/config.toml"
 format = "manual"
+# The Agent Skills location Codex reads (and Pi, which has no manifest).
+# Install writes the guide here even though the hooks are manual.
+skills = "~/.agents/skills"
 
 [events.SessionStart]
 state = "idle"

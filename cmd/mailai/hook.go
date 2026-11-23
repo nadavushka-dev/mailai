@@ -163,14 +163,25 @@ func truthy(v any) bool {
 	return v != nil
 }
 
-// cmdIntegration installs, removes or checks hook entries per manifest.
+const integrationUsage = "usage: mailai integration install|uninstall|status [harness...] [--project DIR] [--skill-only] [--command PATH]"
+
+// cmdIntegration installs, removes or checks, per manifest, the hook
+// entries and the guide as an Agent Skill (SPEC §8). --project puts both in
+// a repository instead of the home directory; --skill-only leaves hooks be.
 func cmdIntegration(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: mailai integration install|uninstall|status [harness...]")
+		return fmt.Errorf(integrationUsage)
 	}
 	sub := args[0]
+	switch sub {
+	case "install", "uninstall", "status":
+	default:
+		return fmt.Errorf(integrationUsage)
+	}
 	fs := newFlags("integration " + sub)
 	cmdPath := fs.String("command", "", "path of the mailai binary to write into hooks; this binary by default")
+	project := fs.String("project", "", "use this repository's DIR/.claude and DIR/.agents instead of the home directory's")
+	skillOnly := fs.Bool("skill-only", false, "only the skill (the guide), not the hooks")
 	names := parse(fs, args[1:])
 	ms, err := loadManifests()
 	if err != nil {
@@ -186,6 +197,20 @@ func cmdIntegration(args []string) error {
 	if h := os.Getenv("MAILAI_TEST_HOME"); h != "" {
 		home = h
 	}
+	if *project != "" {
+		dir, err := filepath.Abs(*project)
+		if err != nil {
+			return err
+		}
+		if fi, err := os.Stat(dir); err != nil || !fi.IsDir() {
+			return fmt.Errorf("--project %s: not a directory", *project)
+		}
+		// A repository mirrors the home's layout: DIR/.claude, DIR/.agents.
+		home = dir
+	}
+	// Under --project only paths below ~ move into the repository; an
+	// absolute path in a user manifest would reach outside it.
+	inScope := func(p string) bool { return *project == "" || strings.HasPrefix(p, "~/") }
 	bin := *cmdPath
 	if bin == "" {
 		bin, _ = os.Executable()
@@ -199,40 +224,71 @@ func cmdIntegration(args []string) error {
 		if m == nil {
 			return fmt.Errorf("%w: %s", harness.ErrUnknown, n)
 		}
+		hooks := !*skillOnly
+		if hooks && !inScope(m.Config) {
+			hooks = false
+			if sub != "status" && !jsonOut {
+				fmt.Printf("%s: hook config %s is not per-project; hooks left alone\n", n, m.Config)
+			}
+		}
+		skill := ""
+		if inScope(m.Skills) {
+			skill = m.SkillPath(home)
+		}
 		switch sub {
 		case "install":
-			changed, err := m.Install(home, bin)
-			if err != nil {
+			if hooks {
+				changed, err := m.Install(home, bin)
 				var me *harness.ManualError
-				if ok := asManual(err, &me); ok {
+				switch {
+				case err != nil && asManual(err, &me):
 					fmt.Fprintln(os.Stderr, err)
-					continue
-				}
-				return err
-			}
-			if !jsonOut {
-				if changed {
+				case err != nil:
+					return err
+				case jsonOut:
+				case changed:
 					fmt.Printf("%s: hooks written to %s\n", n, m.ConfigPath(home))
-				} else {
+				default:
 					fmt.Printf("%s: already current\n", n)
 				}
 			}
-		case "uninstall":
-			changed, err := m.Uninstall(home)
-			if err != nil {
-				return err
+			if skill != "" {
+				r, err := harness.InstallSkill(skill)
+				if err != nil {
+					return err
+				}
+				printSkillResult(n, skill, r)
 			}
-			if !jsonOut {
-				if changed {
-					fmt.Printf("%s: hooks removed from %s\n", n, m.ConfigPath(home))
-				} else {
-					fmt.Printf("%s: nothing to remove\n", n)
+		case "uninstall":
+			if hooks {
+				changed, err := m.Uninstall(home)
+				if err != nil {
+					return err
+				}
+				if !jsonOut {
+					if changed {
+						fmt.Printf("%s: hooks removed from %s\n", n, m.ConfigPath(home))
+					} else {
+						fmt.Printf("%s: nothing to remove\n", n)
+					}
 				}
 			}
+			if skill != "" {
+				r, err := harness.UninstallSkill(skill)
+				if err != nil {
+					return err
+				}
+				printSkillResult(n, skill, r)
+			}
 		case "status":
-			out = append(out, m.Check(home, bin))
-		default:
-			return fmt.Errorf("usage: mailai integration install|uninstall|status [harness...]")
+			st := harness.Status{Name: n}
+			if hooks {
+				st = m.Check(home, bin)
+			}
+			if skill != "" {
+				st.Skill, st.SkillState = skill, harness.CheckSkill(skill)
+			}
+			out = append(out, st)
 		}
 	}
 	if sub == "status" {
@@ -240,17 +296,51 @@ func cmdIntegration(args []string) error {
 			return printJSON(out)
 		}
 		for _, st := range out {
-			state := "not installed"
-			switch {
-			case st.Installed && st.Current:
-				state = "installed, current"
-			case st.Installed:
-				state = fmt.Sprintf("installed, not current (missing %v, stale %v)", st.Missing, st.Stale)
+			if st.Config != "" {
+				state := "not installed"
+				switch {
+				case st.Installed && st.Current:
+					state = "installed, current"
+				case st.Installed:
+					state = fmt.Sprintf("installed, not current (missing %v, stale %v)", st.Missing, st.Stale)
+				}
+				fmt.Printf("%-12s %-50s %s\n", st.Name, st.Config, state)
 			}
-			fmt.Printf("%-12s %-50s %s\n", st.Name, st.Config, state)
+			if st.Skill != "" {
+				state := "not installed"
+				switch st.SkillState {
+				case harness.SkillCurrent:
+					state = "installed, current"
+				case harness.SkillStale:
+					state = "installed, stale (another mailai wrote it; install rewrites it)"
+				case harness.SkillForeign:
+					state = "not written by mailai; left alone"
+				}
+				fmt.Printf("%-12s %-50s skill %s\n", st.Name, st.Skill, state)
+			}
 		}
 	}
 	return nil
+}
+
+func printSkillResult(name, path string, r harness.SkillState) {
+	if jsonOut {
+		return
+	}
+	switch r {
+	case harness.SkillWritten:
+		fmt.Printf("%s: skill written to %s\n", name, path)
+	case harness.SkillUpdated:
+		fmt.Printf("%s: skill updated at %s\n", name, path)
+	case harness.SkillCurrent:
+		fmt.Printf("%s: skill already current at %s\n", name, path)
+	case harness.SkillRemoved:
+		fmt.Printf("%s: skill removed from %s\n", name, path)
+	case harness.SkillAbsent:
+		fmt.Printf("%s: no skill to remove at %s\n", name, path)
+	case harness.SkillForeign:
+		fmt.Printf("%s: %s was not written by mailai; left alone\n", name, path)
+	}
 }
 
 func asManual(err error, target **harness.ManualError) bool {

@@ -34,6 +34,10 @@ type Manifest struct {
 	// Format says how Config is edited: "claude-settings-json" (the hooks
 	// object of Claude Code's settings.json) or "codex-hooks-json".
 	Format string `toml:"format"`
+	// Skills is the directory the harness reads Agent Skills from, with ~
+	// for the home directory; integration install puts the guide there as
+	// mailai/SKILL.md. Empty: no skill is installed for this harness.
+	Skills string `toml:"skills"`
 	// Events maps the harness's event name to what it means for mailai.
 	Events map[string]Event `toml:"events"`
 	// Approval names the event that is a permission request and how to
@@ -168,11 +172,13 @@ func Names(ms map[string]*Manifest) []string {
 }
 
 // ConfigPath expands ~ in the manifest's config path.
-func (m *Manifest) ConfigPath(home string) string {
-	if strings.HasPrefix(m.Config, "~/") {
-		return filepath.Join(home, m.Config[2:])
+func (m *Manifest) ConfigPath(home string) string { return expandHome(home, m.Config) }
+
+func expandHome(home, p string) string {
+	if strings.HasPrefix(p, "~/") {
+		return filepath.Join(home, p[2:])
 	}
-	return m.Config
+	return p
 }
 
 // Command is the hook command written into the harness config.

@@ -41,7 +41,8 @@ inbox (the person)
 
 harnesses
   hook <harness> <event>  what an installed hook runs (payload on stdin)
-  integration install|uninstall|status [harness...]
+  integration install|uninstall|status [harness...] [--project DIR] [--skill-only]
+                          hooks, and the guide as a skill (~/.claude/skills, ~/.agents/skills)
   --skill                 the short guide an agent reads to use mailai
 
 daemon

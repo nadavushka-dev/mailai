@@ -3,6 +3,8 @@ name = "claude-code"
 description = "Claude Code: hooks in ~/.claude/settings.json"
 config = "~/.claude/settings.json"
 format = "claude-settings-json"
+# Where Claude Code reads Agent Skills; install puts the guide in mailai/.
+skills = "~/.claude/skills"
 
 [events.SessionStart]
 state = "idle"

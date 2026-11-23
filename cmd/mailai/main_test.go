@@ -13,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/nadavushka-dev/mailai/internal/harness"
 )
 
 // The CLI is tested as a process: the binary is built once, a daemon runs
@@ -582,6 +584,97 @@ func TestCLI_IntegrationInstallStatusUninstall(t *testing.T) {
 	}
 	if out := run("--skill"); !strings.Contains(out, "mailai read --unread") {
 		t.Fatal(out)
+	}
+}
+
+// SPEC §8: install delivers the guide as an Agent Skill; --project puts it
+// (and the Claude Code hooks) in one repo, --skill-only leaves hooks alone,
+// and --skill still prints the bare guide. Needs no daemon.
+func TestCLI_IntegrationSkill(t *testing.T) {
+	e := &env{t: t, home: t.TempDir(), sock: filepath.Join(t.TempDir(), "none.sock")}
+	home, proj := t.TempDir(), t.TempDir()
+	run := func(args ...string) string {
+		c := e.cmd(args...)
+		c.Env = append(c.Env, "MAILAI_TEST_HOME="+home)
+		out, err := c.CombinedOutput()
+		if err != nil {
+			t.Fatalf("%v %s", err, out)
+		}
+		return string(out)
+	}
+	claude := filepath.Join(".claude", "skills", "mailai", "SKILL.md")
+	agents := filepath.Join(".agents", "skills", "mailai", "SKILL.md")
+
+	out := run("integration", "install", "--project", proj, "--command", "/opt/mailai")
+	if !strings.Contains(out, "skill written to "+filepath.Join(proj, claude)) || !strings.Contains(out, "skill written to "+filepath.Join(proj, agents)) {
+		t.Fatal(out)
+	}
+	for _, p := range []string{claude, agents} {
+		b, err := os.ReadFile(filepath.Join(proj, p))
+		if err != nil || !strings.HasPrefix(string(b), "---\nname: mailai\n") || !strings.Contains(string(b), "mailai read --unread") {
+			t.Fatalf("%v %s", err, b)
+		}
+	}
+	b, _ := os.ReadFile(filepath.Join(proj, ".claude", "settings.json"))
+	if !strings.Contains(string(b), "/opt/mailai hook claude-code PermissionRequest") {
+		t.Fatalf("project hooks: %s", b)
+	}
+	if ents, _ := os.ReadDir(home); len(ents) != 0 {
+		t.Fatalf("--project wrote to the home: %v", ents)
+	}
+	if out := run("integration", "install", "--project", proj, "--command", "/opt/mailai"); strings.Count(out, "skill already current") != 2 {
+		t.Fatal(out)
+	}
+	out = run("integration", "status", "claude-code", "--project", proj, "--command", "/opt/mailai")
+	if !strings.Contains(out, filepath.Join(proj, claude)) || strings.Count(out, "installed, current") != 2 {
+		t.Fatal(out)
+	}
+
+	// --skill-only: the skill goes, the hooks stay.
+	if out := run("integration", "uninstall", "--skill-only", "--project", proj); strings.Count(out, "skill removed from") != 2 || strings.Contains(out, "hooks") {
+		t.Fatal(out)
+	}
+	if _, err := os.Stat(filepath.Join(proj, claude)); !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(proj, ".claude", "settings.json")); !strings.Contains(string(b), "hook claude-code") {
+		t.Fatalf("%s", b)
+	}
+
+	// User level, skill only: no settings.json, no manual codex wiring.
+	out = run("integration", "install", "--skill-only")
+	if strings.Contains(out, "mailai hook codex") || strings.Contains(out, "hooks") {
+		t.Fatal(out)
+	}
+	for _, p := range []string{claude, agents} {
+		if _, err := os.Stat(filepath.Join(home, p)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(home, ".claude", "settings.json")); !os.IsNotExist(err) {
+		t.Fatal("--skill-only wrote hooks", err)
+	}
+	out = run("integration", "status", "--skill-only")
+	if strings.Count(out, "installed, current") != 2 || strings.Contains(out, "settings.json") {
+		t.Fatal(out)
+	}
+	// A user's own mailai skill is left alone.
+	os.WriteFile(filepath.Join(home, agents), []byte("my notes\n"), 0o644)
+	if out := run("integration", "uninstall", "--skill-only", "codex"); !strings.Contains(out, "not written by mailai") {
+		t.Fatal(out)
+	}
+	if b, _ := os.ReadFile(filepath.Join(home, agents)); string(b) != "my notes\n" {
+		t.Fatalf("%s", b)
+	}
+
+	if out := run("--skill"); out != harness.Skill {
+		t.Fatalf("--skill must print the bare guide: %q", out)
+	}
+	// --project needs a directory that exists.
+	c := e.cmd("integration", "install", "--project", filepath.Join(proj, "nope"))
+	c.Env = append(c.Env, "MAILAI_TEST_HOME="+home)
+	if out, err := c.CombinedOutput(); err == nil {
+		t.Fatalf("accepted a missing project dir: %s", out)
 	}
 }
 

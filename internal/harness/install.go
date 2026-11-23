@@ -48,6 +48,11 @@ type Status struct {
 	Current bool     `json:"current"`
 	Missing []string `json:"missing,omitempty"`
 	Stale   []string `json:"stale,omitempty"`
+	// Skill is where the guide is installed as an Agent Skill, and
+	// SkillState what is there; empty when the manifest names no skills
+	// directory.
+	Skill      string     `json:"skill,omitempty"`
+	SkillState SkillState `json:"skill_state,omitempty"`
 }
 
 type hookEntry struct {

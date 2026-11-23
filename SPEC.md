@@ -54,7 +54,7 @@ Two advantages, both design goals (D12):
 | D10 | Dev tools | tuxedo, tuicr and herdr are for our development workflow only, never part of mailai. |
 | D11 | Web UI | In addition to the TUI, a browser Inbox served by the daemon on loopback only, off by default (`mailai web`). It shows exactly what the Inbox shows, mail and attention items, and nothing else: no pane output, no logs, no dashboards. Remote access is the user's own tunnel. |
 | D13 | Two views | The **Human Inbox** lists only what waits on the person: open asks to `human`, permission requests nobody answered, errored agents. **Mail** is everything: every thread, agent-to-agent traffic, supervisor answers, plain mail to `human`. A supervisor's answer closes the Inbox item and stays in Mail. The Inbox lists only what went through mailai; a pane Herdr sees as `blocked` is Herdr's business. |
-| D14 | Harness-agnostic | The core knows no harness: a notice is a line and a command, state is five words. Hook glue is a declarative TOML manifest per harness (config path, how to add a hook entry, event→state map, whether a permission request can be held). Claude Code and Codex ship bundled; a user manifest in `~/.config/mailai/harnesses/` adds any other, no rebuild. Without a manifest an agent still works: state and wake from the adapter, `mailai read` from its skill text. |
+| D14 | Harness-agnostic | The core knows no harness: a notice is a line and a command, state is five words. Hook glue is a declarative TOML manifest per harness (config path, how to add a hook entry, event→state map, whether a permission request can be held, where it reads skills). Claude Code and Codex ship bundled; a user manifest in `~/.config/mailai/harnesses/` adds any other, no rebuild. Without a manifest an agent still works: state and wake from the adapter, `mailai read` from its skill text. |
 | D12 | Token economy | Mail exists for two reasons: one place to answer everything, and fewer tokens. Everything mailai puts into an agent's context is bounded and enumerable: one notice line per message, subject ≤ 120 chars, bodies only on demand. Waiting happens in a blocked process, never in a model turn. `mailai status` reports the context cost per agent. |
 
 ## 3. Vocabulary
@@ -351,6 +351,18 @@ what state each is in, and how to type one line at one of them.
   nothing has no risky requests.
   `--mcp` registers `mailai mcp` as an MCP server with read-only tools by
   default; `--mcp-write` adds `queue`.
+- The skill: install also writes the `mailai --skill` guide as an Agent
+  Skill, `mailai/SKILL.md` (frontmatter `name: mailai` and a one-line
+  description saying when to load it, a marker line, then the guide), into
+  the directory the manifest's `skills` names: `~/.claude/skills` for Claude
+  Code, `~/.agents/skills` for Codex (and Pi, which reads it too). The
+  harness shows the agent only the name and description until it loads it.
+  Install is idempotent and rewrites a SKILL.md an older mailai wrote;
+  uninstall deletes only a file carrying mailai's marker, so a user's own
+  `mailai` skill is never touched; status says installed/current/stale.
+  `--project DIR` uses `DIR/.claude` and `DIR/.agents` instead of the home
+  (Claude Code hooks go to `DIR/.claude/settings.json`), to try one
+  repository first; `--skill-only` touches the skill and not the hooks.
 
 ## 9. Identity (D4)
 
@@ -504,7 +516,7 @@ CLI (every command takes `--json`):
 | `mailai grant <principal> <rights> [--scope S] [--once]` · `grant ls` · `grant rm` | Grants. `human` only. |
 | `mailai stash put\|get\|list` | Session files. |
 | `mailai token new <name>` · `token ls` · `token revoke` | Agent tokens. |
-| `mailai integration install\|uninstall\|status [harness]… [--mcp] [--mcp-write]` | Harness hooks. |
+| `mailai integration install\|uninstall\|status [harness]… [--project DIR] [--skill-only] [--mcp] [--mcp-write]` | Harness hooks and the skill (§8). |
 | `mailai mcp [--write]` | MCP server over stdio. |
 | `mailai init` · `machine add <ssh-alias>` · `machine list\|remove\|rename\|alias` · `status` · `doctor` | Fleet. |
 | `mailai service install\|uninstall\|status` · `mailai update` | Daemon lifecycle (§4). |
