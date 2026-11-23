@@ -224,6 +224,23 @@ and reads it itself.
    the connection that sent the mail: a sender that may not `write` to the
    recipient wakes nothing. `[mail] wake = false` turns it off.
 
+   **Listen (decided 2026-11-23).** Typing at the prompt collides with
+   anything the person left typed there, so a harness that can hand its
+   agent a message takes the wake itself: its add-on keeps
+   `mailai listen` open, and the daemon sends the same line, under the same
+   rules, down that connection instead of typing it. While a listener is
+   open nothing is typed into that agent's pane. An agent no adapter knows
+   is woken through its listener too (its harness holds the line until the
+   agent is free); a `working` or `blocked` one still waits. The daemon
+   knows no harness: anything that keeps `mailai listen` open takes the
+   wakes, and the add-on only carries lines across. `mailai addon pi [DIR]`
+   writes the Pi add-on (it hands each line over as a follow-up message,
+   which starts a turn when Pi is idle and waits for the turn's end when
+   not) with the skill beside it; `pi -e DIR`, or DIR under a project's
+   `.pi/extensions/`, loads it. Without a listener: `mailai wait` (5), or
+   typing as above. Costs the same as a typed wake: nothing while idle, one
+   line per wake.
+
 3. **Reading.** `mailai read` prints each body inside a fence:
 
    ```

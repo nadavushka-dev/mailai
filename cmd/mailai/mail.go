@@ -1,12 +1,17 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
+
+	"github.com/nadavushka-dev/mailai/internal/client"
+	"github.com/nadavushka-dev/mailai/internal/proto"
 
 	"github.com/nadavushka-dev/mailai/internal/daemon"
 	"github.com/nadavushka-dev/mailai/internal/render"
@@ -202,6 +207,50 @@ func cmdWait(args []string) error {
 		return err
 	}
 	return printRead(rr, false)
+}
+
+// cmdListen stays open and prints one line per wake, for a harness add-on
+// to hand its agent (SPEC §7): while it runs nothing is typed into the
+// agent's pane. It outlives daemon restarts; it stops only when the daemon
+// refuses the caller (not an agent).
+func cmdListen(args []string) error {
+	fs := newFlags("listen")
+	parse(fs, args)
+	backoff := []time.Duration{500 * time.Millisecond, time.Second, 2 * time.Second, 3 * time.Second}
+	try, told := 0, false
+	for {
+		c, err := connect()
+		if err == nil {
+			var r daemon.ListenResult
+			err = c.Call("listen", nil, &r)
+			if err != nil && client.Code(err) == proto.CodeBadRequest {
+				c.Close()
+				return err
+			}
+			if err == nil {
+				if told {
+					fmt.Fprintln(os.Stderr, "mailai listen: back")
+				}
+				try, told = 0, false
+				for f := range c.Events() {
+					if f.Event != "listen" {
+						continue
+					}
+					var ev daemon.ListenEvent
+					if json.Unmarshal(f.Data, &ev) == nil && ev.Line != "" {
+						fmt.Println(ev.Line)
+					}
+				}
+			}
+			c.Close()
+		}
+		if !told {
+			fmt.Fprintln(os.Stderr, "mailai listen: the daemon is gone; retrying")
+			told = true
+		}
+		time.Sleep(backoff[min(try, len(backoff)-1)])
+		try++
+	}
 }
 
 func printRead(rr daemon.ReadResult, summary bool) error {

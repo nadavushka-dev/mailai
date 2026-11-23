@@ -23,6 +23,7 @@ mail
   reply <mid> [text]      reply in a thread
   ask <to> <text>         send and wait for the reply; prints the reply alone
   wait [--timeout 10m]    block until mail arrives, then print it (instead of polling unread)
+  listen                  stay open, one line per wake: for a harness add-on (nothing typed meanwhile)
   ask-human <text> -o A   put a question with fixed answers in the person's Inbox
   unread                  how much mail waits: count and senders
   notice                  the one-line notice an agent is given, if any (marks it announced)
@@ -44,6 +45,7 @@ harnesses
   hook <harness> <event>  what an installed hook runs (payload on stdin)
   integration install|uninstall|status [harness...] [--project DIR] [--skill-only]
                           hooks, and the guide as a skill (~/.claude/skills, ~/.agents/skills)
+  addon <harness> [DIR]   a harness add-on that takes the agent's wakes (no typing): pi
   --skill                 the short guide an agent reads to use mailai
 
 daemon
@@ -92,6 +94,10 @@ func main() {
 		err = cmdAsk(args)
 	case "wait":
 		err = cmdWait(args)
+	case "listen":
+		err = cmdListen(args)
+	case "addon":
+		err = cmdAddon(args)
 	case "ask-human":
 		err = cmdAskHuman(args)
 	case "inbox":

@@ -101,7 +101,10 @@ func (d *Daemon) wakeOnce(ctx context.Context) {
 			continue
 		}
 		state, known := d.stateOf(box)
-		if !known || !state.AtRest() {
+		// A listener's harness holds the line until its agent is free, so
+		// an agent no adapter knows is woken through it (listen.go).
+		listened := len(d.listenersOf(box)) > 0
+		if known && !state.AtRest() || !known && !listened {
 			continue
 		}
 		msgs, _ := d.st.Peek(store.PeekQuery{Mailbox: box, Unread: true})
@@ -135,7 +138,9 @@ func (d *Daemon) wakeOnce(ctx context.Context) {
 			continue
 		}
 		line := render.Notice(n, from, "")
-		if err := d.adapter.Type(ctx, box, line); err != nil {
+		if d.tellListeners(box, line) {
+			// Taken by the agent's harness: nothing typed (SPEC §7).
+		} else if err := d.adapter.Type(ctx, box, line); err != nil {
 			// A failed wake waits the spacing too: no retry (or log line)
 			// on every tick. The mail stays unannounced, so it goes later.
 			d.mu.Lock()

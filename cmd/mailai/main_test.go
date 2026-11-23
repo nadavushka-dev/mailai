@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -278,6 +279,75 @@ func TestCLI_WebServedFromTheStart(t *testing.T) {
 	out := e.must("web")
 	if !strings.HasPrefix(out, "https://box.tail0.ts.net/?t=") || !strings.Contains(out, fmt.Sprintf("http://127.0.0.1:%d/?t=", port)) {
 		t.Fatalf("%q", out)
+	}
+}
+
+// `mailai addon pi DIR` writes the Pi add-on (it runs mailai listen and
+// hands each line to Pi) and the skill beside it, for `pi -e DIR`.
+func TestCLI_AddonPiWritesTheAddonAndSkill(t *testing.T) {
+	e := startEnv(t)
+	dir := filepath.Join(t.TempDir(), "pi")
+	out := e.must("addon", "pi", dir)
+	if !strings.Contains(out, "pi -e "+dir) {
+		t.Fatalf("says how to load it: %q", out)
+	}
+	ts, err := os.ReadFile(filepath.Join(dir, "index.ts"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`"listen"`, "sendMessage", `deliverAs: "followUp"`, "triggerTurn: true", "session_shutdown", "resources_discover"} {
+		if !strings.Contains(string(ts), want) {
+			t.Fatalf("add-on lacks %s", want)
+		}
+	}
+	sk, err := os.ReadFile(filepath.Join(dir, "SKILL.md"))
+	if err != nil || !strings.Contains(string(sk), "name: mailai") {
+		t.Fatalf("skill: %v %q", err, sk)
+	}
+	e.must("addon", "pi", dir) // again: idempotent
+	if _, err := e.run("addon", "nope", dir); err == nil {
+		t.Fatal("an unknown harness is refused")
+	}
+}
+
+// SPEC §7 (2026-11-23): `mailai listen` stays open and prints one wake line
+// per wake, for a harness add-on to hand its agent; nothing is typed.
+func TestCLI_ListenPrintsTheWakeLine(t *testing.T) {
+	e := startEnv(t)
+	tok := strings.TrimSpace(strings.SplitN(e.must("token", "new", "builder"), "\n", 2)[0])
+	l := e.cmd("listen")
+	l.Env = append(l.Env, "MAILAI_TOKEN="+tok)
+	out, err := l.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := l.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { l.Process.Kill(); l.Wait() })
+	lines := make(chan string, 4)
+	go func() {
+		sc := bufio.NewScanner(out)
+		for sc.Scan() {
+			lines <- sc.Text()
+		}
+		close(lines)
+	}()
+	time.Sleep(300 * time.Millisecond) // listening before the mail lands
+	e.must("send", "--from", "reviewer", "builder", "the diff is ready")
+	select {
+	case line := <-lines:
+		if !strings.Contains(line, "reviewer") || strings.Contains(line, "diff is ready") {
+			t.Fatalf("wake line %q: names the sender, never the text", line)
+		}
+	case <-time.After(20 * time.Second):
+		t.Fatal("no wake line")
+	}
+	// The line only announces: the mail is still unread.
+	c := e.cmd("unread")
+	c.Env = append(c.Env, "MAILAI_TOKEN="+tok)
+	if o, _ := c.CombinedOutput(); !strings.Contains(string(o), "1") {
+		t.Fatalf("unread after the wake: %q", o)
 	}
 }
 

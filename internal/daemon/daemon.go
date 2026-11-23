@@ -144,6 +144,8 @@ type Daemon struct {
 	waits    map[string][]chan store.Message // thread id -> waiting asks
 	// mailWaits are callers blocked in wait, by mailbox.
 	mailWaits map[store.Address][]chan struct{}
+	// listeners take an agent's wake lines instead of its pane (listen.go).
+	listeners map[store.Address]map[*conn]bool
 	ln        net.Listener
 	wg        sync.WaitGroup
 
@@ -359,6 +361,7 @@ func (d *Daemon) serveConn(nc net.Conn) {
 		delete(d.subs, c)
 		delete(d.live, c)
 		d.mu.Unlock()
+		d.dropListener(c)
 		d.dropLink(c)
 		nc.Close()
 	}()
@@ -616,6 +619,8 @@ func (d *Daemon) handle(c *conn, req proto.Request) (any, error) {
 			return nil, err
 		}
 		return d.queueRm(c, a)
+	case "listen":
+		return d.listen(c)
 	case "subscribe":
 		d.mu.Lock()
 		d.subs[c] = true

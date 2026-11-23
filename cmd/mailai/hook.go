@@ -351,6 +351,34 @@ func asManual(err error, target **harness.ManualError) bool {
 	return ok
 }
 
+// cmdAddon writes a harness's add-on (SPEC §7): `mailai addon pi [DIR]`.
+func cmdAddon(args []string) error {
+	if len(args) == 0 || args[0] == "-h" || args[0] == "--help" {
+		return fmt.Errorf("usage: mailai addon <harness> [DIR]; harnesses: %v", harness.AddonHarnesses())
+	}
+	h := args[0]
+	dir := ""
+	if len(args) > 1 {
+		dir = args[1]
+	} else {
+		p, err := config.DefaultPaths()
+		if err != nil {
+			return err
+		}
+		dir = filepath.Join(p.Data, "addons", h)
+	}
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return err
+	}
+	sk, err := harness.WriteAddon(h, abs)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("%s add-on written to %s (skill %s)\nload it into one session: pi -e %s\n", h, abs, sk, abs)
+	return nil
+}
+
 func cmdSkill(args []string) error {
 	fmt.Print(harness.Skill)
 	return nil
