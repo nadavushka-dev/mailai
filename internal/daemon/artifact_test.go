@@ -260,6 +260,19 @@ func TestWeb_WritesOnlyFromThePageItself(t *testing.T) {
 }
 
 // The page knows how to show artifacts.
+// Parity with the TUI (§12a): G to the last row, gg to the first.
+func TestWeb_PageJumpsWithGAndGG(t *testing.T) {
+	pl := placed()
+	sock, _ := startDaemon(t, pl)
+	cl, base := webClient(t, dial(t, sock))
+	_, page := get(t, cl, base+"/")
+	for _, want := range []string{"e.key === 'G'", "pendingG"} {
+		if !strings.Contains(page, want) {
+			t.Fatalf("page lacks %q", want)
+		}
+	}
+}
+
 func TestWeb_PageShowsArtifacts(t *testing.T) {
 	pl := placed()
 	sock, _ := startDaemon(t, pl)

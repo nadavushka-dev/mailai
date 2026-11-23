@@ -1237,6 +1237,7 @@
     $('#'+id).addEventListener('input', () => { selected = 0; renderList(); if (!openThread) renderDetail(); });
   });
   document.addEventListener('focusout', () => setTimeout(() => { if (render.pending && !typing()) { render.pending = false; render(); } }));
+  let pendingG = false;
   document.addEventListener('keydown', e => {
     if (e.metaKey || e.ctrlKey || e.altKey) return;
     // A picture open on top: only Escape (and Tab) mean anything.
@@ -1258,6 +1259,10 @@
     const data = view === 'inbox' ? visibleItems() : mailRows();
     const cur = current();
     const move = d => { if (!data.length) return; openThread = null; selected = Math.max(0, Math.min(data.length - 1, selected + d)); renderList(); renderDetail(); };
+    // gg: first row; G: last (as in the TUI). A lone g waits 800 ms for the second.
+    const wasG = pendingG; pendingG = false;
+    if (e.key === 'g') { if (wasG) { e.preventDefault(); move(-data.length); } else { pendingG = true; setTimeout(() => { pendingG = false; }, 800); } return; }
+    if (e.key === 'G') { e.preventDefault(); move(data.length); return; }
     if (e.key === 'j' || e.key === 'ArrowDown') { e.preventDefault(); move(1); }
     if (e.key === 'k' || e.key === 'ArrowUp') { e.preventDefault(); move(-1); }
     if (e.key === 'i') go('inbox', false);

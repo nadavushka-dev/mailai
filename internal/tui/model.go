@@ -42,6 +42,8 @@ type Model struct {
 	open    []store.Message
 	openID  string
 	openTop int
+	// pendingG is a first g waiting for the second (gg: to the top).
+	pendingG bool
 	// openItems are the open thread's items, for its one-line notes.
 	openItems []store.Item
 
@@ -380,7 +382,28 @@ func parseMailFilter(s string) (who, session, machine string) {
 }
 
 func (m Model) updateKeys(k tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// gg: a g waits for the next key; anything else cancels it.
+	pendingG := m.pendingG
+	m.pendingG = false
 	switch k.String() {
+	case "g":
+		if !pendingG {
+			m.pendingG = true
+			return m, nil
+		}
+		if m.open != nil {
+			m.openTop = 0
+		} else {
+			m.cursor = 0
+		}
+		return m, nil
+	case "G":
+		if m.open != nil {
+			m.openTop = m.maxOpenTop()
+		} else if n := m.rows(); n > 0 {
+			m.cursor = n - 1
+		}
+		return m, nil
 	case "q", "ctrl+c":
 		return m, tea.Quit
 	case "i":
@@ -399,7 +422,9 @@ func (m Model) updateKeys(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "j", "down":
 		if m.open != nil {
-			m.openTop++
+			if m.openTop < m.maxOpenTop() {
+				m.openTop++
+			}
 			return m, nil
 		}
 		if m.cursor < m.rows()-1 {

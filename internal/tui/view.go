@@ -25,18 +25,10 @@ func (m Model) View() string {
 	if m.width == 0 {
 		return "starting…"
 	}
-	w, h := m.width, m.height
+	w := m.width
 	header := m.header(w)
 	footer := m.footer(w)
-	bodyH := h - 3 // header, footer, status
-	if bodyH < 6 {
-		bodyH = 6
-	}
-	listW := w * 55 / 100
-	if w < 90 {
-		listW = w
-	}
-	detailW := w - listW
+	listW, detailW, bodyH := m.layout()
 	var body string
 	if detailW < 30 {
 		body = box(m.listTitle(), m.listBody(listW-2, bodyH-2), listW, bodyH, m.open == nil)
@@ -94,7 +86,7 @@ func (m Model) footer(w int) string {
 	var parts []string
 	switch {
 	case m.open != nil:
-		parts = []string{key("r", "reply"), key("j/k", "scroll"), key("esc", "back"), key("o", "oldest")}
+		parts = []string{key("r", "reply"), key("j/k", "scroll"), key("gg/G", "top/end"), key("esc", "back"), key("o", "oldest")}
 	case m.view == ViewInbox:
 		parts = []string{key("enter", "open"), key("r", "answer"), key("1-8", "pick"), key("a", "allow"), key("d", "deny"), key("x", "dismiss"), key("A", "all"), key("o", "oldest")}
 	default:
@@ -407,7 +399,45 @@ func fileSize(n int64) string {
 	return fmt.Sprintf("%.1f MB", float64(n)/(1<<20))
 }
 
+// layout is the width of the list and detail boxes and the body's height.
+func (m Model) layout() (listW, detailW, bodyH int) {
+	w, h := m.width, m.height
+	bodyH = h - 3 // header, footer, status
+	if bodyH < 6 {
+		bodyH = 6
+	}
+	listW = w * 55 / 100
+	if w < 90 {
+		listW = w
+	}
+	return listW, w - listW, bodyH
+}
+
+// maxOpenTop is how far the open thread scrolls: its last line at the
+// bottom of the box (G).
+func (m Model) maxOpenTop() int {
+	_, detailW, bodyH := m.layout()
+	return max(0, len(m.threadLines(detailW-2))-(bodyH-2))
+}
+
 func (m Model) threadBody(w, h int) string {
+	lines := m.threadLines(w)
+	top := m.openTop
+	if top > len(lines)-h {
+		top = len(lines) - h
+	}
+	if top < 0 {
+		top = 0
+	}
+	end := top + h
+	if end > len(lines) {
+		end = len(lines)
+	}
+	return strings.Join(lines[top:end], "\n")
+}
+
+// threadLines is the open thread drawn at width w, before scrolling.
+func (m Model) threadLines(w int) []string {
 	var lines []string
 	nfile := 0
 	for _, x := range m.open {
@@ -448,18 +478,7 @@ func (m Model) threadBody(w, h int) string {
 			lines = append(lines, styleDim.Render(fmt.Sprintf("── #%d maybe answered in the session at %s", it.ID, clock(it.MaybeInSessionAt))))
 		}
 	}
-	top := m.openTop
-	if top > len(lines)-h {
-		top = len(lines) - h
-	}
-	if top < 0 {
-		top = 0
-	}
-	end := top + h
-	if end > len(lines) {
-		end = len(lines)
-	}
-	return strings.Join(lines[top:end], "\n")
+	return lines
 }
 
 func oneLine(s string) string {
