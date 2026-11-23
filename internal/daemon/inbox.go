@@ -19,7 +19,10 @@ type AskHumanArgs struct {
 	// NoWait returns at once with the item; the answer arrives as mail.
 	NoWait bool `json:"no_wait,omitempty"`
 	// WaitFor resumes waiting on an earlier ask-human by its item id.
-	WaitFor   uint64 `json:"wait_for,omitempty"`
+	WaitFor uint64 `json:"wait_for,omitempty"`
+	// Replaces withdraws the asker's own open question #Replaces as this
+	// one opens (SPEC §7a).
+	Replaces  uint64 `json:"replaces,omitempty"`
 	TimeoutMS int64  `json:"timeout_ms,omitempty"`
 	// Attachments are files for the person to look at: references, shown
 	// on the Inbox item (SPEC §6).
@@ -84,6 +87,9 @@ func (d *Daemon) askHuman(c *conn, a AskHumanArgs) (any, error) {
 		if len(a.Attachments) > 0 {
 			return nil, proto.Errorf(proto.CodeBadRequest, "attachments do not cross machines yet")
 		}
+		if a.Replaces != 0 {
+			return nil, proto.Errorf(proto.CodeBadRequest, "--replaces from a spoke comes later; ask without it")
+		}
 		return d.askHumanRemote(c.gone, from, a)
 	}
 	timeout := time.Duration(a.TimeoutMS) * time.Millisecond
@@ -105,6 +111,12 @@ func (d *Daemon) askHuman(c *conn, a AskHumanArgs) (any, error) {
 		atts, err := d.prepareAttachments(a.Attachments)
 		if err != nil {
 			return nil, err
+		}
+		if a.Replaces != 0 {
+			if err := d.withdrawable(from, a.Replaces); err != nil {
+				return nil, err
+			}
+			d.closeWithdrawn(a.Replaces)
 		}
 		if err := d.checkAsk(from, store.Human); err != nil {
 			return nil, err
@@ -162,9 +174,15 @@ func validAskHuman(a AskHumanArgs) error {
 	return nil
 }
 
-// waitReply waits for the answer; when gone closes first, the item closes
-// as answered in the session.
+// waitReply waits for the answer; when gone closes first, the ask dropped
+// (withdrawn, or answered in the session if the person types there next,
+// §7a); when the asker withdraws the item, the wait ends.
 func (d *Daemon) waitReply(ch chan store.Message, from store.Address, item store.Item, timeout time.Duration, gone <-chan struct{}) (any, error) {
+	withdrawn, unwatch := d.watchItem(item.ID)
+	defer unwatch()
+	if it, _ := d.st.Item(item.ID); it.ClosedBy == store.ClosedWithdrawn {
+		return nil, proto.Errorf(proto.CodeNotFound, "#%d was withdrawn", item.ID)
+	}
 	var timer <-chan time.Time
 	if timeout > 0 {
 		t := time.NewTimer(timeout)
@@ -180,8 +198,10 @@ func (d *Daemon) waitReply(ch chan store.Message, from store.Address, item store
 			}
 		case <-timer:
 			return nil, proto.Errorf(proto.CodeTimeout, "no answer yet; come back with --wait-for %d", item.ID)
+		case <-withdrawn:
+			return nil, proto.Errorf(proto.CodeNotFound, "#%d was withdrawn", item.ID)
 		case <-gone:
-			d.closeInSession(item.ID)
+			d.askDropped(item.ID, from)
 			return nil, errClientGone
 		}
 	}

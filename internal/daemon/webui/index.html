@@ -682,6 +682,7 @@
     if (it.closed_by === 'dismissed') return sup ? 'dismissed by ' + it.decided_by : 'dismissed';
     if (it.closed_by === 'timeout') return 'timed out';
     if (it.closed_by === 'resolved') return 'agent moved on';
+    if (it.closed_by === 'withdrawn') return 'withdrawn by ' + it.from;
     return it.closed_by || 'closed';
   };
   const maybeBadge = `<span class="badge maybe">${icon('maybe')}maybe answered in session</span>`;
@@ -941,6 +942,7 @@
     // One-line notes from the thread's items, never stored messages (§7a).
     const notes = (thItems || []).map(it =>
       it.closed_by === 'in_session' ? `<p class="sysnote">${icon('term')}#${it.id} answered in the session at ${hhmm(it.closed_at)}</p>`
+      : it.closed_by === 'withdrawn' ? `<p class="sysnote">${icon('x')}#${it.id} withdrawn by ${esc(it.from)} at ${hhmm(it.closed_at)}</p>`
       : (!it.closed_at && it.maybe_in_session_at) ? `<p class="sysnote maybe">${icon('maybe')}#${it.id} maybe answered in the session at ${hhmm(it.maybe_in_session_at)}</p>` : '').join('');
     return msgs + notes;
   }

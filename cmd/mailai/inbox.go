@@ -23,6 +23,7 @@ func cmdAskHuman(args []string) error {
 	timeout := fs.Duration("timeout", 0, "give up after this long (exit 2); forever by default")
 	var attach stringList
 	fs.Var(&attach, "attach", "a file for the person to look at (repeatable); a reference, not a copy")
+	replaces := fs.Uint64("replaces", 0, "withdraw your earlier open question #N as this one opens")
 	rest := parse(fs, args)
 	atts, err := attachments(attach)
 	if err != nil {
@@ -43,7 +44,7 @@ func cmdAskHuman(args []string) error {
 	defer c.Close()
 	var r daemon.AskHumanResult
 	err = c.Call("ask-human", daemon.AskHumanArgs{From: store.Address(*from), Subject: *subject, Text: text, Options: opts,
-		NoWait: *noWait, WaitFor: *waitFor, TimeoutMS: timeout.Milliseconds(), Attachments: atts}, &r)
+		NoWait: *noWait, WaitFor: *waitFor, TimeoutMS: timeout.Milliseconds(), Attachments: atts, Replaces: *replaces}, &r)
 	if err != nil {
 		return err
 	}
@@ -55,6 +56,10 @@ func cmdAskHuman(args []string) error {
 		return nil
 	}
 	if r.Reply == nil {
+		if *replaces != 0 {
+			fmt.Printf("asked as item #%d (replaces #%d, now withdrawn); come back with: mailai ask-human --wait-for %d\n", r.Item.ID, *replaces, r.Item.ID)
+			return nil
+		}
 		fmt.Printf("asked as item #%d; come back with: mailai ask-human --wait-for %d\n", r.Item.ID, r.Item.ID)
 		return nil
 	}
@@ -167,6 +172,33 @@ func cmdDismiss(args []string) error {
 		return printJSON(r)
 	}
 	fmt.Printf("dismissed #%d\n", id)
+	return nil
+}
+
+// cmdWithdraw: an agent takes back its own open question (SPEC §7a).
+func cmdWithdraw(args []string) error {
+	fs := newFlags("withdraw")
+	rest := parse(fs, args)
+	if len(rest) != 1 {
+		return fmt.Errorf("usage: mailai withdraw <item>")
+	}
+	id, err := strconv.ParseUint(strings.TrimPrefix(rest[0], "#"), 10, 64)
+	if err != nil {
+		return fmt.Errorf("item id must be a number, got %q", rest[0])
+	}
+	c, err := connect()
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+	var r daemon.WithdrawResult
+	if err := c.Call("withdraw", daemon.WithdrawArgs{Item: id}, &r); err != nil {
+		return err
+	}
+	if jsonOut {
+		return printJSON(r)
+	}
+	fmt.Printf("withdrew #%d\n", id)
 	return nil
 }
 

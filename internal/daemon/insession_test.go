@@ -49,8 +49,9 @@ func rawDialAs(t *testing.T, sock string, principal store.Address) *client.Clien
 	return c
 }
 
-// The person pressed Esc in the harness and answered in the pane: the
-// blocking ask-human CLI died with its connection, so the item closes.
+// The blocking ask-human CLI died with its connection, so the item closes:
+// withdrawn, since nobody typed in the session afterwards (decided
+// 2026-11-23; withdraw_test.go has the in_session case).
 func TestInSession_AskHumanClientGoneClosesItem(t *testing.T) {
 	pl := placed(Placement{Proof: store.ProofToken, Principal: "worker"})
 	sock, d := startDaemon(t, pl)
@@ -61,7 +62,7 @@ func TestInSession_AskHumanClientGoneClosesItem(t *testing.T) {
 	waitOpen(t, d, "worker", 1)
 	worker.Close()
 	it := waitClosed(t, person, items.Items[0].ID)
-	if it.ClosedBy != store.ClosedInSession || it.Answer != "" {
+	if it.ClosedBy != store.ClosedWithdrawn || it.Answer != "" {
 		t.Fatalf("%+v", it)
 	}
 	waitOpen(t, d, "worker", 0)
@@ -76,7 +77,7 @@ func TestInSession_AskToHumanClientGoneClosesItem(t *testing.T) {
 	go worker.Call("ask", AskArgs{To: "human", Text: "free text?"}, nil)
 	items := waitItems(t, person, 1)
 	worker.Close()
-	if it := waitClosed(t, person, items.Items[0].ID); it.ClosedBy != store.ClosedInSession {
+	if it := waitClosed(t, person, items.Items[0].ID); it.ClosedBy != store.ClosedWithdrawn {
 		t.Fatalf("%+v", it)
 	}
 	waitOpen(t, d, "worker", 0)
@@ -320,7 +321,7 @@ func TestInSession_RecentlyClosedListing(t *testing.T) {
 	if len(r.Items) != 3 || r.Items[0].ID != b || r.Items[1].ID != c || r.Items[2].ID != a {
 		t.Fatalf("%+v", r.Items)
 	}
-	if r.Items[0].ClosedBy != "dismissed" || r.Items[0].DecidedBy != "human" || r.Items[1].ClosedBy != store.ClosedInSession || r.Items[2].ClosedBy != "answered" || r.Items[2].DecidedBy != "human" {
+	if r.Items[0].ClosedBy != "dismissed" || r.Items[0].DecidedBy != "human" || r.Items[1].ClosedBy != store.ClosedWithdrawn || r.Items[2].ClosedBy != "answered" || r.Items[2].DecidedBy != "human" {
 		t.Fatalf("%+v", r.Items)
 	}
 	_ = open
@@ -342,7 +343,7 @@ func TestStar_SpokeAskHumanClientGoneWithdrawsItem(t *testing.T) {
 	items := waitItems(t, person, 1)
 	waitOpen(t, s.spoke, "worker", 1)
 	worker.Close()
-	if it := waitClosed(t, person, items.Items[0].ID); it.ClosedBy != store.ClosedInSession || it.From != "worker@s2" {
+	if it := waitClosed(t, person, items.Items[0].ID); it.ClosedBy != store.ClosedWithdrawn || it.From != "worker@s2" {
 		t.Fatalf("%+v", it)
 	}
 	waitOpen(t, s.spoke, "worker", 0)
@@ -351,7 +352,7 @@ func TestStar_SpokeAskHumanClientGoneWithdrawsItem(t *testing.T) {
 	go w3.Call("ask", AskArgs{To: "human", Text: "free text?"}, nil)
 	items = waitItems(t, person, 1)
 	w3.Close()
-	if it := waitClosed(t, person, items.Items[0].ID); it.ClosedBy != store.ClosedInSession || it.Kind != store.ItemAsk {
+	if it := waitClosed(t, person, items.Items[0].ID); it.ClosedBy != store.ClosedWithdrawn || it.Kind != store.ItemAsk {
 		t.Fatalf("%+v", it)
 	}
 	// --no-wait from the spoke outlives its connection.
@@ -443,7 +444,7 @@ func TestStar_LinkCannotWithdrawAnotherMachinesItem(t *testing.T) {
 	if err := l3.Call("link-withdraw", LinkWithdrawArgs{MID: on3.Message.MID}, nil); err != nil {
 		t.Fatal(err)
 	}
-	if it := itemByID(t, person, on3.Item.ID); it.ClosedBy != store.ClosedInSession {
+	if it := itemByID(t, person, on3.Item.ID); it.ClosedBy != store.ClosedWithdrawn {
 		t.Fatalf("%+v", it)
 	}
 }

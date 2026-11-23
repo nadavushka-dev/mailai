@@ -302,6 +302,37 @@ func TestCLI_InboxSaysWhenYouAreNotThePerson(t *testing.T) {
 
 // An agent attaches files to a question for the person, by a path relative
 // to where it runs; the item carries the absolute reference.
+// SPEC §7a (2026-11-23): an agent takes back its own question with
+// withdraw, or asks again with --replaces.
+func TestCLI_WithdrawAndReplaces(t *testing.T) {
+	e := startEnv(t)
+	tok := strings.TrimSpace(strings.SplitN(e.must("token", "new", "builder"), "\n", 2)[0])
+	agent := func(args ...string) (string, error) {
+		c := e.cmd(args...)
+		c.Env = append(c.Env, "MAILAI_TOKEN="+tok)
+		out, err := c.CombinedOutput()
+		return string(out), err
+	}
+	for _, q := range []string{"Layout ok?", "Euro or dollar?"} {
+		if out, err := agent("ask-human", "--no-wait", q); err != nil {
+			t.Fatalf("%v\n%s", err, out)
+		}
+	}
+	if out, err := agent("withdraw", "#2"); err != nil || !strings.Contains(out, "withdrew #2") {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	if out, err := agent("ask-human", "--no-wait", "--replaces", "1", "Layout ok? (file attached)"); err != nil || !strings.Contains(out, "replaces #1") {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	all := e.must("inbox", "--all")
+	if strings.Count(all, "(withdrawn)") != 2 || !strings.Contains(all, "#3") {
+		t.Fatalf("%s", all)
+	}
+	if out, err := agent("withdraw", "2"); err == nil {
+		t.Fatalf("withdrew twice: %s", out)
+	}
+}
+
 func TestCLI_AskHumanAttachesRelativePaths(t *testing.T) {
 	e := startEnv(t)
 	dir := t.TempDir()

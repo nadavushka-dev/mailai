@@ -37,6 +37,7 @@ inbox (the person)
   inbox                   everything waiting on you
   answer <item> <text>    answer an item; closes it
   dismiss <item>          close an item without an answer
+  withdraw <item>         take back your own open question (an agent)
   grant <agent> <rights>  make a supervisor: read,respond over --scope (person; holders delegate narrower)
 
 harnesses
@@ -99,6 +100,8 @@ func main() {
 		err = cmdAnswer(args)
 	case "dismiss":
 		err = cmdDismiss(args)
+	case "withdraw":
+		err = cmdWithdraw(args)
 	case "unread":
 		err = cmdUnread(args)
 	case "notice":

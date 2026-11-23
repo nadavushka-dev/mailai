@@ -64,20 +64,26 @@ func (d *Daemon) refreshAgents(ctx context.Context) {
 		d.log.Printf("adapter %s: %v", d.adapter.Name(), err)
 		return
 	}
-	for _, p := range d.mergeAgents(list) {
+	resumed, started := d.mergeAgents(list)
+	for _, p := range resumed {
 		// Blocked -> working with an ask open: maybe answered in the
 		// session (SPEC §7a).
 		d.markMaybe(p)
 	}
+	for _, p := range started {
+		// At rest -> working: the person typed there; an ask it dropped
+		// just before was answered in the session.
+		d.sessionTyped(p)
+	}
 }
 
 // mergeAgents folds an adapter snapshot into the registry and returns the
-// agents it saw go from blocked to working.
-func (d *Daemon) mergeAgents(list []adapter.Agent) []store.Address {
+// agents it saw go from blocked to working, and from rest (idle, done or
+// blocked) to working.
+func (d *Daemon) mergeAgents(list []adapter.Agent) (resumed, started []store.Address) {
 	now := d.now().UnixNano()
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	var resumed []store.Address
 	seen := map[store.Address]bool{}
 	for _, a := range list {
 		seen[a.Principal] = true
@@ -97,6 +103,9 @@ func (d *Daemon) mergeAgents(list []adapter.Agent) []store.Address {
 		if rec.State == adapter.Blocked && a.State == adapter.Working {
 			resumed = append(resumed, a.Principal)
 		}
+		if (rec.State.AtRest() || rec.State == adapter.Blocked) && a.State == adapter.Working {
+			started = append(started, a.Principal)
+		}
 		hookHarness := rec.Harness
 		rec.Agent = a
 		if a.Harness == "" {
@@ -114,7 +123,7 @@ func (d *Daemon) mergeAgents(list []adapter.Agent) []store.Address {
 			delete(d.agents.byName, name)
 		}
 	}
-	return resumed
+	return resumed, started
 }
 
 // reportState records what a hook says about the calling agent. The

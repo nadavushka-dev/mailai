@@ -17,6 +17,11 @@ type ItemKind string
 // agent's own session instead of the Inbox (SPEC §7a).
 const ClosedInSession = "in_session"
 
+// ClosedWithdrawn is how an item closes when its asker took it back: with
+// withdraw or ask-human --replaces, or by dropping its blocking ask with no
+// sign the person answered in the session (SPEC §7a).
+const ClosedWithdrawn = "withdrawn"
+
 const (
 	ItemAsk      ItemKind = "ask"       // an ask addressed to human
 	ItemAskHuman ItemKind = "ask_human" // ask-human: a question with fixed answers
@@ -40,7 +45,8 @@ type Item struct {
 	ClosedAt int64    `json:"closed_at,omitempty"`
 	// ClosedBy says how: "answered", "dismissed", "resolved" (the agent
 	// moved on), "timeout" (an approval nobody decided), "in_session" (the
-	// person answered in the agent's own session, §7a).
+	// person answered in the agent's own session, §7a), "withdrawn" (the
+	// asker took it back).
 	ClosedBy string `json:"closed_by,omitempty"`
 	// MaybeInSessionAt is set on an open ask when the agent moved on in a way
 	// that suggests the person answered in its session (§7a). The item stays
@@ -185,6 +191,24 @@ func (s *Store) closeItem(id uint64, by, answer, decidedBy string) (Item, error)
 		return Item{}, err
 	}
 	return *it, nil
+}
+
+// Relabel changes how a closed item closed, from one way to another, and
+// returns it; false when it is not closed that way (§7a: a withdrawn ask
+// turns out answered in the session).
+func (s *Store) Relabel(id uint64, from, to string) (Item, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	it, ok := s.att.items[id]
+	if !ok || it.ClosedAt == 0 || it.ClosedBy != from {
+		return Item{}, false
+	}
+	it.ClosedBy = to
+	if err := s.att.put(it); err != nil {
+		it.ClosedBy = from
+		return Item{}, false
+	}
+	return *it, true
 }
 
 // MarkMaybeInSession stamps the open asks of from (ask and ask_human, not

@@ -327,6 +327,8 @@ func (m Model) detailBody(w, h int) string {
 		if it.ClosedAt != 0 {
 			if it.ClosedBy == store.ClosedInSession {
 				row("closed", "answered in the session at "+clock(it.ClosedAt))
+			} else if it.ClosedBy == store.ClosedWithdrawn {
+				row("closed", fmt.Sprintf("withdrawn by %s at %s", it.From, clock(it.ClosedAt)))
 			} else {
 				who := it.DecidedBy
 				if who == "" {
@@ -475,6 +477,8 @@ func (m Model) threadLines(w int) []string {
 		switch {
 		case it.ClosedBy == store.ClosedInSession:
 			lines = append(lines, styleDim.Render(fmt.Sprintf("── #%d answered in the session at %s", it.ID, clock(it.ClosedAt))))
+		case it.ClosedBy == store.ClosedWithdrawn:
+			lines = append(lines, styleDim.Render(fmt.Sprintf("── #%d withdrawn by %s at %s", it.ID, it.From, clock(it.ClosedAt))))
 		case it.ClosedAt == 0 && it.MaybeInSessionAt != 0:
 			lines = append(lines, styleDim.Render(fmt.Sprintf("── #%d maybe answered in the session at %s", it.ID, clock(it.MaybeInSessionAt))))
 		}

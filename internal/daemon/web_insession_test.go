@@ -29,7 +29,9 @@ func TestWeb_InSessionStripBadgeAndThreadNote(t *testing.T) {
 		t.Fatal(err)
 	}
 	body, _ := readAll(r)
-	for _, need := range []string{`id="recent"`, `id="recent-list"`, `maybe answered in session`, `class="sysnote"`, `answered in the session at`} {
+	for _, need := range []string{`id="recent"`, `id="recent-list"`, `maybe answered in session`, `class="sysnote"`, `answered in the session at`,
+		// A question its agent took back (2026-11-23).
+		`closed_by === 'withdrawn'`, `withdrawn by `} {
 		if !strings.Contains(body, need) {
 			t.Fatalf("page missing %s", need)
 		}

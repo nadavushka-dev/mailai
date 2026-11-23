@@ -76,6 +76,10 @@ type Options struct {
 	// it and writes from that origin are the page's own. WebSessions is the
 	// file logins are kept in across restarts (hashes only); WebSessionTTL
 	// how long one lasts (12 h).
+	// InSessionWindow is how long after a dropped ask the person's typing in
+	// that session means they answered it there (§7a, 2 min).
+	InSessionWindow time.Duration
+
 	WebPort       int
 	WebURL        string
 	WebSessions   string
@@ -97,6 +101,12 @@ type Daemon struct {
 	alerts  *alerter
 	// notifier is the same notifier, for a login link (mailai web --notify).
 	notifier notify.Notifier
+	// drops are asks withdrawn by a dropped connection, per asker, for the
+	// in-session window; itemWaits end a blocking ask when its item is
+	// withdrawn (§7a). Under mu.
+	drops           map[store.Address][]dropped
+	itemWaits       map[uint64][]chan struct{}
+	inSessionWindow time.Duration
 
 	agents    *agents
 	web       webState
@@ -203,6 +213,10 @@ func New(o Options) *Daemon {
 		d.alerts = newAlerter(o.Notifier, o.NotifyEvery, d.itemIsOpen)
 	}
 	d.notifier = o.Notifier
+	d.inSessionWindow = o.InSessionWindow
+	if d.inSessionWindow == 0 {
+		d.inSessionWindow = DefaultInSessionWindow
+	}
 	d.web.port, d.web.url, d.web.file, d.web.ttl = o.WebPort, strings.TrimRight(o.WebURL, "/"), o.WebSessions, o.WebSessionTTL
 	if d.web.ttl == 0 {
 		d.web.ttl = webSessionTTL
@@ -535,6 +549,12 @@ func (d *Daemon) handle(c *conn, req proto.Request) (any, error) {
 			return nil, err
 		}
 		return d.dismiss(c, a)
+	case "withdraw":
+		a, err := decode[WithdrawArgs](req.Args)
+		if err != nil {
+			return nil, err
+		}
+		return d.withdraw(c, a)
 	case "threads":
 		return d.threads(c)
 	case "web-start", "web-stop", "web-revoke":

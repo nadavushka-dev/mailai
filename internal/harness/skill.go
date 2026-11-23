@@ -19,6 +19,8 @@ Ask and wait for the answer (you spend nothing while waiting):
          Pass --timeout shorter than your tool's own limit (e.g. --timeout 100s);
          on timeout it prints the item: resume with mailai ask-human --wait-for <id>.
          Options are at most 40 characters each.
+         Take a question back: mailai withdraw <id>; or ask again with
+         --replaces <id>. A waiting ask: never kill it, withdraw it.
 Show the person a file (screenshot, report, log, diff): --attach path on send or
          ask-human. It is a reference, not a copy: they see the file as it is when
          they open it, so do not delete it or overwrite it while it matters.

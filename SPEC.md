@@ -278,12 +278,25 @@ The person sometimes answers an agent in its own pane instead of the
 Inbox. mailai cannot see that answer, only its traces; it says what it
 knows, and tells the agent nothing (D12).
 
+- **A dropped ask is withdrawn (decided 2026-11-23).** The connection of a
+  blocking `ask human` or `ask-human` closes before a reply: the item
+  closes `closed_by: withdrawn`. It becomes `in_session` only if the
+  person then types in that agent's session within 2 minutes: a `prompt`
+  from its hook, or with Herdr the agent going from rest (idle, done,
+  blocked) to working. Esc-and-answer kills the ask first and types
+  second; an agent that cancels its own ask (found on UbCl: it stopped its
+  waiting ask to re-ask with a file) does so mid-turn, with nobody typing
+  after. Only that blocking connection counts: a `--no-wait` item, or one
+  waited on with `--wait-for`, stays open. An ask to another agent has no
+  item; its ask-graph edge is released.
+- **Withdraw.** `mailai withdraw <id>` takes back the caller's own open
+  question (ask or ask-human), nobody else's; the person dismisses
+  instead. `ask-human --replaces <id>` withdraws the caller's own open
+  question as the new one opens. A blocking ask still waiting on a
+  withdrawn question ends (`not_found: #N was withdrawn`). The person sees
+  "withdrawn by <asker>" in the strip, the detail and a thread note. Both
+  are refused on a spoke for now (they come with v0.1).
 - **Certain: the item closes, `closed_by: in_session`.**
-  - The connection of a blocking `ask human` or `ask-human` closes before
-    a reply: the person pressed Esc in the harness and answered there,
-    which killed the CLI. Only that blocking connection counts: a
-    `--no-wait` item, or one waited on with `--wait-for`, stays open. An
-    ask to another agent has no item; its ask-graph edge is released.
   - A held approval of agent X while X's hooks say the tool ran
     (`tool_ran` for the same tool) or the turn ended (`turn_ended`), or
     the holding hook's connection closes: the person answered the
@@ -313,9 +326,12 @@ knows, and tells the agent nothing (D12).
   ended or hook died, the spoke sends `link-withdraw {mid}` or
   `link-withdraw {from, tool}` (retried while the link is down, up to an
   hour). The inbox machine accepts it only for items whose asker is
-  `name@<that link's machine>`. A likely mark is not relayed in v1.
+  `name@<that link's machine>`. A likely mark is not relayed in v1; a
+  spoke's dropped ask closes withdrawn there, and typing afterwards is not
+  relayed either.
 - **Known limit.** A harness that kills a blocking `ask-human` on its own
-  tool timeout looks like Esc and closes the item `in_session`; an agent
+  tool timeout closes the item `withdrawn` (`in_session` if the person
+  types there within the window); an agent
   that may wait longer than its tool timeout uses `--timeout` below it, or
   `--no-wait`; a timed-out ask-human leaves its item open and resumes with
   `--wait-for <id>` (on a spoke too). The skill text says so. An ask still
@@ -506,7 +522,7 @@ CLI (every command takes `--json`):
 |---|---|
 | `mailai send <to> [text] [--subject S] [--reply-to MID] [--attach PATH]… [--select SEL]` | Leave a message. Text from stdin when omitted. |
 | `mailai read [--unread] [--peek] [--summary] [--thread MID] [--from P] [-w PRINCIPAL]` | Read, inside the fence. `--summary` prints one line per message (id, sender, proof, subject) so an agent triages before paying for bodies. |
-| `mailai ask <to> <text> [--timeout MS]` · `mailai ask-human <text> -o A -o B [--no-wait] [--attach PATH]…` | Send and wait. |
+| `mailai ask <to> <text> [--timeout MS]` · `mailai ask-human <text> -o A -o B [--no-wait] [--attach PATH]… [--replaces ID]` · `mailai withdraw <item>` | Send and wait; take a question back (§7a). |
 | `mailai wait [--timeout D] [-w PRINCIPAL]` | Block until mail arrives, then print it (§7 point 5). |
 | `mailai reply <mid> [text]` | Reply in a thread. |
 | `mailai queue <to> <text>` · `queue ls` · `queue rm` | Typed when the agent comes to rest. |

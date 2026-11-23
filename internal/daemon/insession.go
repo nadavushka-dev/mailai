@@ -19,6 +19,9 @@ import (
 //     let go with no decision so the harness keeps what the person chose.
 // What is only likely (a new prompt, or Herdr's blocked -> working while an
 // ask is open) marks the item maybe_in_session_at and leaves it open.
+// Decided 2026-11-23: a dropped blocking ask is not proof on its own; it is
+// withdrawn, and in_session only if the person types there next
+// (withdraw.go).
 // Nothing here reaches an agent's context (D12).
 
 // Signals a harness hook reports with its state, mapped from the harness's
@@ -45,7 +48,8 @@ const MaybeBadge = "maybe answered in session"
 const InSessionBadge = "answered in session"
 
 // ClosedHow says in a few words how an item closed, for the person: by you,
-// by supervisor:<name>, in session, dismissed, timeout.
+// by supervisor:<name>, in session, withdrawn by <asker>, dismissed,
+// timeout.
 func ClosedHow(it store.Item) string {
 	super := strings.HasPrefix(it.DecidedBy, "supervisor:")
 	switch it.ClosedBy {
@@ -53,6 +57,8 @@ func ClosedHow(it store.Item) string {
 		return ""
 	case store.ClosedInSession:
 		return "in session"
+	case store.ClosedWithdrawn:
+		return "withdrawn by " + string(it.From)
 	case "answered":
 		if super {
 			return "by " + it.DecidedBy
@@ -141,6 +147,7 @@ func (d *Daemon) onSignal(who store.Address, signal, tool string) {
 	switch signal {
 	case SignalPrompt:
 		d.markMaybe(who)
+		d.sessionTyped(who)
 	case SignalToolRan:
 		if tool != "" {
 			d.sessionAnswered(who, tool)
@@ -252,7 +259,9 @@ func (d *Daemon) linkWithdraw(c *conn, a LinkWithdrawArgs) (any, error) {
 		if it.ClosedAt != 0 {
 			return LinkWithdrawResult{}, nil
 		}
-		if _, ok := d.closeInSession(it.ID); ok {
+		// The spoke's blocking ask dropped: withdrawn. Typing in that
+		// session afterwards is seen on the spoke and not relayed (v1).
+		if _, ok := d.closeWithdrawn(it.ID); ok {
 			return LinkWithdrawResult{Closed: 1}, nil
 		}
 		return LinkWithdrawResult{}, nil

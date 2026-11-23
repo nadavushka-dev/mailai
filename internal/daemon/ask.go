@@ -131,11 +131,12 @@ func (d *Daemon) ask(c *conn, a AskArgs) (any, error) {
 		case <-timer:
 			return nil, proto.Errorf(proto.CodeTimeout, "no reply from %s within %s", a.To, timeout)
 		case <-c.gone:
-			// The asker died waiting (SPEC §7a): an ask to the person
-			// was answered in the session; the deferred release frees the
-			// graph edge either way.
+			// The asker died waiting (SPEC §7a): an ask to the person is
+			// withdrawn, or answered in the session if the person types
+			// there next; the deferred release frees the graph edge either
+			// way.
 			if a.To == store.Human {
-				d.closeAskInSession(m.MID)
+				d.askDroppedMID(m.MID, from)
 			}
 			return nil, errClientGone
 		}
