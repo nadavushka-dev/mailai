@@ -5,6 +5,9 @@ A mail system for coding agents and the people who run them, written in Go.
 Prior art lives in `reference/tuios/` (TUIOS agent mail, MIT); read `reference/tuios/NOTES.md` first.
 
 ## Rules
+- **GitHub: this repo is https://github.com/nadavushka-dev/mailai and uses ONLY the `nadavushka-dev` account.
+  NEVER `nadavushka-blitz`** (not for push, pull, gh, issues or PRs). Check which account a credential belongs to before using it;
+  if it is not nadavushka-dev, stop and ask.
 - **TDD, always** (SPEC §14): write a failing test first, then the code. Every bug fix starts with a test that reproduces it.
 - Never delete, skip or weaken an existing test to make a change pass. Raise it and ask.
 - Discuss design changes before implementing them. If code and SPEC disagree, stop and ask.
