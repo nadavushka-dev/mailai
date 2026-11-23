@@ -72,6 +72,13 @@ type Model struct {
 	scope mailScope
 	// opener shows a file with the system viewer; systemOpen by default.
 	opener func(path string) error
+
+	// offline is set while the daemon is away (a restart): the TUI keeps
+	// what it shows and redials, redials being the tries so far. gen counts
+	// connections, so the end of an old one's events is not a new loss.
+	offline bool
+	redials int
+	gen     int
 }
 
 type mailScope int
@@ -114,7 +121,20 @@ type (
 		items []store.Item
 		err   error
 	}
-	eventMsg  struct{ f proto.Frame }
+	eventMsg struct {
+		f   proto.Frame
+		ch  <-chan proto.Frame
+		gen int
+	}
+	// lostMsg: the events of connection gen ended.
+	lostMsg struct{ gen int }
+	// redialMsg: time to try the daemon again.
+	redialMsg struct{}
+	// redialedMsg is how a try went, with who the daemon says this is.
+	redialedMsg struct {
+		who daemon.WhoamiResult
+		err error
+	}
 	actionMsg struct{ err error }
 	fileMsg   struct {
 		path string
@@ -169,12 +189,44 @@ func (m Model) listen() tea.Cmd {
 	if ch == nil {
 		return nil
 	}
+	return listenOn(ch, m.gen)
+}
+
+// listenOn waits for the next event; the stream ending is the connection
+// ending.
+func listenOn(ch <-chan proto.Frame, gen int) tea.Cmd {
 	return func() tea.Msg {
 		f, ok := <-ch
 		if !ok {
-			return nil
+			return lostMsg{gen}
 		}
-		return eventMsg{f}
+		return eventMsg{f: f, ch: ch, gen: gen}
+	}
+}
+
+// redialDelay is the wait before try n (from 0): short at first, since a
+// restart takes a moment, then every 3 s until the daemon is back.
+func redialDelay(n int) time.Duration {
+	steps := []time.Duration{500 * time.Millisecond, time.Second, 2 * time.Second}
+	if n < len(steps) {
+		return steps[n]
+	}
+	return 3 * time.Second
+}
+
+func redialAfter(d time.Duration) tea.Cmd {
+	return tea.Tick(d, func(time.Time) tea.Msg { return redialMsg{} })
+}
+
+// redial connects again and asks who this is: the answer may differ.
+func (m Model) redial() tea.Cmd {
+	b := m.b
+	return func() tea.Msg {
+		if err := b.Reconnect(); err != nil {
+			return redialedMsg{err: err}
+		}
+		w, err := b.Whoami()
+		return redialedMsg{who: w, err: err}
 	}
 }
 
@@ -216,7 +268,36 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, mark
 	case eventMsg:
 		// Any event may change a list; fetch, then keep listening.
-		return m, tea.Batch(m.refresh(), m.listen())
+		return m, tea.Batch(m.refresh(), listenOn(msg.ch, msg.gen))
+	case lostMsg:
+		if msg.gen != m.gen || m.offline {
+			return m, nil
+		}
+		m.offline, m.redials, m.status = true, 0, ""
+		return m, redialAfter(redialDelay(0))
+	case redialMsg:
+		if !m.offline {
+			return m, nil
+		}
+		return m, m.redial()
+	case redialedMsg:
+		if !m.offline {
+			return m, nil
+		}
+		if msg.err != nil {
+			m.redials++
+			return m, redialAfter(redialDelay(m.redials))
+		}
+		// Back: do again what starting does.
+		m.offline = false
+		m.gen++
+		m.who, m.person = msg.who, msg.who.Proof == store.ProofOutsidePane
+		m = m.say("reconnected")
+		cmds := []tea.Cmd{m.refresh(), m.listen()}
+		if m.openID != "" {
+			cmds = append(cmds, m.loadThread(m.openID))
+		}
+		return m, tea.Batch(cmds...)
 	case actionMsg:
 		if msg.err != nil {
 			return m.fail(msg.err), m.refresh()
@@ -505,6 +586,9 @@ func (m Model) updateKeys(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "d", "n":
 		if it, ok := m.current(); ok && it.Kind == store.ItemApproval && m.view == ViewInbox {
+			if m.offline {
+				return m.fail(ErrNotConnected), nil
+			}
 			m.target, m.mode = it, modeDenyMessage
 			m.input.Placeholder = "reason shown to the agent (enter for none)"
 			m.input.SetValue("")
@@ -542,6 +626,9 @@ func (m Model) current() (store.Item, bool) {
 
 // startReply opens the input for the current item or thread.
 func (m Model) startReply() (tea.Model, tea.Cmd) {
+	if m.offline {
+		return m.fail(ErrNotConnected), nil
+	}
 	if !m.person {
 		return m.fail(m.browseOnly()), nil
 	}
@@ -722,6 +809,9 @@ func (m Model) updateInput(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) act(f func() error) (tea.Model, tea.Cmd) {
+	if m.offline {
+		return m.fail(ErrNotConnected), nil
+	}
 	if !m.person {
 		return m.fail(m.browseOnly()), nil
 	}

@@ -50,6 +50,7 @@ func (f *fake) Reply(mid string, to store.Address, text string) error {
 	return nil
 }
 func (f *fake) Events() <-chan proto.Frame { return nil }
+func (f *fake) Reconnect() error           { return nil }
 
 func itoa(n uint64) string { return strings.TrimSpace(strings.Repeat(" ", 0) + string(rune('0'+n))) }
 

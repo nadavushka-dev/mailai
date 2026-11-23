@@ -14,6 +14,9 @@ import (
 	"github.com/nadavushka-dev/mailai/internal/proto"
 )
 
+// ErrClosed is what a call returns once the connection has ended.
+var ErrClosed = errors.New("connection closed")
+
 // Client is one connection.
 type Client struct {
 	c      io.ReadWriteCloser
@@ -25,6 +28,8 @@ type Client struct {
 	events chan proto.Frame
 	done   chan struct{}
 	err    error
+	// ended is set once the read loop has stopped: no answer can come.
+	ended bool
 }
 
 // Dial connects to the socket at path. With a token it says hello first, so
@@ -58,6 +63,7 @@ func (cl *Client) readLoop() {
 		if err != nil {
 			cl.mu.Lock()
 			cl.err = err
+			cl.ended = true
 			for id, ch := range cl.pend {
 				close(ch)
 				delete(cl.pend, id)
@@ -97,6 +103,10 @@ func (cl *Client) Call(verb string, args any, out any) error {
 		raw = b
 	}
 	cl.mu.Lock()
+	if cl.ended {
+		defer cl.mu.Unlock()
+		return fmt.Errorf("%w: %w", ErrClosed, cl.err)
+	}
 	cl.nextID++
 	id := cl.nextID
 	ch := make(chan proto.Frame, 1)
@@ -107,13 +117,16 @@ func (cl *Client) Call(verb string, args any, out any) error {
 	err := proto.Write(cl.c, proto.Request{ID: id, Verb: verb, Args: raw})
 	cl.wmu.Unlock()
 	if err != nil {
-		return err
+		cl.mu.Lock()
+		delete(cl.pend, id)
+		cl.mu.Unlock()
+		return fmt.Errorf("%w: %w", ErrClosed, err)
 	}
 	f, ok := <-ch
 	if !ok {
 		cl.mu.Lock()
 		defer cl.mu.Unlock()
-		return fmt.Errorf("connection closed: %w", cl.err)
+		return fmt.Errorf("%w: %w", ErrClosed, cl.err)
 	}
 	if f.Error != "" {
 		return &proto.Error{Code: f.Error, Hint: f.Hint}

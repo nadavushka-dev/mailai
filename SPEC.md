@@ -546,6 +546,10 @@ an answer uses `ask-human` or `ask human`, and that is what the Inbox lists. Sup
 A reply typed in the TUI is verified; the TUI refuses to run from inside a
 pane for replying (it can still browse) so a nonce never lands where an
 agent can drive it.
+When the daemon goes away (a restart, an upgrade), the TUI keeps what it
+shows, says it is reconnecting, refuses to act meanwhile, and dials the
+same socket again (after 0.5 s, 1 s, 2 s, then every 3 s); once back it asks
+who it is again, subscribes again and fetches everything again.
 
 ## 12a. Web UI (D11)
 

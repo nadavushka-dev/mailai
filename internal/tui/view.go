@@ -38,12 +38,13 @@ func (m Model) View() string {
 		body = lipgloss.JoinHorizontal(lipgloss.Top, list, detail)
 	}
 	status := ""
-	if m.status != "" {
-		if m.status == "done" {
-			status = styleOK.Render(" ✓ done")
-		} else {
-			status = styleBad.Render(fit(" "+m.status, w))
-		}
+	switch {
+	case m.status == "done" || m.status == "reconnected":
+		status = styleOK.Render(" ✓ " + m.status)
+	case m.status != "":
+		status = styleBad.Render(fit(" "+m.status, w))
+	case m.offline:
+		status = styleWarn.Render(" reconnecting to the daemon…")
 	}
 	return header + "\n" + body + "\n" + footer + "\n" + fit(status, w)
 }
