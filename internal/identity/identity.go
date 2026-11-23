@@ -29,7 +29,11 @@ type Tokens interface {
 type Placement struct {
 	Proof     store.Proof
 	Principal store.Address // fixed by the proof; empty for outside_pane
-	PID       int
+	// Pane is the pane id of a pane placement, when the adapter can say:
+	// the principal may be the agent's name, and the pane is shown beside
+	// it (§9). Empty for every other proof.
+	Pane string
+	PID  int
 	// Agent names the agent program found among the caller's parents, for
 	// an agent placement outside every pane (ProofAgent).
 	Agent string
@@ -45,6 +49,12 @@ type Programs interface {
 // person's, not an agent's (decided 2026-11-22).
 type AgentPanes interface {
 	RunsAgent(pane store.Address) bool
+}
+
+// PaneIDs is a Panes that also says the pane id of a pane's shell, which
+// is not the principal when the agent has a name.
+type PaneIDs interface {
+	PaneIDOfPID(pid int) (string, bool)
 }
 
 // Placer places connections.
@@ -88,12 +98,16 @@ func (p *Placer) Place(conn net.Conn, token string) Placement {
 	inPane := false
 	if pid > 0 && p.Panes != nil {
 		if pane, shell, ok := p.ancestorPane(pid); ok {
+			id := ""
+			if ids, ok := p.Panes.(PaneIDs); ok {
+				id, _ = ids.PaneIDOfPID(shell)
+			}
 			ap, knows := p.Panes.(AgentPanes)
 			if !knows || p.Args == nil || ap.RunsAgent(pane) {
-				return Placement{Proof: store.ProofPane, Principal: pane, PID: pid}
+				return Placement{Proof: store.ProofPane, Principal: pane, Pane: id, PID: pid}
 			}
 			if _, agent := p.agentAmong(pid, shell); agent {
-				return Placement{Proof: store.ProofPane, Principal: pane, PID: pid}
+				return Placement{Proof: store.ProofPane, Principal: pane, Pane: id, PID: pid}
 			}
 			inPane = true
 		}

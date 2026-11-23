@@ -200,6 +200,11 @@ func New(o Options) *Daemon {
 	if o.MachineKey == nil {
 		o.MachineKey = newMachineKey()
 	}
+	// Token names are reserved (SPEC §9): an adapter that names agents
+	// places one that took a token's name under its pane id.
+	if r, ok := o.Adapter.(adapter.Reserver); ok && o.Tokens != nil {
+		r.Reserve(o.Tokens.Has, o.Log.Printf)
+	}
 	d := &Daemon{st: o.Store, placer: o.Placer, now: o.Now, log: o.Log, maxAsk: o.MaxAsks, stash: o.Stash, tokens: o.Tokens,
 		adapter: o.Adapter, wake: o.Wake, poll: o.PollEvery, agents: newAgents(), marks: map[store.Address]noticeMark{}, approvals: map[uint64]chan approvalDecision{}, webSubs: map[chan proto.Event]bool{},
 		subs: map[*conn]bool{}, asks: newAskGraph(), linkAsks: map[string][]*linkAsk{}, obKick: make(chan struct{}, 1), outFail: map[string][]chan error{}, spokeAsks: map[uint64]*spokeAsk{},
@@ -699,6 +704,7 @@ func (d *Daemon) send(c *conn, a SendArgs) (any, error) {
 
 // store puts a message in and tells everyone who waits on it.
 func (d *Daemon) store(pl Placement, r store.SendRequest) (store.Message, error) {
+	r.SenderPane = senderPane(pl)
 	m, err := d.st.Send(r)
 	if err != nil {
 		return m, err

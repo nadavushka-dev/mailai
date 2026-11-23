@@ -88,6 +88,11 @@ type Message struct {
 	SeenAt        int64  `json:"seen_at,omitempty"`
 	Undeliverable bool   `json:"undeliverable,omitempty"`
 
+	// SenderPane is the pane a pane-proven sender was in, shown beside its
+	// name so a name that moved panes is visible (§9). Set by the daemon;
+	// empty for any other proof, and for mail that came over a link.
+	SenderPane string `json:"sender_pane,omitempty"`
+
 	// ReplyToMissing says ReplyTo named a message the mailbox no longer held
 	// when this one was threaded, so the thread was rooted at the parent's id.
 	ReplyToMissing bool `json:"reply_to_missing,omitempty"`

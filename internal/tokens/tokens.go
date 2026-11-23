@@ -103,6 +103,19 @@ func (t *Tokens) Lookup(tok string) (store.Address, bool) {
 	return r.Name, ok
 }
 
+// Has says a principal holds a token. Such a name is reserved: a Herdr
+// agent that takes it is placed under its pane id (SPEC §9).
+func (t *Tokens) Has(name store.Address) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	for _, r := range t.byH {
+		if r.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
 // Revoke removes every token of a principal; false when there was none.
 func (t *Tokens) Revoke(name store.Address) (int, error) {
 	t.mu.Lock()

@@ -130,6 +130,40 @@ func TestNoTerminalIsDetached(t *testing.T) {
 	}
 }
 
+// namedPanes is an adapter whose panes have names: it says the pane id of
+// a shell beside the principal.
+type namedPanes struct {
+	fakePanes
+	ids map[int]string
+}
+
+func (n namedPanes) PaneIDOfPID(pid int) (string, bool) {
+	id, ok := n.ids[pid]
+	return id, ok
+}
+
+// SPEC §9: a pane placement carries the pane id even when the principal is
+// the agent's name, so the sender's pane is shown beside it. An adapter
+// that cannot say leaves it empty, and only a pane placement has one.
+func TestPanePlacementCarriesThePaneID(t *testing.T) {
+	p := placer(400)
+	p.Panes = namedPanes{fakePanes{200: "builder", 210: "w1:p4"}, map[int]string{200: "w1:p3", 210: "w1:p4"}}
+	if pl := p.Place(nil, ""); pl.Proof != store.ProofPane || pl.Principal != "builder" || pl.Pane != "w1:p3" {
+		t.Fatalf("%+v", pl)
+	}
+	p.Proc = fakeProc{parent: tree, peer: 310}
+	if pl := p.Place(nil, ""); pl.Principal != "w1:p4" || pl.Pane != "w1:p4" {
+		t.Fatalf("%+v", pl)
+	}
+	p.Proc = fakeProc{parent: tree, peer: 700}
+	if pl := p.Place(nil, "mt_ok"); pl.Proof != store.ProofToken || pl.Pane != "" {
+		t.Fatalf("a token has no pane: %+v", pl)
+	}
+	if pl := placer(400).Place(nil, ""); pl.Proof != store.ProofPane || pl.Pane != "" {
+		t.Fatalf("an adapter that cannot say leaves it empty: %+v", pl)
+	}
+}
+
 func TestWalkIsBoundedAndCycleSafe(t *testing.T) {
 	loop := map[int]int{10: 11, 11: 10}
 	p := &Placer{Proc: fakeProc{parent: loop, peer: 10}, Panes: fakePanes{}, MaxDepth: 5}

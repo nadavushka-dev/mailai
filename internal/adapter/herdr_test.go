@@ -3,6 +3,7 @@ package adapter
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"strings"
 	"testing"
@@ -192,6 +193,62 @@ func TestHerdr_RunsAgent(t *testing.T) {
 	}
 	if !(None{}).RunsAgent("x") {
 		t.Fatal("none has no panes; anything it is asked about is an agent's")
+	}
+}
+
+// SPEC §9: a name a mailai token holds is reserved. A Herdr agent that
+// takes it is placed under its pane id, by Agents and PaneOfPID alike, and
+// the daemon is told once per pane and name, not on every poll.
+func TestHerdr_TokenNamesAreReserved(t *testing.T) {
+	proc := fakeProc{parent: map[int]int{900: 1, 200: 900}, env: map[int]string{200: "w2Y:pT"}, peer: 900}
+	h := &Herdr{Run: &fakeRunner{}, Proc: proc, Socket: "/fake.sock", Dial: func(string) (net.Conn, error) {
+		c1, c2 := net.Pipe()
+		c2.Close()
+		return c1, nil
+	}}
+	// Not reserved yet: the name is the principal, and Agent says both.
+	got, _ := h.Agents(context.Background())
+	if got[1].Principal != "reviewer" || got[1].Name != "reviewer" || got[1].PaneID != "w2Y:pT" {
+		t.Fatalf("%+v", got[1])
+	}
+	if got[0].Name != "" {
+		t.Fatalf("an unnamed agent has no name: %+v", got[0])
+	}
+	if id, ok := h.PaneIDOfPID(200); !ok || id != "w2Y:pT" {
+		t.Fatalf("pane id of a named pane: %q %v", id, ok)
+	}
+	// A token is issued for "reviewer" after the last poll: placement
+	// already says the pane, before the next poll.
+	reserved := map[store.Address]bool{}
+	var logs []string
+	h.Reserve(func(a store.Address) bool { return reserved[a] }, func(f string, a ...any) { logs = append(logs, fmt.Sprintf(f, a...)) })
+	reserved["reviewer"] = true
+	if p, ok := h.PaneOfPID(200); !ok || p != "w2Y:pT" {
+		t.Fatalf("reserved name placed as %q %v", p, ok)
+	}
+	for i := 0; i < 3; i++ {
+		got, _ = h.Agents(context.Background())
+	}
+	if got[1].Principal != "w2Y:pT" || got[1].Name != "reviewer" {
+		t.Fatalf("reserved name must give way to the pane id: %+v", got[1])
+	}
+	if p, _ := h.PaneOfPID(200); p != "w2Y:pT" {
+		t.Fatal(p)
+	}
+	if !h.RunsAgent("w2Y:pT") {
+		t.Fatal("the pane still runs an agent")
+	}
+	if len(logs) != 1 || !strings.Contains(logs[0], `"reviewer"`) || !strings.Contains(logs[0], "w2Y:pT") || !strings.Contains(logs[0], "token") {
+		t.Fatalf("want one line saying why: %q", logs)
+	}
+	// Revoked: the name is the agent's again.
+	reserved["reviewer"] = false
+	got, _ = h.Agents(context.Background())
+	if got[1].Principal != "reviewer" {
+		t.Fatalf("%+v", got[1])
+	}
+	if p, _ := h.PaneOfPID(200); p != "reviewer" {
+		t.Fatal(p)
 	}
 }
 

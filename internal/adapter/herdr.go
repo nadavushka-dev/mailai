@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -57,6 +58,21 @@ type Herdr struct {
 	serverPID int
 	serverAt  time.Time
 	names     map[string]store.Address // pane id -> principal, from the last Agents
+
+	// taken says a name belongs to a mailai token (SPEC §9); logf tells the
+	// daemon's log. warned is the pane+name pairs already logged, so a
+	// poll does not repeat it.
+	taken  func(store.Address) bool
+	logf   func(format string, args ...any)
+	warned map[string]bool
+}
+
+// Reserve tells the adapter which names mailai tokens hold: a Herdr agent
+// with such a name is placed under its pane id, never the token's name.
+func (h *Herdr) Reserve(taken func(store.Address) bool, logf func(format string, args ...any)) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.taken, h.logf = taken, logf
 }
 
 func (h *Herdr) Name() string { return "herdr" }
@@ -72,7 +88,8 @@ type herdrAgent struct {
 }
 
 // Agents runs `herdr agent list`. The principal is the live agent name when
-// one is set, else the pane id; the session is the workspace.
+// one is set and no token holds it, else the pane id; the session is the
+// workspace.
 func (h *Herdr) Agents(ctx context.Context) ([]Agent, error) {
 	out, err := h.Run.Run(ctx, "agent", "list")
 	if err != nil {
@@ -86,18 +103,49 @@ func (h *Herdr) Agents(ctx context.Context) ([]Agent, error) {
 	if err := json.Unmarshal(out, &env); err != nil {
 		return nil, fmt.Errorf("herdr agent list: %w", err)
 	}
+	taken, logf := h.reserved()
 	names := map[string]store.Address{}
+	warn := map[string]string{} // pane+name -> the line saying why
 	agents := make([]Agent, 0, len(env.Result.Agents))
 	for _, a := range env.Result.Agents {
 		p := principalOf(a)
+		if a.Name != "" && taken != nil && taken(store.Address(a.Name)) {
+			p = store.Address(a.PaneID)
+			warn[a.PaneID+"\x00"+a.Name] = fmt.Sprintf("herdr agent %q in pane %s gets mailbox %s: %q is a mailai token's name",
+				a.Name, a.PaneID, a.PaneID, a.Name)
+		}
 		names[a.PaneID] = p
-		agents = append(agents, Agent{Principal: p, Label: a.TitleStripped, Session: a.WorkspaceID,
+		agents = append(agents, Agent{Principal: p, Name: a.Name, Label: a.TitleStripped, Session: a.WorkspaceID,
 			State: mapState(a.AgentStatus), Harness: a.Agent, PaneID: a.PaneID})
 	}
+	var lines []string
 	h.mu.Lock()
 	h.names = names
+	for key, line := range warn {
+		if !h.warned[key] {
+			lines = append(lines, line)
+		}
+	}
+	// Only what is still the case stays warned, so it is said again if it
+	// happens again later.
+	h.warned = map[string]bool{}
+	for key := range warn {
+		h.warned[key] = true
+	}
 	h.mu.Unlock()
+	if logf != nil {
+		sort.Strings(lines)
+		for _, l := range lines {
+			logf("%s", l)
+		}
+	}
 	return agents, nil
+}
+
+func (h *Herdr) reserved() (func(store.Address) bool, func(string, ...any)) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.taken, h.logf
 }
 
 func principalOf(a herdrAgent) store.Address {
@@ -149,6 +197,27 @@ func (h *Herdr) Type(ctx context.Context, principal store.Address, line string) 
 // ancestry and asks about each pid, so the shell is reached from any
 // process inside the pane.
 func (h *Herdr) PaneOfPID(pid int) (store.Address, bool) {
+	id, ok := h.PaneIDOfPID(pid)
+	if !ok {
+		return "", false
+	}
+	h.mu.Lock()
+	p, named := h.names[id]
+	taken := h.taken
+	h.mu.Unlock()
+	// A token issued since the last poll already holds the name.
+	if named && p != store.Address(id) && taken != nil && taken(p) {
+		return store.Address(id), true
+	}
+	if named {
+		return p, true
+	}
+	return store.Address(id), true
+}
+
+// PaneIDOfPID is the pane id of a pane's shell, whatever its principal is:
+// shown beside an agent's name so a name that moved panes is visible (§9).
+func (h *Herdr) PaneIDOfPID(pid int) (string, bool) {
 	if h.Proc == nil {
 		return "", false
 	}
@@ -164,13 +233,7 @@ func (h *Herdr) PaneOfPID(pid int) (store.Address, bool) {
 	if !ok || id == "" {
 		return "", false
 	}
-	h.mu.Lock()
-	p, named := h.names[id]
-	h.mu.Unlock()
-	if named {
-		return p, true
-	}
-	return store.Address(id), true
+	return id, true
 }
 
 // RunsAgent says whether herdr lists an agent in a pane (by the principal

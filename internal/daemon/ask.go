@@ -99,7 +99,7 @@ func (d *Daemon) ask(c *conn, a AskArgs) (any, error) {
 	ch := make(chan store.Message, 1)
 	var m store.Message
 	d.mu.Lock()
-	m, err = d.st.Send(store.SendRequest{From: from, To: a.To, Subject: a.Subject, Text: a.Text, Kind: store.KindAsk, Proof: c.pl.Proof, Verified: verifiedFor(c.pl, from)})
+	m, err = d.st.Send(store.SendRequest{From: from, To: a.To, Subject: a.Subject, Text: a.Text, Kind: store.KindAsk, Proof: c.pl.Proof, SenderPane: senderPane(c.pl), Verified: verifiedFor(c.pl, from)})
 	if err != nil {
 		d.mu.Unlock()
 		return nil, err

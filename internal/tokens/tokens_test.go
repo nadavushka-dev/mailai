@@ -56,6 +56,22 @@ func TestIssueLookupRevokePersist(t *testing.T) {
 	}
 }
 
+// Has says a name holds a token: such a name is reserved (SPEC §9).
+func TestHas(t *testing.T) {
+	tk, _ := Open(filepath.Join(t.TempDir(), "t.json"), nil)
+	if tk.Has("builder") {
+		t.Fatal("no token yet")
+	}
+	tk.New("builder", "")
+	if !tk.Has("builder") || tk.Has("build") {
+		t.Fatal("Has")
+	}
+	tk.Revoke("builder")
+	if tk.Has("builder") {
+		t.Fatal("revoked")
+	}
+}
+
 func storeAddr(s string) store.Address { return store.Address(s) }
 
 func TestNames(t *testing.T) {

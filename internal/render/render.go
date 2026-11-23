@@ -45,7 +45,12 @@ func Fence(m store.Message) string {
 
 func header(m store.Message) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "── #%d from %s (%s)", m.ID, m.From, trust(m))
+	fmt.Fprintf(&b, "── #%d from %s", m.ID, m.From)
+	// A pane-proven sender's pane, daemon-chosen, beside its name (§9).
+	if m.SenderPane != "" && m.SenderPane != string(m.From) {
+		fmt.Fprintf(&b, " · %s", m.SenderPane)
+	}
+	fmt.Fprintf(&b, " (%s)", trust(m))
 	if m.Kind != "" && m.Kind != store.KindMail {
 		fmt.Fprintf(&b, " · %s", m.Kind)
 	}

@@ -172,6 +172,7 @@ sent_at       int64    ns, sender's clock
 origin        local | link
 origin_host   string   claim, shown as one
 sender_proof  pane | outside_pane | link | token    (§9)
+sender_pane   string   the pane of a `pane` sender, set by the daemon; shown beside the name (§9)
 verified      "" | human | supervisor:<name>       set by the daemon only
 claimed_human bool                                 (§9)
 read_at       int64    zero while unread
@@ -439,6 +440,21 @@ attach and never shown, logged or put in an environment; or from an
 through `herdr pane send-keys` is stored as `claimed_human` and shown as
 `automated reply`. Reading `human`'s inbox from a pane is served as a peek
 (`peek_forced`): an agent cannot clear what the person has not seen.
+
+**Names (decided 2026-11-23).** A pane agent's name is Herdr's: its agent
+name when one is set, else its pane id. Herdr keeps names unique among live
+agents only, and a name outliving its agent keeps its mailbox on purpose: a
+re-spun `supervisor` reads the old one's mail. Token names are reserved:
+`token new` refuses a name a live Herdr agent has (`bad_request`, naming
+its pane), and a Herdr agent that takes a name a token holds is placed
+under its pane id instead, by identity and the adapter poll alike; the
+daemon logs that once per pane and name. A `pane` sender's pane is recorded
+on the message (`sender_pane`) and shown beside its name (`builder ·
+w4Y:p1`) in the TUI, the web UI and `mailai read`, never in a wake or
+notice line, so a name that moved panes is visible. Mail over a link may
+leave it empty. Accepted for now: any agent can `herdr agent rename`
+itself to a free name (an absent agent's) and read that mailbox; closing it
+would bind a name to one process and break role re-spins.
 
 **Supervisors.** `verified: supervisor:<name>` is set when the caller's
 proof is `pane` or `token`, the principal holds a `respond` grant and the

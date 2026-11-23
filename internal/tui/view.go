@@ -274,6 +274,12 @@ func (m Model) threadRow(t daemon.ThreadRow, w int, sel bool) string {
 	right := fmt.Sprintf("%s %s  %s", styleDim.Render(fmt.Sprintf("%d msgs", t.Count)), last, styleDim.Render(ago(m.now(), t.LastAt)))
 	left := fmt.Sprintf("%s %s %s %s ", mark, styleBold.Render(fit(string(t.From), 12)), styleDim.Render("→"), fit(to, 12))
 	room := w - lipgloss.Width(left) - lipgloss.Width(right) - 2
+	// The last sender's pane beside its name, when there is room (§9).
+	if p := paneNote(t.LastFrom, t.LastFromPane); p != "" && room-lipgloss.Width(p) >= 24 {
+		last += styleDim.Render(p)
+		right = fmt.Sprintf("%s %s  %s", styleDim.Render(fmt.Sprintf("%d msgs", t.Count)), last, styleDim.Render(ago(m.now(), t.LastAt)))
+		room = w - lipgloss.Width(left) - lipgloss.Width(right) - 2
+	}
 	if room < 16 {
 		// Tight: keep the subject, drop the count.
 		right = last + "  " + styleDim.Render(ago(m.now(), t.LastAt))
@@ -444,7 +450,7 @@ func (m Model) threadLines(w int) []string {
 	var lines []string
 	nfile := 0
 	for _, x := range m.open {
-		head := styleDim.Render(fmt.Sprintf("#%d ", x.ID)) + styleBold.Render(string(x.From))
+		head := styleDim.Render(fmt.Sprintf("#%d ", x.ID)) + styleBold.Render(string(x.From)) + styleDim.Render(paneNote(x.From, x.SenderPane))
 		switch {
 		case x.Verified == "human":
 			head += " " + styleOK.Render("verified human")
@@ -484,6 +490,15 @@ func (m Model) threadLines(w int) []string {
 		}
 	}
 	return lines
+}
+
+// paneNote is " · <pane>" for a pane-proven sender whose name is not its
+// pane id: a name that moved to another pane shows (§9).
+func paneNote(from store.Address, pane string) string {
+	if pane == "" || pane == string(from) {
+		return ""
+	}
+	return " · " + pane
 }
 
 func oneLine(s string) string {

@@ -58,6 +58,7 @@ type SendRequest struct {
 	// Proof, Origin and OriginHost are what the daemon knows about the
 	// connection (SPEC §9); never taken from a client's request.
 	Proof      Proof
+	SenderPane string
 	Origin     string
 	OriginHost string
 	Verified   string
@@ -243,6 +244,7 @@ func (s *Store) send(r SendRequest, mid, thread string) (Message, bool, error) {
 		Options:     append([]string(nil), r.Options...),
 		SentAt:      s.now().UnixNano(),
 		SenderProof: r.Proof,
+		SenderPane:  r.SenderPane,
 		Origin:      r.Origin,
 		OriginHost:  r.OriginHost,
 		Verified:    r.Verified,

@@ -28,6 +28,10 @@ type ThreadRow struct {
 	// LastAt is the newest message's time; LastFrom who sent it.
 	LastAt   int64         `json:"last_at"`
 	LastFrom store.Address `json:"last_from"`
+	// FromPane and LastFromPane are those senders' panes, when proven by
+	// one: shown beside the name (§9).
+	FromPane     string `json:"from_pane,omitempty"`
+	LastFromPane string `json:"last_from_pane,omitempty"`
 	// Verified says the last message carried a verified mark.
 	Verified string `json:"verified,omitempty"`
 	// First is the first line of the root message, for the row.
@@ -71,10 +75,12 @@ func (d *Daemon) threads(c *conn) (any, error) {
 			}
 			if m.MID == m.ThreadID || r.From == "" {
 				r.From, r.To, r.Subject, r.Session, r.Kind = m.From, m.To, m.Subject, m.Session, m.Kind
+				r.FromPane = m.SenderPane
 				r.First = firstLine(m.Text)
 			}
 			if m.SentAt >= r.LastAt {
 				r.LastAt, r.LastFrom, r.Verified = m.SentAt, m.From, m.Verified
+				r.LastFromPane = m.SenderPane
 			}
 		}
 	}

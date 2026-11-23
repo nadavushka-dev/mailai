@@ -125,7 +125,7 @@ func (d *Daemon) askHuman(c *conn, a AskHumanArgs) (any, error) {
 		ch := make(chan store.Message, 1)
 		d.mu.Lock()
 		m, err := d.st.Send(store.SendRequest{From: from, To: store.Human, Subject: a.Subject, Text: a.Text, Options: a.Options,
-			Kind: store.KindAskHuman, Proof: c.pl.Proof, Attachments: atts})
+			Kind: store.KindAskHuman, Proof: c.pl.Proof, SenderPane: senderPane(c.pl), Attachments: atts})
 		if err != nil {
 			d.mu.Unlock()
 			return nil, err

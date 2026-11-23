@@ -53,6 +53,19 @@ func TestFence_TrustMarks(t *testing.T) {
 	}
 }
 
+// SPEC §9: the header shows a pane-proven sender's pane beside its name,
+// once; the notice line never carries it (D12).
+func TestFence_SendersPane(t *testing.T) {
+	m := store.Message{ID: 4, MID: "m:4", From: "builder", SenderProof: store.ProofPane, SenderPane: "w4Y:p1", Text: "x"}
+	if h := header(m); !strings.Contains(h, "from builder · w4Y:p1 (pane)") {
+		t.Fatalf("%q", h)
+	}
+	m.From = "w4Y:p1"
+	if h := header(m); !strings.Contains(h, "from w4Y:p1 (pane)") {
+		t.Fatalf("%q", h)
+	}
+}
+
 func TestSummary_OneLinePerMessage(t *testing.T) {
 	ms := []store.Message{
 		{ID: 1, From: "a", Subject: "first", SenderProof: store.ProofPane},

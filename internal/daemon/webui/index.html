@@ -843,7 +843,7 @@
     if (between && t.last_at > agentsMark && !isHuman(t.last_from) && mailScope === 'agents' && !following) tags.push('<span class="tag new">new</span>');
     const people = fromMe
       ? `<span class="agent">You</span><span class="host">→ ${esc(t.to || 'session ' + (t.session||''))}</span>`
-      : `${agentName(t.from)}<span class="host">→ ${localName(t.to) === 'human' ? 'you' : esc(t.to || 'session ' + (t.session||''))}</span>`;
+      : `${agentName(t.from)}${withPane(t.from, t.from_pane)}<span class="host">→ ${localName(t.to) === 'human' ? 'you' : esc(t.to || 'session ' + (t.session||''))}</span>`;
     const line = t.subject ? `<b class="subj">${esc(t.subject)}</b>${t.first ? ' — ' + esc(t.first) : ''}` : esc(t.first || '');
     return `<button class="row${on?' on':''}" role="option" aria-selected="${on}" data-i="${i}">${avatar(other)}<span class="r-body"><span class="r-top">${dot}${people}<span class="age">${ago(t.last_at)}</span></span><span class="r-q">${line}</span>${tags.length ? `<span class="r-tags">${tags.join('')}</span>` : ''}</span></button>`;
   }
@@ -909,6 +909,11 @@
   }
 
   // ---------- detail ----------
+  // The pane a pane-proven sender was in, beside its name, so a name that
+  // moved to another pane shows (§9). Nothing when the name is the pane.
+  function withPane(addr, pane) {
+    return pane && pane !== addr ? `<span class="host pane">· ${esc(pane)}</span>` : '';
+  }
   function trustOf(m) {
     if (m.verified) return `<span class="trust ${m.verified === 'human' ? 'v' : 's'}">${icon('check')} verified ${esc(String(m.verified).replace(':', ' '))}</span>`;
     if (m.claimed_human) return '<span class="trust u">automated reply</span>';
@@ -937,7 +942,7 @@
       const many = m.tos.length > 1;
       const head = many ? '' : receipt(m.tos[0][0], m.tos[0][1]);
       const under = many ? `<div class="rcpts">${m.tos.map(([a, r]) => `<span class="rcpt"><b>${esc(localName(a))}</b>${receipt(a, r)}</span>`).join('')}</div>` : '';
-      return `<div class="msg${mine ? ' me' : ''}">${avatar(m.from)}<div><div class="msg-h"><b>${mine ? 'You' : esc(localName(m.from))}</b>${hostOf(m.from) ? `<span class="host">@${esc(hostOf(m.from))}</span>` : ''}${mine && between ? '<span class="stepped">stepped in</span>' : ''}${trustOf(m)}${to.length ? `<span>→ ${to.map(a => isHuman(a) ? 'you' : esc(a)).join(', ')}</span>` : ''}<span class="t">${m.sent_at ? hhmm(m.sent_at) : ''}</span>${head}</div><pre>${esc(m.text)}</pre>${filesHTML(m.mid, m.attachments)}${under}</div></div>`;
+      return `<div class="msg${mine ? ' me' : ''}">${avatar(m.from)}<div><div class="msg-h"><b>${mine ? 'You' : esc(localName(m.from))}</b>${hostOf(m.from) ? `<span class="host">@${esc(hostOf(m.from))}</span>` : ''}${withPane(m.from, m.sender_pane)}${mine && between ? '<span class="stepped">stepped in</span>' : ''}${trustOf(m)}${to.length ? `<span>→ ${to.map(a => isHuman(a) ? 'you' : esc(a)).join(', ')}</span>` : ''}<span class="t">${m.sent_at ? hhmm(m.sent_at) : ''}</span>${head}</div><pre>${esc(m.text)}</pre>${filesHTML(m.mid, m.attachments)}${under}</div></div>`;
     }).join('');
     // One-line notes from the thread's items, never stored messages (§7a).
     const notes = (thItems || []).map(it =>

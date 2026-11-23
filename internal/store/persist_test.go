@@ -81,6 +81,34 @@ func TestPersist_AttachmentsRoundTrip(t *testing.T) {
 	}
 }
 
+// SPEC §6/§9: the sender's pane is stored with the message and comes back
+// after a restart; a row an older mailai wrote, without it, still loads.
+func TestPersist_SenderPaneRoundTripAndOldRows(t *testing.T) {
+	dir := t.TempDir()
+	db := openDB(t, dir)
+	if _, err := db.db.Exec(`INSERT INTO messages(id, mid, box, thread, read_at, seen_at, body) VALUES(1, 'm1:1', 'b', 'm1:1', 0, 0, ?)`,
+		`{"id":1,"mid":"m1:1","kind":"mail","from":"builder","to":"b","text":"old","thread_id":"m1:1","sent_at":1,"sender_proof":"pane"}`); err != nil {
+		t.Fatal(err)
+	}
+	s, err := Load(Options{MachineID: "m1"}, db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := s.Send(SendRequest{From: "builder", To: "b", Text: "new", Proof: ProofPane, SenderPane: "w4Y:p1"})
+	if err != nil || m.SenderPane != "w4Y:p1" {
+		t.Fatalf("%+v %v", m, err)
+	}
+	db.Close()
+	s2, err := Load(Options{MachineID: "m1"}, openDB(t, dir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ := s2.Read(ReadQuery{Mailbox: "b"})
+	if len(got) != 2 || got[0].Text != "old" || got[0].SenderPane != "" || got[1].SenderPane != "w4Y:p1" {
+		t.Fatalf("%+v", got)
+	}
+}
+
 // Without a persister the store is purely in memory, as the tests above use.
 func TestPersist_NilPersisterIsMemoryOnly(t *testing.T) {
 	s, err := Load(Options{}, nil)

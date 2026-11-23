@@ -28,6 +28,15 @@ func (outsidePlacer) Place(net.Conn, string) Placement {
 // outside every pane, with no token. Milestone 5 adds the attached client.
 func isPerson(pl Placement) bool { return pl.Proof == store.ProofOutsidePane }
 
+// senderPane is the pane recorded on a message, shown beside the sender's
+// name (§9): only a pane placement has one.
+func senderPane(pl Placement) string {
+	if pl.Proof != store.ProofPane {
+		return ""
+	}
+	return pl.Pane
+}
+
 func (d *Daemon) whoami(c *conn) WhoamiResult {
 	return WhoamiResult{Principal: d.own(c.pl), Proof: c.pl.Proof, PID: c.pl.PID, NotPerson: whyNotPerson(c.pl)}
 }

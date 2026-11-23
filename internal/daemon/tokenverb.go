@@ -1,9 +1,12 @@
 package daemon
 
 import (
+	"context"
 	"errors"
+	"time"
 
 	"github.com/nadavushka-dev/mailai/internal/proto"
+	"github.com/nadavushka-dev/mailai/internal/store"
 	"github.com/nadavushka-dev/mailai/internal/tokens"
 )
 
@@ -21,6 +24,9 @@ func (d *Daemon) tokenVerb(c *conn, verb string, raw []byte) (any, error) {
 		a, err := decode[TokenNewArgs](raw)
 		if err != nil {
 			return nil, err
+		}
+		if pane, live := d.liveAgentNamed(a.Name); live {
+			return nil, proto.Errorf(proto.CodeBadRequest, "%q is the name of a live Herdr agent (%s); pick another name", a.Name, pane)
 		}
 		tok, err := d.tokens.New(a.Name, a.Label)
 		if errors.Is(err, tokens.ErrBadName) {
@@ -51,4 +57,24 @@ func (d *Daemon) tokenVerb(c *conn, verb string, raw []byte) (any, error) {
 		return map[string]any{"revoked": n}, nil
 	}
 	return nil, proto.Errorf(proto.CodeUnknownVerb, "%q", verb)
+}
+
+// liveAgentNamed asks the adapter whether a live agent has this name now,
+// and in which pane (SPEC §9: token names are reserved). When the adapter
+// cannot say, the name is allowed: should an agent take it later, it is
+// placed under its pane id instead.
+func (d *Daemon) liveAgentNamed(name store.Address) (string, bool) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	list, err := d.adapter.Agents(ctx)
+	if err != nil {
+		d.log.Printf("token-new %s: adapter %s: %v", name, d.adapter.Name(), err)
+		return "", false
+	}
+	for _, a := range list {
+		if a.Name != "" && store.Address(a.Name) == name {
+			return a.PaneID, true
+		}
+	}
+	return "", false
 }
