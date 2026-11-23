@@ -69,6 +69,17 @@ type Options struct {
 	// ResendAfter is how long mail pushed to a spoke waits unacknowledged
 	// before a heartbeat resends it (60 s).
 	ResendAfter time.Duration
+
+	// WebPort, when set ([web] port), serves the web Inbox from the start on
+	// 127.0.0.1:WebPort (§12a). WebURL ([web] url) is where the person
+	// reaches it through their own proxy (Tailscale Serve): login links use
+	// it and writes from that origin are the page's own. WebSessions is the
+	// file logins are kept in across restarts (hashes only); WebSessionTTL
+	// how long one lasts (12 h).
+	WebPort       int
+	WebURL        string
+	WebSessions   string
+	WebSessionTTL time.Duration
 }
 
 // Daemon serves one machine.
@@ -84,6 +95,8 @@ type Daemon struct {
 	wake    bool
 	poll    time.Duration
 	alerts  *alerter
+	// notifier is the same notifier, for a login link (mailai web --notify).
+	notifier notify.Notifier
 
 	agents    *agents
 	web       webState
@@ -189,6 +202,12 @@ func New(o Options) *Daemon {
 		}
 		d.alerts = newAlerter(o.Notifier, o.NotifyEvery, d.itemIsOpen)
 	}
+	d.notifier = o.Notifier
+	d.web.port, d.web.url, d.web.file, d.web.ttl = o.WebPort, strings.TrimRight(o.WebURL, "/"), o.WebSessions, o.WebSessionTTL
+	if d.web.ttl == 0 {
+		d.web.ttl = webSessionTTL
+	}
+	d.loadWebSessions()
 	d.loadKnown()
 	return d
 }
@@ -232,7 +251,7 @@ func (d *Daemon) Serve(ctx context.Context) error {
 			c.Conn.Close()
 		}
 		d.mu.Unlock()
-		d.webStop()
+		d.webShutdown()
 		if d.alerts != nil {
 			d.alerts.stop()
 		}
@@ -241,6 +260,11 @@ func (d *Daemon) Serve(ctx context.Context) error {
 		go d.pollAgents(ctx, d.poll)
 	}
 	go d.runWakes(ctx)
+	if d.web.port > 0 {
+		if err := d.webServe(d.web.port); err != nil {
+			d.log.Printf("web page on port %d: %v", d.web.port, err)
+		}
+	}
 	if d.isSpoke() {
 		go d.runUplink(ctx)
 		go d.runOutbox(ctx)

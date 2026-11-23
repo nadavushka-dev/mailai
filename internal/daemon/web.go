@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"embed"
 	"encoding/hex"
 	"encoding/json"
@@ -10,6 +11,7 @@ import (
 	"mime"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -34,16 +36,27 @@ type webState struct {
 	srv      *http.Server
 	ln       net.Listener
 	tokens   map[string]time.Time // one-time, unused
-	sessions map[string]time.Time // cookie -> expiry
+	sessions map[string]time.Time // sha256(cookie) -> expiry
+
+	port int           // [web] port: served from the start
+	url  string        // [web] url: the person's way in (a proxy), no trailing /
+	file string        // sessions kept here across restarts
+	ttl  time.Duration // how long a login lasts
 }
 
 type WebStartArgs struct {
 	Port int `json:"port,omitempty"`
+	// Notify also sends the login link to the person's notifications, so a
+	// phone logs in without a terminal.
+	Notify bool `json:"notify,omitempty"`
 }
 
 type WebStartResult struct {
+	// URL is the login link: at [web] url when set, else on loopback.
 	URL  string `json:"url"`
 	Addr string `json:"addr"`
+	// Local is the same link on loopback, when URL is the public one.
+	Local string `json:"local,omitempty"`
 }
 
 // webPerson is the placement a web request acts with.
@@ -59,26 +72,56 @@ func (d *Daemon) webVerb(c *conn, verb string, raw []byte) (any, error) {
 		if err != nil {
 			return nil, err
 		}
-		return d.webStart(a.Port)
+		res, err := d.webStart(a.Port)
+		if err == nil && a.Notify {
+			if d.notifier == nil {
+				return nil, proto.Errorf(proto.CodeBadRequest, "notifications are off ([notify] in config.toml)")
+			}
+			d.notifier.Notify("mailai login", res.URL)
+		}
+		return res, err
 	case "web-stop":
 		return d.webStop()
 	case "web-revoke":
 		d.web.mu.Lock()
 		n := len(d.web.sessions) + len(d.web.tokens)
 		d.web.sessions, d.web.tokens = map[string]time.Time{}, map[string]time.Time{}
+		d.saveWebSessionsLocked()
 		d.web.mu.Unlock()
 		return map[string]int{"revoked": n}, nil
 	}
 	return nil, proto.Errorf(proto.CodeUnknownVerb, "%q", verb)
 }
 
-func (d *Daemon) webStart(port int) (any, error) {
+// webStart serves the page if it is not served yet and mints a one-time
+// login link.
+func (d *Daemon) webStart(port int) (WebStartResult, error) {
+	if port == 0 {
+		port = d.web.port
+	}
+	if err := d.webServe(port); err != nil {
+		return WebStartResult{}, err
+	}
+	d.web.mu.Lock()
+	defer d.web.mu.Unlock()
+	tok := randHex(16)
+	d.web.tokens[tok] = d.now().Add(10 * time.Minute)
+	addr := d.web.ln.Addr().String()
+	local := fmt.Sprintf("http://%s/?t=%s", addr, tok)
+	if d.web.url != "" {
+		return WebStartResult{URL: d.web.url + "/?t=" + tok, Addr: addr, Local: local}, nil
+	}
+	return WebStartResult{URL: local, Addr: addr}, nil
+}
+
+// webServe starts the HTTP server on 127.0.0.1:port unless it runs.
+func (d *Daemon) webServe(port int) error {
 	d.web.mu.Lock()
 	defer d.web.mu.Unlock()
 	if d.web.srv == nil {
 		ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
 		if err != nil {
-			return nil, proto.Errorf(proto.CodeInternal, "listen: %v", err)
+			return proto.Errorf(proto.CodeInternal, "listen: %v", err)
 		}
 		mux := http.NewServeMux()
 		mux.HandleFunc("/", d.webIndex)
@@ -95,29 +138,84 @@ func (d *Daemon) webStart(port int) (any, error) {
 		d.web.srv = &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 		d.web.ln = ln
 		if d.web.tokens == nil {
-			d.web.tokens, d.web.sessions = map[string]time.Time{}, map[string]time.Time{}
+			d.web.tokens = map[string]time.Time{}
+		}
+		if d.web.sessions == nil {
+			d.web.sessions = map[string]time.Time{}
 		}
 		go d.web.srv.Serve(ln)
 	}
-	tok := randHex(16)
-	d.web.tokens[tok] = d.now().Add(10 * time.Minute)
-	addr := d.web.ln.Addr().String()
-	return WebStartResult{URL: fmt.Sprintf("http://%s/?t=%s", addr, tok), Addr: addr}, nil
+	return nil
 }
 
+// webStop is mailai web --stop: the page goes and so do its logins.
 func (d *Daemon) webStop() (any, error) {
+	d.web.mu.Lock()
+	d.web.sessions, d.web.tokens = map[string]time.Time{}, map[string]time.Time{}
+	d.saveWebSessionsLocked()
+	d.web.mu.Unlock()
+	return map[string]bool{"stopped": d.webShutdown()}, nil
+}
+
+// webShutdown stops serving and keeps the logins, for the next daemon.
+func (d *Daemon) webShutdown() bool {
 	d.web.mu.Lock()
 	srv := d.web.srv
 	d.web.srv, d.web.ln = nil, nil
-	d.web.sessions, d.web.tokens = map[string]time.Time{}, map[string]time.Time{}
 	d.web.mu.Unlock()
 	if srv == nil {
-		return map[string]bool{"stopped": false}, nil
+		return false
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	srv.Shutdown(ctx)
-	return map[string]bool{"stopped": true}, nil
+	return true
+}
+
+// sessionKey is what is kept of a login cookie: its hash, so the file
+// holds nothing a browser could present.
+func sessionKey(cookie string) string {
+	h := sha256.Sum256([]byte(cookie))
+	return hex.EncodeToString(h[:])
+}
+
+// loadWebSessions reads the logins a previous daemon kept, dropping
+// expired ones.
+func (d *Daemon) loadWebSessions() {
+	d.web.sessions = map[string]time.Time{}
+	if d.web.file == "" {
+		return
+	}
+	b, err := os.ReadFile(d.web.file)
+	if err != nil {
+		return
+	}
+	var kept map[string]int64
+	if json.Unmarshal(b, &kept) != nil {
+		return
+	}
+	now := d.now()
+	for k, exp := range kept {
+		if t := time.Unix(0, exp); t.After(now) {
+			d.web.sessions[k] = t
+		}
+	}
+}
+
+// saveWebSessionsLocked writes the logins out, 0600; d.web.mu is held.
+func (d *Daemon) saveWebSessionsLocked() {
+	if d.web.file == "" {
+		return
+	}
+	kept := map[string]int64{}
+	for k, exp := range d.web.sessions {
+		kept[k] = exp.UnixNano()
+	}
+	b, _ := json.Marshal(kept)
+	tmp := d.web.file + ".tmp"
+	if os.WriteFile(tmp, b, 0o600) == nil {
+		os.Rename(tmp, d.web.file)
+	}
 }
 
 func randHex(n int) string {
@@ -138,8 +236,10 @@ func (d *Daemon) webIndex(w http.ResponseWriter, r *http.Request) {
 		delete(d.web.tokens, t)
 		if ok && d.now().Before(exp) {
 			sid := randHex(24)
-			d.web.sessions[sid] = d.now().Add(webSessionTTL)
-			http.SetCookie(w, &http.Cookie{Name: "mailai", Value: sid, Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode})
+			d.web.sessions[sessionKey(sid)] = d.now().Add(d.web.ttl)
+			d.saveWebSessionsLocked()
+			http.SetCookie(w, &http.Cookie{Name: "mailai", Value: sid, Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode,
+				MaxAge: int(d.web.ttl / time.Second)})
 		}
 		d.web.mu.Unlock()
 		http.Redirect(w, r, "/", http.StatusSeeOther)
@@ -148,7 +248,7 @@ func (d *Daemon) webIndex(w http.ResponseWriter, r *http.Request) {
 	if !d.webSession(r) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.WriteHeader(http.StatusUnauthorized)
-		fmt.Fprintln(w, "mailai: no session. Run `mailai web` and open the URL it prints.")
+		fmt.Fprintln(w, "mailai: no session. Run `mailai web` and open the URL it prints, or `mailai web --notify` to get the link on your phone.")
 		return
 	}
 	b, _ := webFS.ReadFile("webui/index.html")
@@ -162,14 +262,16 @@ func (d *Daemon) webSession(r *http.Request) bool {
 	if err != nil {
 		return false
 	}
+	key := sessionKey(ck.Value)
 	d.web.mu.Lock()
 	defer d.web.mu.Unlock()
-	exp, ok := d.web.sessions[ck.Value]
+	exp, ok := d.web.sessions[key]
 	if !ok {
 		return false
 	}
 	if d.now().After(exp) {
-		delete(d.web.sessions, ck.Value)
+		delete(d.web.sessions, key)
+		d.saveWebSessionsLocked()
 		return false
 	}
 	return true
@@ -182,7 +284,7 @@ func (d *Daemon) webAuth(h http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
-			if code, why := foreignWrite(r); code != 0 {
+			if code, why := foreignWrite(r, d.web.url); code != 0 {
 				http.Error(w, `{"error":"`+why+`"}`, code)
 				return
 			}
@@ -197,11 +299,14 @@ func (d *Daemon) webAuth(h http.HandlerFunc) http.HandlerFunc {
 // must be JSON, which a foreign origin cannot send without a CORS preflight
 // this server never grants; and when the browser says where it comes from
 // (Origin, Sec-Fetch-Site), that must be this origin.
-func foreignWrite(r *http.Request) (int, string) {
+//
+// public is [web] url: through the person's proxy the page's origin is
+// that, and so is the origin of its writes.
+func foreignWrite(r *http.Request, public string) (int, string) {
 	if mt, _, err := mime.ParseMediaType(r.Header.Get("Content-Type")); err != nil || mt != "application/json" {
 		return http.StatusUnsupportedMediaType, "writes are JSON"
 	}
-	if o := r.Header.Get("Origin"); o != "" && o != "http://"+r.Host {
+	if o := r.Header.Get("Origin"); o != "" && o != "http://"+r.Host && (public == "" || o != public) {
 		return http.StatusForbidden, "not from this page"
 	}
 	if s := r.Header.Get("Sec-Fetch-Site"); s != "" && s != "same-origin" {

@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestPathsFromMailaiHomeAndSocketOverride(t *testing.T) {
@@ -41,6 +42,18 @@ func TestLoadMissingIsDefaultAndWakeParses(t *testing.T) {
 	os.WriteFile(f, []byte("[identity]\nrequire_terminal = false\n"), 0o600)
 	if c, _ = Load(f); c.RequireTerminal() {
 		t.Fatal("require_terminal = false must turn it off")
+	}
+	// [web]: served from the start, reached at url, logins last session.
+	os.WriteFile(f, []byte("[web]\nport = 8473\nurl = \"http://box.ts.net:8474\"\nsession = \"168h\"\n"), 0o600)
+	if c, err = Load(f); err != nil || c.Web.Port != 8473 || c.Web.URL != "http://box.ts.net:8474" || c.WebSession() != 168*time.Hour {
+		t.Fatal(err, c.Web)
+	}
+	if (Config{}).WebSession() != 12*time.Hour {
+		t.Fatal("logins last 12 h by default")
+	}
+	os.WriteFile(f, []byte("[web]\nsession = \"soon\"\n"), 0o600)
+	if _, err = Load(f); err == nil {
+		t.Fatal("a bad [web] session must be an error")
 	}
 	// Test rigs run under whatever started them, an agent included.
 	if !(Config{}).DetectAgents() {

@@ -71,7 +71,8 @@ func cmdDaemon(args []string) error {
 	// Desktop notifications for new Inbox items (SPEC §12b).
 	notifier, backend := notify.Choose(notify.Config{Enabled: cfg.NotifyEnabled(), Command: cfg.Notify.Command, Log: logger})
 	opts := daemon.Options{Store: st, Log: logger, Stash: stash.New(p.Stash()), Tokens: tk, Placer: placer,
-		Adapter: ad, Wake: cfg.Wake(), Name: name, MachinesFile: p.Machines(), MachineKey: key, Notifier: notifier}
+		Adapter: ad, Wake: cfg.Wake(), Name: name, MachinesFile: p.Machines(), MachineKey: key, Notifier: notifier,
+		WebPort: cfg.Web.Port, WebURL: cfg.Web.URL, WebSessions: p.WebSessions(), WebSessionTTL: cfg.WebSession()}
 	if target := cfg.Fleet.Inbox; target != "" {
 		remote := cfg.Fleet.Command
 		opts.Inbox = target

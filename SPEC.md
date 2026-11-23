@@ -554,6 +554,16 @@ do, the web UI can do, and nothing more.
   sandbox, cannot act with the person's session.
 - **Remote:** the daemon never binds a non-loopback address. Tailscale
   Serve or `ssh -L` is the supported story; the phone case is the point.
+- **Always on (decided 2026-11-23, v0):** `[web] port` serves the page from
+  the daemon's start, so an upgrade does not take it away. `[web] url` names
+  where the person reaches it through their proxy: login links use it, and
+  a write whose `Origin` is that URL is the page's own. Logins are kept in
+  `web-sessions.json` (0600, SHA-256 of the cookie only, never the cookie)
+  and survive a restart; `[web] session` sets how long one lasts (12 h).
+  `mailai web --notify` also sends the one-time link to the person's
+  notifications, so a phone logs in without a terminal; the link is only as
+  private as the notification channel, so that channel must be the
+  person's own.
 - **Scope guard:** the web UI may show only what `inbox`, `read` and the
   mailbox verbs return. Anything about pane output belongs to Herdr.
 - **Attachments:** `/api/artifact?mid=M&i=N` reads the Nth attachment of

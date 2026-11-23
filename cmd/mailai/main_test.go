@@ -4,6 +4,9 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
+	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -40,6 +43,12 @@ type env struct {
 
 func startEnv(t *testing.T) *env {
 	t.Helper()
+	return startEnvWith(t, "")
+}
+
+// startEnvWith adds lines to the test daemon's config.toml.
+func startEnvWith(t *testing.T, extra string) *env {
+	t.Helper()
 	b := make([]byte, 4)
 	rand.Read(b)
 	id := hex.EncodeToString(b)
@@ -49,7 +58,7 @@ func startEnv(t *testing.T) *env {
 	// Test processes have no terminal; the person check is covered by the
 	// identity and daemon tests. Tests never pop desktop notifications.
 	os.MkdirAll(filepath.Join(home, "config"), 0o700)
-	os.WriteFile(filepath.Join(home, "config", "config.toml"), []byte("[identity]\nrequire_terminal = false\ndetect_agents = false\n[notify]\nenabled = false\n"), 0o600)
+	os.WriteFile(filepath.Join(home, "config", "config.toml"), []byte("[identity]\nrequire_terminal = false\ndetect_agents = false\n[notify]\nenabled = false\n"+extra), 0o600)
 	cmd := e.cmd("daemon", "run")
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
@@ -249,6 +258,24 @@ func TestCLI_AttachAndStash(t *testing.T) {
 	e.must("stash", "get", stored, dest)
 	if b, _ := os.ReadFile(dest); string(b) != "plan" {
 		t.Fatal(string(b))
+	}
+}
+
+// v0: with [web] port the page is up from the start; mailai web prints the
+// login link at [web] url and the same link on this machine.
+func TestCLI_WebServedFromTheStart(t *testing.T) {
+	ln, _ := net.Listen("tcp", "127.0.0.1:0")
+	port := ln.Addr().(*net.TCPAddr).Port
+	ln.Close()
+	e := startEnvWith(t, fmt.Sprintf("[web]\nport = %d\nurl = \"https://box.tail0.ts.net\"\n", port))
+	r, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/", port))
+	if err != nil {
+		t.Fatalf("page not served from the start: %v", err)
+	}
+	r.Body.Close()
+	out := e.must("web")
+	if !strings.HasPrefix(out, "https://box.tail0.ts.net/?t=") || !strings.Contains(out, fmt.Sprintf("http://127.0.0.1:%d/?t=", port)) {
+		t.Fatalf("%q", out)
 	}
 }
 

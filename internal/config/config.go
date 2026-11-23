@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/BurntSushi/toml"
 )
@@ -53,7 +54,10 @@ func (p Paths) Identity() string   { return filepath.Join(p.Data, "identity.toml
 func (p Paths) ConfigFile() string { return filepath.Join(p.Config, "config.toml") }
 func (p Paths) Log() string        { return filepath.Join(p.Data, "daemon.log") }
 func (p Paths) Machines() string   { return filepath.Join(p.Data, "machines.json") }
-func (p Paths) MachineKey() string { return filepath.Join(p.Data, "machine.key") }
+
+// WebSessions keeps web logins across restarts, as hashes (SPEC §12a).
+func (p Paths) WebSessions() string { return filepath.Join(p.Data, "web-sessions.json") }
+func (p Paths) MachineKey() string  { return filepath.Join(p.Data, "machine.key") }
 
 // Config is config.toml.
 type Config struct {
@@ -68,6 +72,16 @@ type Config struct {
 		// own; {title} and {body} are substituted, else both are appended.
 		Command []string `toml:"command"`
 	} `toml:"notify"`
+	// Web serves the web Inbox from the start (SPEC §12a).
+	Web struct {
+		// Port on 127.0.0.1; 0 serves only after `mailai web`.
+		Port int `toml:"port"`
+		// URL is where the person reaches the page through their own proxy
+		// (Tailscale Serve); login links use it.
+		URL string `toml:"url"`
+		// Session is how long a login lasts, a Go duration; 12h when empty.
+		Session string `toml:"session"`
+	} `toml:"web"`
 	Identity struct {
 		RequireTerminal *bool `toml:"require_terminal"`
 		DetectAgents    *bool `toml:"detect_agents"`
@@ -131,5 +145,18 @@ func Load(path string) (Config, error) {
 	if err := toml.Unmarshal(b, &c); err != nil {
 		return c, fmt.Errorf("%s: %w", path, err)
 	}
+	if c.Web.Session != "" {
+		if d, err := time.ParseDuration(c.Web.Session); err != nil || d <= 0 {
+			return c, fmt.Errorf("%s: [web] session %q: want a duration like 168h", path, c.Web.Session)
+		}
+	}
 	return c, nil
+}
+
+// WebSession is how long a web login lasts: [web] session, else 12 h.
+func (c Config) WebSession() time.Duration {
+	if d, err := time.ParseDuration(c.Web.Session); err == nil && d > 0 {
+		return d
+	}
+	return 12 * time.Hour
 }
