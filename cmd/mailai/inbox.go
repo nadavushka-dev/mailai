@@ -175,7 +175,8 @@ func cmdDismiss(args []string) error {
 	return nil
 }
 
-// cmdDelete: the person deletes threads, or messages by mid (SPEC §6).
+// cmdDelete: the person deletes threads, or messages by mid, from the
+// person's own views; the agents keep theirs until expiry (SPEC §6).
 func cmdDelete(args []string) error {
 	fs := newFlags("delete")
 	message := fs.Bool("message", false, "the arguments are message mids, not threads")
@@ -222,7 +223,8 @@ func cmdDelete(args []string) error {
 	if total == 1 {
 		s = ""
 	}
-	fmt.Printf("deleted %d message%s\n", total, s)
+	// Hidden from the person only (SPEC §6): the agents keep their mail.
+	fmt.Printf("deleted %d message%s from your views; agents keep theirs until expiry\n", total, s)
 	return nil
 }
 
@@ -248,7 +250,7 @@ func deleteReadBetweenAgents(rest []string, dry bool) error {
 		fmt.Printf("would delete %s between agents\n", what)
 		return nil
 	}
-	fmt.Printf("deleted %s between agents\n", what)
+	fmt.Printf("deleted %s between agents from your views; agents keep theirs until expiry\n", what)
 	return nil
 }
 

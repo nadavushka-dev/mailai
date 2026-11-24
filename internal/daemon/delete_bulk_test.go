@@ -63,14 +63,18 @@ func TestDelete_ReadThreadsBetweenAgents(t *testing.T) {
 	if err := person.Call("delete", DeleteArgs{ReadBetweenAgents: true}, &res); err != nil || res.Threads != 2 || res.Deleted != 3 {
 		t.Fatalf("%v %+v", err, res)
 	}
+	// Hidden from the person; the agents keep them (option A, 2026-11-24).
 	for _, id := range []string{gone.Message.ThreadID, gone2.Message.ThreadID} {
-		if len(d.st.Thread(id)) != 0 {
-			t.Fatalf("thread %s kept", id)
+		if personSees(t, person, id) {
+			t.Fatalf("thread %s still shows", id)
+		}
+		if len(readThread(t, worker, id)) == 0 || len(d.st.Thread(id)) == 0 {
+			t.Fatalf("thread %s went from the agents", id)
 		}
 	}
 	for _, id := range []string{joined.Message.ThreadID, toMe.Message.ThreadID, ask.Item.ThreadID} {
-		if len(d.st.Thread(id)) == 0 {
-			t.Fatalf("thread %s deleted", id)
+		if !personSees(t, person, id) {
+			t.Fatalf("thread %s hidden", id)
 		}
 	}
 	var tr ThreadsResult

@@ -587,8 +587,11 @@ func TestCLI_DeleteSaysCLIInTheDaemonLog(t *testing.T) {
 			}
 		}
 	}
-	e.must("delete", sent.ThreadID)
-	logged("deleted 1 message in 1 thread by human via cli: " + sent.ThreadID)
+	// The person's delete hides (SPEC §6, option A); the CLI says so.
+	if out := e.must("delete", sent.ThreadID); !strings.Contains(out, "deleted 1 message from your views; agents keep theirs until expiry") {
+		t.Fatalf("%s", out)
+	}
+	logged("hid 1 message in 1 thread from the person by human via cli: " + sent.ThreadID)
 	e.must("send", "--from", "worker", "reviewer", "read one")
 	e.must("read", "-w", "reviewer")
 	e.must("delete", "--read-between-agents")

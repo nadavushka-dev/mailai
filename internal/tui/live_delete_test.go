@@ -52,7 +52,7 @@ func TestLiveDeleteSaysTUIInTheDaemonLog(t *testing.T) {
 	if err := l.DeleteThread(m.ThreadID); err != nil {
 		t.Fatal(err)
 	}
-	if want := "deleted 1 message in 1 thread by human via tui: " + m.ThreadID; !strings.Contains(logs.String(), want) {
+	if want := "hid 1 message in 1 thread from the person by human via tui: " + m.ThreadID; !strings.Contains(logs.String(), want) {
 		t.Fatalf("log:\n%s\nwant %q", logs.String(), want)
 	}
 }

@@ -48,8 +48,10 @@ func (d *Daemon) threads(c *conn) (any, error) {
 	rows := map[string]*ThreadRow{}
 	people := map[string]map[store.Address]bool{}
 	mine := d.own(c.pl)
+	// The person does not see what the person hid (§6); agents do.
+	skip := isPerson(c.pl)
 	for _, box := range d.st.Mailboxes() {
-		msgs, _ := d.st.Peek(store.PeekQuery{Mailbox: box})
+		msgs, _ := d.st.Peek(store.PeekQuery{Mailbox: box, SkipHidden: skip})
 		for _, m := range msgs {
 			if !d.canSeeMessage(c, m) {
 				continue

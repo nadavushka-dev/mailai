@@ -203,6 +203,14 @@ Rules, all kept from TUIOS:
 - The person deletes by hand: a whole thread, or one message, from the web
   Mail view, the TUI or `mailai delete`. Agents cannot delete. Deleting
   works on this machine's store only, and leaves Inbox items as they are.
+  It hides, from the person's views only (decided 2026-11-24, option A):
+  the store keeps a per-thread (or, for `--message`, per-message) mark,
+  and the person's thread lists, threads, mailbox reads, unread counts and
+  filters skip what is marked. The agents keep their mail (their
+  mailboxes, `reply <#>`, `read --thread`, grants and peeks) until expiry
+  removes it as usual. New mail in a hidden thread stays hidden, unless it
+  is to or from the person (on any machine): then the thread shows again.
+  Expiry still really deletes, and drops the marks of what it removed.
   Several threads in one go (decided 2026-11-24): the person selects
   them, Gmail-style, read or unread, and deletes the selection after one
   question naming the count; each goes with the per-thread delete, same
@@ -219,9 +227,10 @@ Rules, all kept from TUIOS:
   agents: no message to or from the person, none unread; `--dry-run` only
   counts), for scripts.
 - Every delete, the person's or expiry's, leaves one line in the daemon log
-  (decided 2026-11-24): how many messages in how many threads, by whom
-  (`human via web`, `tui`, `cli` or `socket`, or `expiry`), and the thread
-  ids, the first five then `+N more`. A dry run logs nothing.
+  (decided 2026-11-24): what it did (`hid ... from the person` or
+  `deleted ... by expiry`), how many messages in how many threads, by whom
+  (`human via web`, `tui`, `cli` or `socket`), and the thread ids, the
+  first five then `+N more`. A dry run logs nothing.
 - Rate limit: a token bucket per claimed sender (10 messages burst, 1/s),
   with one shared overflow bucket for senders from another machine.
 
@@ -565,7 +574,8 @@ Supervisors are the one new idea against TUIOS. The rules:
 
 `$XDG_DATA_HOME/mailai/` (default `~/.local/share/mailai/`):
 - `identity.toml`: machine_id, fleet_id, name.
-- `store.db`: mailboxes, attention items, grants, sessions, outbox (§13).
+- `store.db`: mailboxes, attention items, grants, sessions, outbox (§13),
+  and what the person hid (§6).
 - `stash/<session>/`: stashed attachments, removed when the session ends.
 - `tokens/`: issued agent tokens, hashed.
 - `machine.key` (`0600`): this machine's random 32-byte key, presented
@@ -576,7 +586,8 @@ Supervisors are the one new idea against TUIOS. The rules:
 Config in `$XDG_CONFIG_HOME/mailai/config.toml`: `adapter`, `[mail] wake`, `[mail] keep_days`,
 `[approvals]`, `[hosts]` policy (§13), `[notify]`, theme.
 `store.db` is SQLite through `modernc.org/sqlite` (pure Go, no cgo; Q2).
-Evicted, expired and deleted messages are gone; there is no archive.
+Evicted and expired messages are gone; there is no archive. The person's
+delete only hides mail from the person (§6).
 
 ## 12. Protocol and clients (D7)
 
@@ -597,7 +608,7 @@ CLI (every command takes `--json`):
 | `mailai reply <#\|mid> [text] [--file PATH]` | Reply in a thread. `#` is the number in a message's fence header (`54` or `#54`), a message in the caller's own mailbox; the daemon resolves it, so a full mid works too. |
 | `mailai queue <to> <text>` · `queue ls` · `queue rm` | Typed when the agent comes to rest. |
 | `mailai inbox [--all] [--closed] [--session S]` · `mailai answer <item> <text\|choice>` · `mailai dismiss <item>` | The Inbox from the CLI. `--closed`: what closed in the last hour, and how (§7a). |
-| `mailai delete <thread>...` · `mailai delete --message <mid>...` · `mailai delete --read-between-agents [--dry-run]` | The person deletes mail (§6). |
+| `mailai delete <thread>...` · `mailai delete --message <mid>...` · `mailai delete --read-between-agents [--dry-run]` | The person deletes mail from their own views; agents keep theirs until expiry (§6). |
 | `mailai agents` · `mailai whoami` | What the adapter sees; how the daemon places this caller. |
 | `mailai status` | Daemon, adapter, links, and per agent the context cost: notice lines injected, messages and bytes read, asks and their wait time (D12). |
 | `mailai grant <principal> <rights> [--scope S] [--once]` · `grant ls` · `grant rm` | Grants. `human` only. |
@@ -935,7 +946,7 @@ Each milestone ends with all tests passing and a review in tuicr.
 | Harness support | Agnostic core, TOML manifests, graceful degradation (D14). |
 | Herdr pane identity without a shell pid | tty match, then token fallback (§9). |
 | Headless agents | Tokens only in v1 (§5). |
-| Retention | Read mail goes after `keep_days` (7); evicted; deleted by the person (§6). |
+| Retention | Read mail goes after `keep_days` (7); evicted. The person's delete hides it from the person only (§6). |
 | Desktop notifications | Yes, Inbox items only, `[notify]` (§12b). |
 | Herdr `blocked` panes without mailai hooks | Not Inbox items (D13). |
 | Plain mail to `human` | Mail view only; asks are the Inbox (D13). |

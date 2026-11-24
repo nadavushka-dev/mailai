@@ -31,7 +31,11 @@ func (s *Store) ExpireThreads(keep time.Duration) (int, []string, error) {
 		}
 		return true
 	})
-	return n, threads, err
+	if err != nil {
+		return n, threads, err
+	}
+	// What expiry removed takes its hidden marks with it.
+	return n, threads, s.forgetHidden()
 }
 
 // DeleteThread deletes every message in a thread, whatever mailbox holds

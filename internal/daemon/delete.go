@@ -10,8 +10,10 @@ import (
 	"github.com/nadavushka-dev/mailai/internal/store"
 )
 
-// Deleting mail (SPEC §6): the person deletes a thread or messages by hand;
-// read mail goes by itself after KeepFor. Agents cannot delete.
+// Deleting mail (SPEC §6): the person deletes a thread or messages by hand,
+// which hides them from the person's views only (decided 2026-11-24,
+// option A): the agents keep their mail until expiry. Read mail really goes
+// after KeepFor. Agents cannot delete.
 
 // DeleteArgs names a whole thread, or messages by mid; or, alone,
 // ReadBetweenAgents: every read thread between agents. DryRun only counts
@@ -25,7 +27,8 @@ type DeleteArgs struct {
 	Via               string   `json:"via,omitempty"`
 }
 
-// DeleteResult: Deleted counts messages; Threads, threads (bulk delete).
+// DeleteResult: Deleted counts messages (hidden from the person, for the
+// person's delete); Threads, threads (bulk delete).
 type DeleteResult struct {
 	Deleted int `json:"deleted"`
 	Threads int `json:"threads,omitempty"`
@@ -46,17 +49,21 @@ func deletedVia(c *conn, a DeleteArgs) string {
 	return "socket"
 }
 
-// logDeleted leaves the one daemon-log line every delete gets: how many
-// messages in how many threads, by whom, and the threads (the first five,
-// then how many more).
-func (d *Daemon) logDeleted(msgs int, threads []string, by string) {
+// logDeleted leaves the one daemon-log line every delete gets: what it did
+// ("hid", from the person, or "deleted", by expiry), how many messages in
+// how many threads, by whom, and the threads (the first five, then how
+// many more).
+func (d *Daemon) logDeleted(did string, msgs int, threads []string, by string) {
 	ids := threads
 	more := ""
 	if len(ids) > 5 {
 		ids, more = ids[:5], fmt.Sprintf(" +%d more", len(threads)-5)
 	}
-	d.log.Printf("deleted %d message%s in %d thread%s by %s: %s%s", msgs, plural(msgs), len(threads), plural(len(threads)), by, strings.Join(ids, " "), more)
+	d.log.Printf("%s %d message%s in %d thread%s %s: %s%s", did, msgs, plural(msgs), len(threads), plural(len(threads)), by, strings.Join(ids, " "), more)
 }
+
+// hid is the log's word for the person's delete.
+const hid = "hid"
 
 func plural(n int) string {
 	if n == 1 {
@@ -69,7 +76,7 @@ func (d *Daemon) deleteMail(c *conn, a DeleteArgs) (any, error) {
 	if !isPerson(c.pl) {
 		return nil, proto.Errorf(proto.CodeNotHuman, "only the person deletes mail")
 	}
-	by := "human via " + deletedVia(c, a)
+	by := "from the person by human via " + deletedVia(c, a)
 	if a.ReadBetweenAgents {
 		if a.Thread != "" || len(a.MIDs) > 0 {
 			return nil, proto.Errorf(proto.CodeBadRequest, "read_between_agents deletes on its own; name no thread or messages with it")
@@ -88,28 +95,28 @@ func (d *Daemon) deleteMail(c *conn, a DeleteArgs) (any, error) {
 			threads = append(threads, id)
 		}
 	}
-	if a.Thread != "" && len(d.st.Thread(a.Thread)) > 0 {
-		touch(a.Thread)
-	}
-	for _, mid := range a.MIDs {
-		if m, ok := d.st.Get(mid); ok {
-			touch(m.ThreadID)
-		}
-	}
 	n := 0
 	var err error
 	if a.Thread != "" {
 		var k int
-		k, err = d.st.DeleteThread(a.Thread)
+		k, err = d.st.HideThread(a.Thread)
 		n += k
+		if k > 0 {
+			touch(a.Thread)
+		}
 	}
 	if err == nil && len(a.MIDs) > 0 {
+		for _, mid := range a.MIDs {
+			if m, ok := d.st.Get(mid); ok && !d.st.Hidden(m) {
+				touch(m.ThreadID)
+			}
+		}
 		var k int
-		k, err = d.st.Delete(a.MIDs...)
+		k, err = d.st.HideMessages(a.MIDs...)
 		n += k
 	}
 	if n > 0 {
-		d.logDeleted(n, threads, by)
+		d.logDeleted(hid, n, threads, by)
 	}
 	if err != nil {
 		return nil, err
@@ -140,9 +147,10 @@ func betweenAgentsRead(msgs []store.Message) bool {
 	return true
 }
 
-// deleteReadBetweenAgents deletes every read thread between agents in this
-// machine's store (§6); Inbox items stay. A thread is checked again right
-// before it goes, so mail that arrived meanwhile keeps it.
+// deleteReadBetweenAgents hides from the person every read thread between
+// agents in this machine's store (§6) that the person still sees; Inbox
+// items stay. A thread is checked again right before it goes, so mail that
+// arrived meanwhile keeps it.
 func (d *Daemon) deleteReadBetweenAgents(dry bool, by string) (any, error) {
 	seen := map[string]bool{}
 	var ids []string
@@ -158,7 +166,12 @@ func (d *Daemon) deleteReadBetweenAgents(dry bool, by string) (any, error) {
 	res := DeleteResult{}
 	var gone []string
 	for _, id := range ids {
-		th := d.st.Thread(id)
+		var th []store.Message
+		for _, m := range d.st.Thread(id) {
+			if !d.st.Hidden(m) {
+				th = append(th, m)
+			}
+		}
 		if !betweenAgentsRead(th) {
 			continue
 		}
@@ -167,19 +180,19 @@ func (d *Daemon) deleteReadBetweenAgents(dry bool, by string) (any, error) {
 			res.Deleted += len(th)
 			continue
 		}
-		n, err := d.st.DeleteThread(id)
+		n, err := d.st.HideThread(id)
 		res.Deleted += n
 		if n > 0 {
 			res.Threads++
 			gone = append(gone, id)
 		}
 		if err != nil {
-			d.logDeleted(res.Deleted, gone, by+" (read between agents)")
+			d.logDeleted(hid, res.Deleted, gone, by+" (read between agents)")
 			return nil, err
 		}
 	}
 	if !dry && res.Deleted > 0 {
-		d.logDeleted(res.Deleted, gone, by+" (read between agents)")
+		d.logDeleted(hid, res.Deleted, gone, by+" (read between agents)")
 		d.publishEvent("deleted", map[string]any{"count": res.Deleted, "threads": res.Threads})
 	}
 	return res, nil
@@ -195,7 +208,7 @@ func (d *Daemon) expire() {
 		d.log.Printf("expire: %v", err)
 	}
 	if n > 0 {
-		d.logDeleted(n, threads, fmt.Sprintf("expiry (read over %s ago)", d.keepFor))
+		d.logDeleted("deleted", n, threads, fmt.Sprintf("by expiry (read over %s ago)", d.keepFor))
 		d.publishEvent("deleted", map[string]any{"count": n})
 	}
 }

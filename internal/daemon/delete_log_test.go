@@ -14,7 +14,7 @@ import (
 // Every delete leaves one line in the daemon log (decided 2026-11-24, after
 // a bulk delete on UbCl left no trace): who (the person and through what,
 // or expiry), how many messages in how many threads, and the thread ids,
-// the first five then a count.
+// the first five then a count. The person's delete hides (option A).
 func TestDelete_LeavesOneLogLine(t *testing.T) {
 	logs := &syncBuf{}
 	pl := placed(Placement{Proof: store.ProofToken, Principal: "worker"}, Placement{Proof: store.ProofToken, Principal: "reviewer"})
@@ -33,7 +33,7 @@ func TestDelete_LeavesOneLogLine(t *testing.T) {
 	lines := func() []string {
 		var out []string
 		for _, l := range strings.Split(logs.String(), "\n") {
-			if strings.HasPrefix(l, "deleted ") {
+			if strings.HasPrefix(l, "hid ") {
 				out = append(out, l)
 			}
 		}
@@ -46,14 +46,14 @@ func TestDelete_LeavesOneLogLine(t *testing.T) {
 	if err := person.Call("delete", DeleteArgs{Thread: root.Message.ThreadID, Via: "cli"}, nil); err != nil {
 		t.Fatal(err)
 	}
-	if want := "deleted 2 messages in 1 thread by human via cli: " + root.Message.ThreadID; last() != want {
+	if want := "hid 2 messages in 1 thread from the person by human via cli: " + root.Message.ThreadID; last() != want {
 		t.Fatalf("log %q, want %q", last(), want)
 	}
 	one := send("c", "")
 	if err := person.Call("delete", DeleteArgs{MIDs: []string{one.Message.MID}, Via: "tui"}, nil); err != nil {
 		t.Fatal(err)
 	}
-	if want := "deleted 1 message in 1 thread by human via tui: " + one.Message.ThreadID; last() != want {
+	if want := "hid 1 message in 1 thread from the person by human via tui: " + one.Message.ThreadID; last() != want {
 		t.Fatalf("log %q, want %q", last(), want)
 	}
 	// A client that does not say what it is: the socket. The web says so
@@ -72,7 +72,7 @@ func TestDelete_LeavesOneLogLine(t *testing.T) {
 		t.Fatalf("%v %v", err, r)
 	}
 	r.Body.Close()
-	if want := "deleted 1 message in 1 thread by human via web: " + three.Message.ThreadID; last() != want {
+	if want := "hid 1 message in 1 thread from the person by human via web: " + three.Message.ThreadID; last() != want {
 		t.Fatalf("log %q, want %q", last(), want)
 	}
 	// In one go: the first five thread ids, then how many more.
@@ -101,7 +101,7 @@ func TestDelete_LeavesOneLogLine(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := last()
-	if !strings.HasPrefix(got, "deleted 7 messages in 7 threads by human via cli (read between agents): ") || !strings.HasSuffix(got, " +2 more") {
+	if !strings.HasPrefix(got, "hid 7 messages in 7 threads from the person by human via cli (read between agents): ") || !strings.HasSuffix(got, " +2 more") {
 		t.Fatalf("log %q", got)
 	}
 	shown := 0

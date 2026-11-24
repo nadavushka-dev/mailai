@@ -537,6 +537,10 @@ func (d *Daemon) handle(c *conn, req proto.Request) (any, error) {
 			return nil, err
 		}
 		n, from := d.st.Unread(box)
+		if isPerson(c.pl) {
+			// The person's count leaves out what the person hid (§6).
+			n, from = d.st.UnreadVisible(box)
+		}
 		return UnreadResult{Count: n, From: from}, nil
 	case "wait":
 		a, err := decode[WaitArgs](req.Args)
@@ -766,8 +770,18 @@ func (d *Daemon) read(c *conn, a ReadArgs) (any, error) {
 				msgs = d.st.Thread(m.ThreadID)
 			}
 		}
+		if isPerson(c.pl) {
+			// What the person hid stays out of the person's view (§6).
+			kept := msgs[:0]
+			for _, m := range msgs {
+				if !d.st.Hidden(m) {
+					kept = append(kept, m)
+				}
+			}
+			msgs = kept
+		}
 		resolveMissing(msgs)
-		if msgs == nil {
+		if len(msgs) == 0 {
 			msgs = []store.Message{}
 		}
 		return ReadResult{Messages: msgs}, nil
@@ -780,9 +794,9 @@ func (d *Daemon) read(c *conn, a ReadArgs) (any, error) {
 	}
 	var msgs []store.Message
 	if a.Peek {
-		msgs, err = d.st.Peek(store.PeekQuery{Mailbox: box, By: d.own(c.pl), Unread: a.Unread})
+		msgs, err = d.st.Peek(store.PeekQuery{Mailbox: box, By: d.own(c.pl), Unread: a.Unread, SkipHidden: isPerson(c.pl)})
 	} else {
-		msgs, err = d.st.Read(store.ReadQuery{Mailbox: box, Unread: a.Unread, IDs: a.IDs, Mark: true})
+		msgs, err = d.st.Read(store.ReadQuery{Mailbox: box, Unread: a.Unread, IDs: a.IDs, Mark: true, SkipHidden: isPerson(c.pl)})
 	}
 	if err != nil {
 		return nil, err

@@ -76,6 +76,9 @@ type ReadQuery struct {
 	IDs []uint64
 	// Mark stamps ReadAt on what is returned.
 	Mark bool
+	// SkipHidden leaves out (and so never marks) what the person hid: a
+	// read for the person.
+	SkipHidden bool
 }
 
 // Store is every mailbox on this machine.
@@ -94,6 +97,10 @@ type Store struct {
 	grants *grants
 	// outbox is a spoke's queue of off-machine sends (SPEC §13a).
 	outbox []Outgoing
+	// hiddenThreads and hiddenMsgs are what the person hid (hide.go), by
+	// thread id and by mid, with when.
+	hiddenThreads map[string]int64
+	hiddenMsgs    map[string]int64
 }
 
 type mailbox struct {
@@ -146,6 +153,18 @@ func Load(o Options, p Persister) (*Store, error) {
 			return nil, err
 		}
 	}
+	if hp, ok := p.(HiddenPersister); ok {
+		th, mids, err := hp.LoadHidden()
+		if err != nil {
+			return nil, err
+		}
+		for k, v := range th {
+			s.hiddenThreads[k] = v
+		}
+		for k, v := range mids {
+			s.hiddenMsgs[k] = v
+		}
+	}
 	if op, ok := p.(OutboxPersister); ok {
 		out, err := op.LoadOutbox()
 		if err != nil {
@@ -171,7 +190,8 @@ func newStore(o Options) *Store {
 	if o.MachineID == "" {
 		o.MachineID = "local"
 	}
-	return &Store{now: o.Now, limits: o.Limits, machine: o.MachineID, boxes: map[Address]*mailbox{}, byMID: map[string]*Message{}, lim: newLimiter(), att: newAttention(), grants: newGrants()}
+	return &Store{now: o.Now, limits: o.Limits, machine: o.MachineID, boxes: map[Address]*mailbox{}, byMID: map[string]*Message{}, lim: newLimiter(), att: newAttention(), grants: newGrants(),
+		hiddenThreads: map[string]int64{}, hiddenMsgs: map[string]int64{}}
 }
 
 // Send validates a request and stores it in the recipient's mailbox, or the
@@ -269,6 +289,10 @@ func (s *Store) send(r SendRequest, mid, thread string) (Message, bool, error) {
 		s.nextID--
 		return Message{}, false, err
 	}
+	if err := s.unhideFor(m); err != nil {
+		s.nextID--
+		return Message{}, false, err
+	}
 	if s.p != nil {
 		if err := s.p.Insert(box, m); err != nil {
 			s.nextID--
@@ -307,6 +331,10 @@ func (s *Store) Accept(box Address, in Message) (m Message, fresh bool, err erro
 	c.box = box
 	mb := s.box(box)
 	if err := s.makeRoom(box, mb, c.size()); err != nil {
+		s.nextID--
+		return Message{}, false, err
+	}
+	if err := s.unhideFor(&c); err != nil {
 		s.nextID--
 		return Message{}, false, err
 	}
@@ -364,6 +392,8 @@ type PeekQuery struct {
 	Mailbox Address
 	By      Address
 	Unread  bool
+	// SkipHidden leaves out what the person hid: a peek for the person.
+	SkipHidden bool
 }
 
 // Peek returns copies like Read does, stamping SeenAt only for an own-inbox
@@ -380,6 +410,9 @@ func (s *Store) Peek(q PeekQuery) ([]Message, error) {
 	var out []Message
 	for _, m := range mb.msgs {
 		if q.Unread && m.ReadAt != 0 {
+			continue
+		}
+		if q.SkipHidden && s.hiddenLocked(m) {
 			continue
 		}
 		c := *m
@@ -416,7 +449,18 @@ func (s *Store) Thread(threadID string) []Message {
 
 // Unread is the count of unread messages in a box and the distinct senders,
 // in order of first appearance. It is what a notice line is built from (D12).
+// The person's own box leaves out what the person hid.
 func (s *Store) Unread(box Address) (int, []Address) {
+	return s.unread(box, box == Human)
+}
+
+// UnreadVisible is Unread for the person, in any box: what the person hid
+// is left out.
+func (s *Store) UnreadVisible(box Address) (int, []Address) {
+	return s.unread(box, true)
+}
+
+func (s *Store) unread(box Address, skipHidden bool) (int, []Address) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	mb, ok := s.boxes[box]
@@ -427,7 +471,7 @@ func (s *Store) Unread(box Address) (int, []Address) {
 	seen := map[Address]bool{}
 	var from []Address
 	for _, m := range mb.msgs {
-		if m.ReadAt != 0 {
+		if m.ReadAt != 0 || (skipHidden && s.hiddenLocked(m)) {
 			continue
 		}
 		n++
@@ -469,6 +513,9 @@ func (s *Store) Read(q ReadQuery) ([]Message, error) {
 			continue
 		}
 		if q.Unread && m.ReadAt != 0 {
+			continue
+		}
+		if q.SkipHidden && s.hiddenLocked(m) {
 			continue
 		}
 		c := *m

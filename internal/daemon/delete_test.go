@@ -67,8 +67,13 @@ func TestDelete_OneMessage(t *testing.T) {
 	if err := person.Call("delete", DeleteArgs{MIDs: []string{reply.Message.MID}}, &res); err != nil || res.Deleted != 1 {
 		t.Fatalf("%v %+v", err, res)
 	}
-	if th := d.st.Thread(root.Message.ThreadID); len(th) != 1 || th[0].MID != root.Message.MID {
-		t.Fatalf("thread now %+v", th)
+	// Hidden from the person only (option A, 2026-11-24): the worker who
+	// sent it still has the whole thread.
+	if th := readThread(t, person, root.Message.ThreadID); len(th) != 1 || th[0].MID != root.Message.MID {
+		t.Fatalf("person's thread now %+v", th)
+	}
+	if th := readThread(t, worker, root.Message.ThreadID); len(th) != 2 || len(d.st.Thread(root.Message.ThreadID)) != 2 {
+		t.Fatalf("the worker's thread now %+v", th)
 	}
 }
 
@@ -97,8 +102,12 @@ func TestWeb_DeleteThread(t *testing.T) {
 		t.Fatalf("%v %v", err, r)
 	}
 	r.Body.Close()
-	if len(d.st.Thread(root.Message.ThreadID)) != 0 {
-		t.Fatal("thread still held")
+	// Hidden from the person; the worker keeps it (option A, 2026-11-24).
+	if personSees(t, person, root.Message.ThreadID) {
+		t.Fatal("the person still sees the thread")
+	}
+	if len(d.st.Thread(root.Message.ThreadID)) != 1 {
+		t.Fatal("the worker's mail went")
 	}
 	deadline := time.After(2 * time.Second)
 	for {

@@ -40,6 +40,12 @@ CREATE TABLE IF NOT EXISTS outbox (
   id   INTEGER PRIMARY KEY,
   body TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS hidden (
+  kind TEXT NOT NULL,
+  id   TEXT NOT NULL,
+  at   INTEGER NOT NULL,
+  PRIMARY KEY (kind, id)
+);
 CREATE TABLE IF NOT EXISTS meta (
   key   TEXT PRIMARY KEY,
   value INTEGER NOT NULL
@@ -248,6 +254,40 @@ func (p *SQLite) PutOutgoing(o *Outgoing) error {
 
 func (p *SQLite) DeleteOutgoing(id uint64) error {
 	_, err := p.db.Exec(`DELETE FROM outbox WHERE id=?`, id)
+	return err
+}
+
+// LoadHidden implements HiddenPersister.
+func (p *SQLite) LoadHidden() (map[string]int64, map[string]int64, error) {
+	rows, err := p.db.Query(`SELECT kind, id, at FROM hidden`)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+	threads, mids := map[string]int64{}, map[string]int64{}
+	for rows.Next() {
+		var kind, id string
+		var at int64
+		if err := rows.Scan(&kind, &id, &at); err != nil {
+			return nil, nil, err
+		}
+		switch kind {
+		case hideThread:
+			threads[id] = at
+		case hideMessage:
+			mids[id] = at
+		}
+	}
+	return threads, mids, rows.Err()
+}
+
+func (p *SQLite) PutHidden(kind, id string, at int64) error {
+	_, err := p.db.Exec(`INSERT INTO hidden(kind, id, at) VALUES(?,?,?) ON CONFLICT(kind, id) DO UPDATE SET at=excluded.at`, kind, id, at)
+	return err
+}
+
+func (p *SQLite) DeleteHidden(kind, id string) error {
+	_, err := p.db.Exec(`DELETE FROM hidden WHERE kind=? AND id=?`, kind, id)
 	return err
 }
 
