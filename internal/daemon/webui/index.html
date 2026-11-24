@@ -167,6 +167,21 @@
   .live-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); display: inline-block; flex: none; align-self: center; margin-right: 2px; }
   .gone { color: var(--faint); font-size: 12px; font-weight: 450; }
   .unread-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--amber); display: inline-block; flex: none; align-self: center; }
+  /* Selection (Gmail-style): a checkbox on each thread row, select-all in the list header. */
+  .row.pickable { grid-template-columns: 16px 32px 1fr; }
+  .row.picked { background: var(--amber-soft); }
+  .pick { width: 16px; height: 16px; margin-top: 8px; border: 1.5px solid var(--line-2); border-radius: 4px; display: grid; place-items: center; color: var(--amber-ink); cursor: pointer; user-select: none; }
+  .pick:hover { border-color: var(--dim); }
+  .pick .i { width: 12px; height: 12px; stroke-width: 2.6; display: none; }
+  .pick[aria-checked="true"] { background: var(--amber); border-color: var(--amber); }
+  .pick[aria-checked="true"] .i { display: block; }
+  .pick[aria-checked="mixed"] { border-color: var(--amber); }
+  .pick[aria-checked="mixed"]::after { content: ''; width: 8px; height: 2px; border-radius: 1px; background: var(--amber); }
+  .selbar { display: flex; align-items: center; gap: 8px; padding: 2px 12px 6px; min-height: 34px; font-size: 12.5px; color: var(--faint); }
+  .selbar .pick { margin: 0 6px 0 0; }
+  .selbar .n { color: var(--fg); font-weight: 600; margin-right: 4px; }
+  .selbar .link { padding: 4px 8px; font-size: 12.5px; }
+  .selbar .link.del { margin-left: 0; }
 
   /* ---------- tags and badges ---------- */
   .tag {
@@ -368,9 +383,6 @@
   .scopes > button { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border: 0; border-radius: 8px; background: transparent; color: var(--dim); font: inherit; font-size: 12.5px; font-weight: 560; cursor: pointer; }
   .scopes > button:hover { color: var(--fg-2); background: var(--hover); }
   .scopes > button.on { color: var(--fg); background: var(--panel-2); }
-  .scopes > button[hidden] { display: none; }
-  .scopes > button.bulk-del { margin-left: auto; }
-  .scopes > button.bulk-del:hover { color: var(--red); background: var(--red-soft); }
   .follow-chip { display: inline-flex; align-items: center; gap: 8px; margin-left: auto; padding: 3px 4px 3px 3px; border-radius: 99px; background: var(--amber-soft); color: var(--fg); font-size: 12.5px; font-weight: 560; }
   .follow-chip:empty { display: none; }
   .follow-chip .av, .person-chip .av, .to-pick .av { width: 22px; height: 22px; font-size: 9.5px; border-radius: 99px; }
@@ -541,7 +553,6 @@
       <button type="button" id="scope-me" data-scope="me" title="Mail to and from you"><svg class="i"><use href="#i-user"/></svg>To me <span class="count" id="n-me"></span></button>
       <button type="button" id="scope-agents" data-scope="agents" title="Your agents writing to each other"><svg class="i"><use href="#i-bot"/></svg>Between agents</button>
       <button type="button" id="scope-people" data-scope="people" title="Every agent; pick one to follow"><svg class="i"><use href="#i-users"/></svg>Agents</button>
-      <button type="button" class="bulk-del" id="bulk-del" data-a="delete-read-agents" hidden title="Delete every read thread between agents (none to or from you)"><svg class="i"><use href="#i-trash"/></svg>Delete read</button>
       <span class="follow-chip" id="follow"></span>
     </nav>
     <section id="list" role="listbox" aria-label="Waiting on you"></section>
@@ -580,6 +591,11 @@
   // to one agent's threads. Mail between agents carries no new or unread
   // marks for the person (SPEC §12).
   let mailScope = 'me', following = null;
+  // Selection (decided 2026-11-24): thread ids checked in a Mail list,
+  // always a subset of the rows shown; pickAnchor is the last one clicked,
+  // for shift+click. deleting holds live refreshes while a Delete runs.
+  const picked = new Set();
+  let pickAnchor = null, deleting = false;
 
   // ---------- words ----------
   const icon = (id, cls) => `<svg class="i${cls ? ' ' + cls : ''}"><use href="#i-${id}"/></svg>`;
@@ -810,7 +826,7 @@
     if (openThread) parts = [k('r', joining ? 'join' : 'reply'), k('p','follow'), k('esc','back')];
     else if (view === 'inbox') parts = [k('j','next'), k('k','previous'), k('1–8','pick'), k('a','allow'), k('d','deny'), k('r','answer'), k('x','dismiss'), k('↵','thread'), k('p','follow agent')];
     else if (mailScope === 'people' && !following) parts = [k('j','next'), k('k','previous'), k('↵','follow'), k('t','next tab')];
-    else parts = [k('j','next'), k('k','previous'), k('r', joining ? 'join' : 'reply'), k('p','follow'), k('t','next tab'), k('u','unread only')].concat(following ? [k('esc','unfollow')] : []);
+    else parts = [k('j','next'), k('k','previous'), k('x','select'), k('r', joining ? 'join' : 'reply'), k('p','follow'), k('t','next tab'), k('u','unread only')].concat(picked.size ? [k('esc','clear selection')] : following ? [k('esc','unfollow')] : []);
     $('#keys').innerHTML = parts.join('') + k('i','waiting') + k('m','mail') + k('/','filter');
   };
 
@@ -827,7 +843,6 @@
     $('#mail-count').textContent = unread || '';
     $('#n-me').textContent = unread || '';
     $('#scopes').hidden = view !== 'mail';
-    $('#bulk-del').hidden = !(view === 'mail' && mailScope === 'agents' && !following);
     for (const b of document.querySelectorAll('.scopes > button[data-scope]')) {
       const on = !following && b.dataset.scope === mailScope;
       b.classList.toggle('on', on); b.setAttribute('aria-pressed', on);
@@ -855,6 +870,7 @@
   }
   function threadRow(t, i) {
     const on = i === selected;
+    const pk = picked.has(t.thread_id);
     const fromMe = isHuman(t.from);
     const other = fromMe ? t.to : t.from;
     // Only the person's own unread is marked; an agent's is its business.
@@ -868,7 +884,7 @@
       ? `<span class="agent">You</span><span class="host">→ ${esc(t.to || 'session ' + (t.session||''))}</span>`
       : `${agentName(t.from)}${withPane(t.from, t.from_pane)}<span class="host">→ ${localName(t.to) === 'human' ? 'you' : esc(t.to || 'session ' + (t.session||''))}</span>`;
     const line = t.subject ? `<b class="subj">${esc(t.subject)}</b>${t.first ? ' — ' + esc(t.first) : ''}` : esc(t.first || '');
-    return `<button class="row${on?' on':''}" role="option" aria-selected="${on}" data-i="${i}">${avatar(other)}<span class="r-body"><span class="r-top">${dot}${people}<span class="age">${ago(t.last_at)}</span></span><span class="r-q">${line}</span>${tags.length ? `<span class="r-tags">${tags.join('')}</span>` : ''}</span></button>`;
+    return `<button class="row pickable${on?' on':''}${pk?' picked':''}" role="option" aria-selected="${on}" data-i="${i}"><span class="pick" role="checkbox" aria-checked="${picked.has(t.thread_id)}" data-pick="${esc(t.thread_id)}" title="Select (x)">${icon('check')}</span>${avatar(other)}<span class="r-body"><span class="r-top">${dot}${people}<span class="age">${ago(t.last_at)}</span></span><span class="r-q">${line}</span>${tags.length ? `<span class="r-tags">${tags.join('')}</span>` : ''}</span></button>`;
   }
   const agentStats = g => [
     g.live?.s === 'live' ? '<span><span class="live-dot"></span> live</span>' : g.live?.s === 'closed' ? `<span>${closedText(g.live)}</span>` : '',
@@ -894,11 +910,57 @@
     return `<div class="profile">${avatar(who, true)}<div class="name">${agentName(who)}</div><div class="stats">${stats.join('')}</div></div>`;
   }
 
+  // ---------- selection ----------
+  // A list of threads (To me, Between agents, one agent's) can be picked
+  // from; the Inbox and the Agents tab cannot.
+  const pickable = () => view === 'mail' && !(mailScope === 'people' && !following);
+  // prunePicked drops what is no longer shown: deleted, filtered out,
+  // another tab. Delete never takes what is out of sight.
+  const prunePicked = () => {
+    const shown = new Set(pickable() ? visibleThreads().map(t => t.thread_id) : []);
+    for (const id of [...picked]) if (!shown.has(id)) picked.delete(id);
+    if (pickAnchor && !shown.has(pickAnchor)) pickAnchor = null;
+  };
+  const repaint = () => { renderList(); keys(); };
+  const clearPicked = () => { picked.clear(); pickAnchor = null; repaint(); };
+  const togglePick = id => { if (!id) return; picked.has(id) ? picked.delete(id) : picked.add(id); pickAnchor = id; repaint(); };
+  // selbarHTML heads a thread list: select-all (every row shown, so the
+  // filter counts), and while anything is picked, how many, Delete, Clear.
+  function selbarHTML(rows) {
+    const all = rows.length > 0 && rows.every(t => picked.has(t.thread_id));
+    const box = `<span class="pick all" role="checkbox" aria-checked="${all ? 'true' : picked.size ? 'mixed' : 'false'}" data-pick-all title="${all ? 'Clear the selection' : 'Select every thread shown'}">${icon('check')}</span>`;
+    if (!picked.size) return `<div class="selbar">${box}<span>${rows.length} thread${rows.length === 1 ? '' : 's'}</span></div>`;
+    return `<div class="selbar">${box}<span class="n">${picked.size} selected</span><button type="button" class="link del" data-a="delete-picked" title="Delete the selected threads">${icon('trash')}Delete</button><button type="button" class="link" data-a="clear-picked" title="Clear the selection (esc)">Clear</button></div>`;
+  }
+  // deletePicked asks once, then deletes each selected thread with the
+  // person's delete, as the thread's own Delete does (§6: this machine's
+  // store only; Inbox items stay). One that fails stays selected.
+  async function deletePicked() {
+    const ids = [...picked], n = ids.length;
+    if (!n) return;
+    const m = threads.filter(t => picked.has(t.thread_id)).reduce((s, t) => s + (t.count || 0), 0);
+    if (!confirm(`Delete ${n} thread${n === 1 ? '' : 's'} (${m} message${m === 1 ? '' : 's'})? It can't be undone.`)) return;
+    let done = 0, err = null;
+    deleting = true;
+    try {
+      for (const id of ids) {
+        try { await api('/api/delete', {thread: id}); done++; picked.delete(id); }
+        catch (e) { err = err || e; }
+      }
+    } finally { deleting = false; render.pending = false; }
+    if (ids.includes(openThread)) { openThread = null; reading(false); }
+    pickAnchor = null;
+    if (err) status(`Deleted ${done} of ${n}: ${err.message}`, true);
+    else status(`Deleted ${n} thread${n === 1 ? '' : 's'}`);
+    await render();
+  }
+
   function renderList() {
     const list = $('#list');
     const people = view === 'mail' && mailScope === 'people' && !following;
     const data = view === 'inbox' ? visibleItems() : mailRows();
     if (selected >= data.length) selected = Math.max(0, data.length - 1);
+    prunePicked();
     renderTabs();
     const head = view === 'mail' && following ? profileHTML(following) : '';
     if (!data.length) {
@@ -913,7 +975,7 @@
       list.innerHTML = head + `<div class="empty"><span class="glyph">${icon(view==='inbox'?'check':people?'users':'mail')}</span><strong>${title}</strong>${sub}</div>`;
       return;
     }
-    list.innerHTML = head + data.map((row, i) => view === 'inbox' ? itemRow(row, i) : people ? agentRow(row, i) : threadRow(row, i)).join('');
+    list.innerHTML = head + (pickable() ? selbarHTML(data) : '') + data.map((row, i) => view === 'inbox' ? itemRow(row, i) : people ? agentRow(row, i) : threadRow(row, i)).join('');
     const on = list.querySelector('.row.on');
     if (on) on.scrollIntoView({block:'nearest'});
   }
@@ -1133,7 +1195,7 @@
   }
 
   async function render() {
-    if (typing()) { render.pending = true; return; }
+    if (typing() || deleting) { render.pending = true; return; }
     try {
       const [inbox, mail, closed, live] = await Promise.all([api('/api/inbox' + (showAll ? '?all=1' : '')), api('/api/threads'), api('/api/inbox?closed=1'), api('/api/agents').catch(() => null)]);
       if (!inbox || !mail || !closed) return;
@@ -1199,6 +1261,27 @@
 
   // ---------- events ----------
   document.addEventListener('click', async e => {
+    // A checkbox, before its row: click toggles one, shift+click sets the
+    // range from the last clicked row to the clicked row's new state.
+    const pk = e.target.closest('[data-pick]');
+    if (pk) {
+      e.preventDefault();
+      const id = pk.dataset.pick, rows = visibleThreads().map(t => t.thread_id);
+      const on = !picked.has(id);
+      if (e.shiftKey && pickAnchor && rows.includes(pickAnchor) && rows.includes(id)) {
+        const [a, b] = [rows.indexOf(pickAnchor), rows.indexOf(id)].sort((x, y) => x - y);
+        for (const r of rows.slice(a, b + 1)) on ? picked.add(r) : picked.delete(r);
+        pickAnchor = id;
+        return repaint();
+      }
+      return togglePick(id);
+    }
+    if (e.target.closest('[data-pick-all]')) {
+      const rows = visibleThreads().map(t => t.thread_id);
+      if (rows.length && rows.every(r => picked.has(r))) picked.clear(); else rows.forEach(r => picked.add(r));
+      pickAnchor = null;
+      return repaint();
+    }
     const row = e.target.closest('.row');
     if (row) return select(+row.dataset.i);
     const sc = e.target.closest('.scopes > button[data-scope]');
@@ -1229,17 +1312,8 @@
       if (openThread === id) { openThread = null; reading(false); }
       return act('/api/delete', {thread: id}, 'Thread deleted');
     }
-    if (a === 'delete-read-agents') {
-      // Count first, then ask: every read thread between agents (SPEC §6).
-      let dry;
-      try { dry = await api('/api/delete', {read_between_agents: true, dry_run: true}); } catch (err) { return status(err.message, true); }
-      if (!dry) return;
-      const n = dry.threads || 0, m = dry.deleted || 0;
-      if (!n) return status('No read threads between agents');
-      if (!confirm(`Delete ${n} read thread${n === 1 ? '' : 's'} between agents (${m} message${m === 1 ? '' : 's'})? It can't be undone.`)) return;
-      openThread = null; reading(false);
-      return act('/api/delete', {read_between_agents: true}, `Deleted ${n} thread${n === 1 ? '' : 's'}`);
-    }
+    if (a === 'delete-picked') return deletePicked();
+    if (a === 'clear-picked') return clearPicked();
     if (a === 'open') { openThread = id; reading(true); return renderThread(id, true); }
     if (a === 'back') { openThread = null; renderList(); return renderDetail(); }
     if (a === 'mback') { openThread = null; reading(false); }
@@ -1303,6 +1377,7 @@
       }
       if (!$('#filters').hidden) { toggleFilters(false); return; }
       if (openThread) { openThread = null; renderList(); renderDetail(); return; }
+      if (picked.size) { clearPicked(); return; }
       if (following && view === 'mail') { unfollow(); return; }
       reading(false);
       return;
@@ -1323,6 +1398,7 @@
     if (e.key === 'o') go('inbox', false);
     if (e.key === 't' && view === 'mail') { const order = ['me', 'agents', 'people']; setScope(order[(order.indexOf(following ? 'people' : mailScope) + 1) % 3]); }
     if (e.key === 'p') { e.preventDefault(); follow(followTarget()); }
+    if (e.key === 'x' && pickable()) { e.preventDefault(); if (!openThread) togglePick(visibleThreads()[selected]?.thread_id); return; }
     if (e.key === 'u' && view === 'mail') { $('#f-unread').checked = !$('#f-unread').checked; selected = 0; renderList(); renderDetail(); }
     if (e.key === '/') { e.preventDefault(); toggleFilters(true); }
     if (e.key === 'Enter') {

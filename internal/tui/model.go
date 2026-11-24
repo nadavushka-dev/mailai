@@ -63,10 +63,13 @@ type Model struct {
 	// (y deletes). confirmText is the question shown.
 	confirmDelete string
 	confirmText   string
-	// confirmBulk: X asked whether to delete every read thread between
-	// agents; the next key decides (y deletes).
-	confirmBulk bool
-	now         func() time.Time
+	// marked are the Mail threads space or x marked, by thread id; D
+	// deletes them all. Always a subset of the rows shown (pruneMarks).
+	marked map[string]bool
+	// confirmMarked: D asked whether to delete the marked threads; the
+	// next key decides (y deletes).
+	confirmMarked bool
+	now           func() time.Time
 
 	// Mail filters (SPEC §12): unread, principal, session, machine.
 	filterUnread  bool
@@ -351,7 +354,42 @@ func (m Model) fail(err error) Model {
 	return m
 }
 
+// pruneMarks drops marks on threads no longer shown: gone, filtered out,
+// another scope, or not in Mail at all. D never deletes what is out of
+// sight.
+func (m *Model) pruneMarks() {
+	if len(m.marked) == 0 {
+		return
+	}
+	shown := map[string]bool{}
+	if m.view == ViewMail {
+		for _, t := range m.filteredThreads() {
+			shown[t.ThreadID] = true
+		}
+	}
+	// A fresh map: a Model is a value, and an older copy must not change.
+	next := map[string]bool{}
+	for id := range m.marked {
+		if shown[id] {
+			next[id] = true
+		}
+	}
+	m.marked = next
+}
+
+// markedRows are the marked threads, in list order.
+func (m Model) markedRows() []daemon.ThreadRow {
+	var out []daemon.ThreadRow
+	for _, t := range m.filteredThreads() {
+		if m.marked[t.ThreadID] {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
 func (m *Model) clampCursor() {
+	m.pruneMarks()
 	n := m.rows()
 	if m.cursor >= n {
 		m.cursor = n - 1
@@ -481,13 +519,12 @@ func parseMailFilter(s string) (who, session, machine string) {
 }
 
 func (m Model) updateKeys(k tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if m.confirmBulk {
-		m.confirmBulk, m.confirmText = false, ""
+	if m.confirmMarked {
+		m.confirmMarked, m.confirmText = false, ""
 		if k.String() != "y" {
 			return m, nil
 		}
-		m.open, m.openID = nil, ""
-		return m.act(func() error { _, err := m.b.DeleteReadBetweenAgents(); return err })
+		return m.deleteMarked()
 	}
 	if id := m.confirmDelete; id != "" {
 		m.confirmDelete, m.confirmText = "", ""
@@ -525,6 +562,7 @@ func (m Model) updateKeys(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	case "i":
 		m.view, m.cursor, m.open, m.openID = ViewInbox, 0, nil, ""
+		m.pruneMarks()
 		return m, nil
 	case "m":
 		m.view, m.cursor, m.open, m.openID = ViewMail, 0, nil, ""
@@ -536,6 +574,7 @@ func (m Model) updateKeys(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.view = ViewInbox
 		}
 		m.cursor, m.open, m.openID = 0, nil, ""
+		m.pruneMarks()
 		return m, nil
 	case "j", "down":
 		if m.open != nil {
@@ -561,17 +600,22 @@ func (m Model) updateKeys(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "o":
 		m.view, m.cursor, m.open, m.openID = ViewInbox, 0, nil, ""
+		m.pruneMarks()
 		return m, nil
 	case "D":
+		if m.view == ViewMail && m.open == nil && len(m.marked) > 0 {
+			return m.askDeleteMarked(), nil
+		}
 		return m.askDelete(), nil
-	case "X":
-		return m.askBulkDelete(), nil
+	case " ":
+		return m.toggleMark(), nil
 	case "v":
 		return m.startOpen()
 	case "t":
 		if m.view == ViewMail && m.open == nil {
 			m.scope = (m.scope + 1) % 3
 			m.cursor = 0
+			m.pruneMarks()
 		}
 		return m, nil
 	case "u":
@@ -596,6 +640,7 @@ func (m Model) updateKeys(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.open, m.openID = nil, ""
 			return m, nil
 		}
+		m.marked = nil
 		return m, nil
 	case "enter":
 		if m.view == ViewInbox {
@@ -643,7 +688,7 @@ func (m Model) updateKeys(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if it, ok := m.current(); ok && m.view == ViewInbox {
 			return m.act(func() error { return m.b.Dismiss(it.ID) })
 		}
-		return m, nil
+		return m.toggleMark(), nil
 	case "1", "2", "3", "4", "5", "6", "7", "8":
 		if it, ok := m.current(); ok && m.view == ViewInbox && it.Kind == store.ItemAskHuman {
 			i := int(k.String()[0] - '1')
@@ -848,22 +893,72 @@ func (m Model) updateInput(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-// askBulkDelete asks before X deletes every read thread between agents
-// (SPEC §6); only on the Between agents scope, where those threads show.
-func (m Model) askBulkDelete() Model {
-	if m.view != ViewMail || m.scope != scopeAgents {
+// toggleMark marks or unmarks the Mail row under the cursor (space or x),
+// unread or not; D then deletes every marked thread (SPEC §6).
+func (m Model) toggleMark() Model {
+	if m.view != ViewMail || m.open != nil {
 		return m
 	}
-	threads, msgs := 0, 0
-	for _, t := range m.threads {
-		if t.Unread == 0 && !toMe(t) && !peopleMatch(t.People, string(store.Human)) {
-			threads++
-			msgs += t.Count
-		}
+	rows := m.filteredThreads()
+	if m.cursor >= len(rows) {
+		return m
 	}
-	m.confirmBulk = true
-	m.confirmText = fmt.Sprintf("delete %d read thread%s between agents (%d message%s)? y deletes, any other key keeps them", threads, plural(threads), msgs, plural(msgs))
+	id := rows[m.cursor].ThreadID
+	// A fresh map: a Model is a value, and an older copy must not change.
+	next := make(map[string]bool, len(m.marked)+1)
+	for k := range m.marked {
+		next[k] = true
+	}
+	if next[id] {
+		delete(next, id)
+	} else {
+		next[id] = true
+	}
+	m.marked = next
 	return m
+}
+
+// askDeleteMarked asks once before D deletes every marked thread.
+func (m Model) askDeleteMarked() Model {
+	rows := m.markedRows()
+	if len(rows) == 0 {
+		return m
+	}
+	msgs := 0
+	for _, t := range rows {
+		msgs += t.Count
+	}
+	m.confirmMarked = true
+	m.confirmText = fmt.Sprintf("delete %d marked thread%s (%d message%s)? y deletes, any other key keeps them", len(rows), plural(len(rows)), msgs, plural(msgs))
+	return m
+}
+
+// deleteMarked deletes the marked threads one by one with the person's
+// delete (§6: this machine's store only; Inbox items stay). One that went
+// meanwhile does not stop the rest.
+func (m Model) deleteMarked() (tea.Model, tea.Cmd) {
+	var ids []string
+	for _, t := range m.markedRows() {
+		ids = append(ids, t.ThreadID)
+	}
+	mm, cmd := m.act(func() error {
+		var errs []error
+		for _, id := range ids {
+			if err := m.b.DeleteThread(id); err != nil {
+				errs = append(errs, fmt.Errorf("%s: %w", id, err))
+			}
+		}
+		if len(errs) > 0 {
+			return fmt.Errorf("deleted %d of %d: %w", len(ids)-len(errs), len(ids), errs[0])
+		}
+		return nil
+	})
+	if cmd == nil {
+		return mm, nil
+	}
+	out := mm.(Model)
+	out.marked = nil
+	return out, cmd
 }
 
 func plural(n int) string {

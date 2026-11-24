@@ -141,29 +141,3 @@ func TestUnreadCountsOnlyThePersonsMail(t *testing.T) {
 		t.Fatalf("detail of a thread only an agent has unread: %s", v)
 	}
 }
-
-// SPEC §6: on the Between agents scope, X deletes every read thread between
-// agents, after a y; the question says how many.
-func TestMailDeleteReadBetweenAgentsAsksFirst(t *testing.T) {
-	f := agentMail()
-	f.threads = append(f.threads, daemon.ThreadRow{ThreadID: "local:7", From: "reviewer", To: "worker", Subject: "nit", Count: 2, LastFrom: "reviewer", People: []store.Address{"reviewer", "worker"}})
-	m := start(f)
-	if m = press(m, "m", "t", "X"); f.bulkDeleted != 0 || m.confirmBulk {
-		t.Fatal("X outside the Between agents scope did something")
-	}
-	m = press(m, "t")
-	m = press(m, "X")
-	if v := m.View(); !strings.Contains(v, "delete 1 read thread between agents (2 messages)") || !strings.Contains(v, "y deletes") {
-		t.Fatalf("no question:\n%s", v)
-	}
-	if m = press(m, "n"); f.bulkDeleted != 0 || m.confirmBulk {
-		t.Fatal("any key but y keeps them")
-	}
-	if v := m.View(); !strings.Contains(v, "delete read") {
-		t.Fatalf("footer does not name X:\n%s", v)
-	}
-	press(m, "X", "y")
-	if f.bulkDeleted != 1 {
-		t.Fatalf("bulk deletes %d", f.bulkDeleted)
-	}
-}

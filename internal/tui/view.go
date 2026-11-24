@@ -39,7 +39,7 @@ func (m Model) View() string {
 	}
 	status := ""
 	switch {
-	case m.confirmDelete != "" || m.confirmBulk:
+	case m.confirmDelete != "" || m.confirmMarked:
 		status = styleWarn.Render(fit(" "+m.confirmText, w))
 	case m.status == "done" || m.status == "reconnected":
 		status = styleOK.Render(" ✓ " + m.status)
@@ -96,9 +96,9 @@ func (m Model) footer(w int) string {
 	case m.view == ViewInbox:
 		parts = []string{key("enter", "open"), key("r", "answer"), key("1-8", "pick"), key("a", "allow"), key("d", "deny"), key("x", "dismiss"), key("A", "all"), key("o", "oldest")}
 	default:
-		parts = []string{key("enter", "open"), key("r", "reply"), key("t", "to me/agents"), key("u", "unread"), key("f", "filter"), key("D", "delete"), key("o", "oldest")}
-		if m.scope == scopeAgents {
-			parts = append(parts, key("X", "delete read"))
+		parts = []string{key("enter", "open"), key("r", "reply"), key("space", "mark"), key("t", "to me/agents"), key("u", "unread"), key("f", "filter"), key("D", "delete"), key("o", "oldest")}
+		if len(m.marked) > 0 {
+			parts = []string{key("D", "delete marked"), key("space", "mark"), key("esc", "clear"), key("enter", "open"), key("t", "to me/agents"), key("u", "unread"), key("f", "filter")}
 		}
 	}
 	if len(m.files()) > 0 {
@@ -135,7 +135,10 @@ func (m Model) listTitle() string {
 		title += " · " + m.filterMachine
 	}
 	if title == "Mail" {
-		return "Mail · every thread"
+		title = "Mail · every thread"
+	}
+	if n := len(m.marked); n > 0 {
+		title += fmt.Sprintf(" · %d marked", n)
 	}
 	return title
 }
@@ -279,6 +282,14 @@ func (m Model) threadRow(t daemon.ThreadRow, w int, sel bool) string {
 		last = styleSuper.Render(last)
 	}
 	right := fmt.Sprintf("%s %s  %s", styleDim.Render(fmt.Sprintf("%d msgs", t.Count)), last, styleDim.Render(ago(m.now(), t.LastAt)))
+	// While anything is marked, a column says which (space or x marks).
+	if len(m.marked) > 0 {
+		box := " "
+		if m.marked[t.ThreadID] {
+			box = styleAccent.Render("✓")
+		}
+		mark = box + " " + mark
+	}
 	left := fmt.Sprintf("%s %s %s %s ", mark, styleBold.Render(fit(string(t.From), 12)), styleDim.Render("→"), fit(to, 12))
 	room := w - lipgloss.Width(left) - lipgloss.Width(right) - 2
 	// The last sender's pane beside its name, when there is room (§9).

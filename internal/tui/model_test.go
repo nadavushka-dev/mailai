@@ -27,18 +27,11 @@ type fake struct {
 	byThread map[string][]store.Item
 	// marked are the id sets MarkRead was called with.
 	marked [][]uint64
-	// deleted are the threads DeleteThread was called with; bulkDeleted
-	// counts DeleteReadBetweenAgents calls.
-	deleted     []string
-	bulkDeleted int
+	// deleted are the threads DeleteThread was called with.
+	deleted []string
 }
 
 func (f *fake) DeleteThread(id string) error { f.deleted = append(f.deleted, id); return nil }
-
-func (f *fake) DeleteReadBetweenAgents() (daemon.DeleteResult, error) {
-	f.bulkDeleted++
-	return daemon.DeleteResult{}, nil
-}
 
 func (f *fake) MarkRead(ids []uint64) error { f.marked = append(f.marked, ids); return nil }
 
@@ -87,6 +80,8 @@ func press(m Model, keys ...string) Model {
 			msg = tea.KeyMsg{Type: tea.KeyEsc}
 		case "tab":
 			msg = tea.KeyMsg{Type: tea.KeyTab}
+		case " ":
+			msg = tea.KeyMsg{Type: tea.KeySpace, Runes: []rune{' '}}
 		default:
 			msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(k)}
 		}

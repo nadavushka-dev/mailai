@@ -1,7 +1,6 @@
 package daemon
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/nadavushka-dev/mailai/internal/client"
@@ -97,23 +96,5 @@ func TestDelete_ReadThreadsBetweenAgents(t *testing.T) {
 	}
 	if err := person.Call("delete", DeleteArgs{ReadBetweenAgents: true, Thread: toMe.Message.ThreadID}, nil); client.Code(err) != proto.CodeBadRequest {
 		t.Fatalf("bulk with a thread: %v", err)
-	}
-}
-
-// The web page has one button for it, on the Between agents tab, which
-// counts first (a dry run) and asks before it deletes.
-func TestWeb_DeleteReadBetweenAgentsButton(t *testing.T) {
-	page := webPage(t)
-	for _, need := range []string{
-		`id="bulk-del" data-a="delete-read-agents"`,
-		"{read_between_agents: true, dry_run: true}",
-		"if (!confirm(`Delete ${n} read thread",
-		"act('/api/delete', {read_between_agents: true}",
-		".scopes > button[data-scope]",
-		".scopes > button[hidden] { display: none; }",
-	} {
-		if !strings.Contains(page, need) {
-			t.Fatalf("page missing %s", need)
-		}
 	}
 }

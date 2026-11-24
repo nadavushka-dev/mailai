@@ -27,8 +27,6 @@ type Backend interface {
 	Dismiss(item uint64) error
 	// DeleteThread deletes every message in a thread (SPEC §6).
 	DeleteThread(id string) error
-	// DeleteReadBetweenAgents deletes every read thread between agents.
-	DeleteReadBetweenAgents() (daemon.DeleteResult, error)
 	Reply(mid string, to store.Address, text string) error
 	// MarkRead marks these of the person's own messages read.
 	MarkRead(ids []uint64) error
@@ -150,12 +148,6 @@ func (l *Live) Dismiss(item uint64) error {
 
 func (l *Live) DeleteThread(id string) error {
 	return l.call("delete", daemon.DeleteArgs{Thread: id}, nil)
-}
-
-func (l *Live) DeleteReadBetweenAgents() (daemon.DeleteResult, error) {
-	var r daemon.DeleteResult
-	err := l.call("delete", daemon.DeleteArgs{ReadBetweenAgents: true}, &r)
-	return r, err
 }
 
 func (l *Live) Reply(mid string, to store.Address, text string) error {
