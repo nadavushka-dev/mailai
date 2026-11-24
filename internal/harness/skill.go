@@ -14,6 +14,7 @@ Triage:  mailai read --summary         (one line per message, no bodies)
 Send:    mailai send <to> "text" [--subject s] [--attach path]
 Reply:   mailai reply <#> "text"  (# from the message's header; the answer stays in its thread)
          A new task is a new send.
+Long or multi-line text? Use stdin, not a shell variable: mailai reply <#> <<'EOF' (lines, then EOF)
 Ask and wait for the answer (you spend nothing while waiting):
          mailai ask <agent> "question"             -> prints the reply alone
          mailai ask-human "question?" -o yes -o no -> the person answers from their Inbox
@@ -23,8 +24,7 @@ Ask and wait for the answer (you spend nothing while waiting):
          Take a question back: mailai withdraw <id>; or ask again with
          --replaces <id>. A waiting ask: never kill it, withdraw it.
 Show the person a file (screenshot, report, log, diff): --attach path on send or
-         ask-human. It is a reference, not a copy: they see the file as it is when
-         they open it, so do not delete it or overwrite it while it matters.
+         ask-human. A reference, not a copy: keep the file as it is while it matters.
 Status:  mailai whoami; mailai agents; mailai unread
 
 Waiting for mail? Do not poll unread. In a Herdr pane, end your turn: mail
@@ -32,9 +32,9 @@ wakes you with one line. Otherwise mailai wait [--timeout 10m] blocks and
 prints the mail when it comes (exit 2 on timeout).
 
 Addresses: an agent is its pane id or live name (w1:p3, reviewer); the
-person is human. An agent on another machine is name@machine (reviewer@s1);
-the person is human from every machine. mailai read --thread <mid> shows a
-whole thread. If a send says queued, the link to the inbox machine is down
+person is human, from every machine. An agent on another machine is
+name@machine (reviewer@s1). mailai read --thread <#> shows a whole
+thread. If a send says queued, the link to the inbox machine is down
 and it goes when the link is back (mailai ping shows the link and the
 outbox). Mail from mailai is a bounce: something you sent was refused.
 

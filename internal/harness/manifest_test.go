@@ -88,6 +88,17 @@ func TestSkillSaysReplyByHeaderNumber(t *testing.T) {
 	}
 }
 
+// Found on UbCl: a Pi extension rewrote MSG="..."; mailai send x "$MSG" so
+// the variable was empty ("empty text"). Heredocs and pipes pass through,
+// so the skill says to pass long text on stdin, not in a shell variable.
+func TestSkillSaysLongTextGoesOnStdin(t *testing.T) {
+	for _, want := range []string{"mailai reply <#> <<'EOF'", "stdin", "not a shell variable"} {
+		if !strings.Contains(Skill, want) {
+			t.Fatalf("skill lacks %q", want)
+		}
+	}
+}
+
 func TestSkillIsShortAndNamesTheCommands(t *testing.T) {
 	if len(Skill) > 2500 {
 		t.Fatalf("skill is %d bytes; keep it short (D12)", len(Skill))
