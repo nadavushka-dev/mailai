@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -993,5 +994,43 @@ func TestCLI_MachineKeyAndMachineVerbs(t *testing.T) {
 	agent.Env = append(agent.Env, "MAILAI_TOKEN="+tok)
 	if out, err := agent.CombinedOutput(); err == nil || !strings.Contains(string(out), "not_human") {
 		t.Fatalf("%q %v", out, err)
+	}
+}
+
+// SPEC §7a (2026-11-24): the person dismisses a question an agent is
+// blocked on; the agent's ask-human ends with one line, exit 1, as a
+// withdrawn one does.
+func TestCLI_DismissEndsABlockedAskHuman(t *testing.T) {
+	e := startEnv(t)
+	tok := strings.TrimSpace(strings.SplitN(e.must("token", "new", "builder"), "\n", 2)[0])
+	c := e.cmd("ask-human", "-o", "yes", "-o", "no", "Deploy?")
+	c.Env = append(c.Env, "MAILAI_TOKEN="+tok)
+	var stdout, stderr strings.Builder
+	c.Stdout, c.Stderr = &stdout, &stderr
+	if err := c.Start(); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- c.Wait() }()
+	deadline := time.Now().Add(5 * time.Second)
+	for !strings.Contains(e.must("inbox"), "Deploy?") {
+		if time.Now().After(deadline) {
+			t.Fatal("the question never reached the Inbox")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	e.must("dismiss", "1")
+	select {
+	case err := <-done:
+		var ee *exec.ExitError
+		if !errors.As(err, &ee) || ee.ExitCode() != 1 {
+			t.Fatalf("exit: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		c.Process.Kill()
+		t.Fatal("ask-human still blocked after the dismiss")
+	}
+	if got := stderr.String(); got != "mailai: not_found: #1 was dismissed by the person\n" || stdout.String() != "" {
+		t.Fatalf("stderr %q stdout %q", got, stdout.String())
 	}
 }

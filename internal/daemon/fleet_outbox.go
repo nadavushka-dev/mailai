@@ -20,6 +20,12 @@ import (
 // Bouncer is the sender of a bounce: the daemon itself, never an agent.
 const Bouncer store.Address = "mailai"
 
+// IsDaemonNote says m is the daemon's own line (a bounce, a dismissed
+// question): from mailai with no sender proof, which only the daemon
+// writes. A client claiming to be mailai always has a proof. Clients show
+// it as a system note, never as someone's words.
+func IsDaemonNote(m store.Message) bool { return m.From == Bouncer && m.SenderProof == "" }
+
 // outMessage is the queued send as the caller sees it before delivery.
 func outMessage(o store.Outgoing) store.Message {
 	return store.Message{MID: o.MID, ThreadID: o.ThreadID, Kind: o.Kind, From: o.From, To: o.To, Subject: o.Subject,

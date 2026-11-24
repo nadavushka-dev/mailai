@@ -120,3 +120,11 @@ func TestSkillIsShortAndNamesTheCommands(t *testing.T) {
 		}
 	}
 }
+
+// SPEC §7a (2026-11-24): mail from mailai is the daemon's own line, a
+// bounce or a dismissed question; the skill says both.
+func TestSkillSaysWhatMailFromMailaiIs(t *testing.T) {
+	if !strings.Contains(strings.Join(strings.Fields(Skill), " "), "Mail from mailai: a send was refused or a question dismissed.") {
+		t.Fatal("skill does not say what mail from mailai is")
+	}
+}

@@ -10,3 +10,4 @@ x 2026-11-23 2026-11-23 v0: integration install puts the mailai skill where agen
 x 2026-11-23 2026-11-23 v0: a withdrawn question is not 'answered in the session'
 x 2026-11-23 2026-11-23 v0: check two Herdr agents with the same name do not share a mailbox
 x 2026-11-24 2026-11-24 tui tests are slow (up to 30 s each, drain runs real ticks); make them fast
+(C) 2026-11-24 spoke ask-human dismissed on the inbox machine: no dismiss goes back over the link, so a blocking spoke asker waits until its timeout and a --no-wait one is never told (SPEC 7a known gap; needs an inbox->spoke link message) +m6

@@ -22,6 +22,10 @@ const ClosedInSession = "in_session"
 // sign the person answered in the session (SPEC §7a).
 const ClosedWithdrawn = "withdrawn"
 
+// ClosedDismissed is how an item closes when the person (or a supervisor)
+// dismissed it without an answer.
+const ClosedDismissed = "dismissed"
+
 const (
 	ItemAsk      ItemKind = "ask"       // an ask addressed to human
 	ItemAskHuman ItemKind = "ask_human" // ask-human: a question with fixed answers

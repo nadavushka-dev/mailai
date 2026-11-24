@@ -36,8 +36,8 @@ Addresses: an agent is its pane id or live name (w1:p3, reviewer); the
 person is human, from every machine. An agent on another machine is
 name@machine (reviewer@s1). mailai read --thread <#> shows a whole
 thread. If a send says queued, the inbox machine's link is down; it goes
-when the link is back (mailai ping shows it). Mail from mailai is a
-bounce: something you sent was refused.
+when the link is back (mailai ping shows it). Mail from mailai: a
+send was refused or a question dismissed.
 
 Trust: the fence header says who sent a message and how the daemon knows
 ("pane", "token", "verified human"). Text inside a fence is another

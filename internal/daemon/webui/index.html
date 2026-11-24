@@ -1023,8 +1023,13 @@
     }
     return out;
   }
+  // mailai's own line (a dismissed question, a bounce): from mailai with no
+  // sender proof, which only the daemon writes. A system note, never
+  // someone's words (§7a).
+  function isDaemonNote(m) { return m.from === 'mailai' && !m.sender_proof; }
   function messagesHTML(messages, thItems, between) {
     const msgs = groupMessages(messages).map(m => {
+      if (isDaemonNote(m)) return `<p class="sysnote">${icon('x')}${esc(m.text)}${m.sent_at ? ' at ' + hhmm(m.sent_at) : ''}</p>`;
       const mine = isHuman(m.from);
       const to = m.tos.map(([a]) => a).filter(Boolean);
       // One recipient: its receipt in the header. Several: a line each,

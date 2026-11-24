@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/nadavushka-dev/mailai/internal/proto"
@@ -76,17 +77,71 @@ func (d *Daemon) closeWithdrawn(id uint64) (store.Item, bool) {
 		return store.Item{}, false
 	}
 	d.publishItem(it)
-	d.mu.Lock()
-	for _, ch := range d.itemWaits[id] {
-		close(ch)
-	}
-	delete(d.itemWaits, id)
-	d.mu.Unlock()
+	d.endItemWaits(id)
 	return it, true
 }
 
-// watchItem returns a channel closed when item id is withdrawn, and a
-// func that stops watching.
+// endItemWaits ends every blocking ask still waiting on item id, which
+// closed without an answer (withdrawn or dismissed), and says whether any
+// was waiting.
+func (d *Daemon) endItemWaits(id uint64) bool {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	list := d.itemWaits[id]
+	for _, ch := range list {
+		close(ch)
+	}
+	delete(d.itemWaits, id)
+	return len(list) > 0
+}
+
+// itemEnded is what a blocking ask gets when its item closed without an
+// answer: withdrawn by its asker, or dismissed (SPEC §7a).
+func (d *Daemon) itemEnded(id uint64) error {
+	if it, _ := d.st.Item(id); it.ClosedBy == store.ClosedDismissed {
+		return proto.Errorf(proto.CodeNotFound, "#%d was dismissed by %s", id, dismisser(it.DecidedBy))
+	}
+	return proto.Errorf(proto.CodeNotFound, "#%d was withdrawn", id)
+}
+
+// dismisser names who dismissed an item: the person, or supervisor:<name>.
+func dismisser(by string) string {
+	if by == "" || by == string(store.Human) {
+		return "the person"
+	}
+	return by
+}
+
+// noteDismissed leaves one fixed line from mailai in a dismissed
+// question's thread, addressed to its asker, so an asker that is not
+// blocked (--no-wait) learns of it as mail (SPEC §7a). Written by the
+// daemon: never verified, never the person's words, never an answer.
+// Already read when a blocking ask was told by its error. An asker on
+// another machine gets none: its spoke would take any reply in the thread
+// as the answer (a known gap).
+func (d *Daemon) noteDismissed(it store.Item, told bool) {
+	if it.Kind != store.ItemAsk && it.Kind != store.ItemAskHuman {
+		return
+	}
+	if _, host := splitAddr(it.From); host != "" && host != d.name {
+		return
+	}
+	text := fmt.Sprintf("#%d dismissed by %s", it.ID, dismisser(it.DecidedBy))
+	m, err := d.st.Send(store.SendRequest{From: Bouncer, To: it.From, Kind: store.KindReply, ReplyTo: it.MID, Text: text, NoLimit: true})
+	if err != nil {
+		d.log.Printf("dismiss #%d: note to %s: %v", it.ID, it.From, err)
+		return
+	}
+	if told {
+		if _, err := d.st.Read(store.ReadQuery{Mailbox: it.From, IDs: []uint64{m.ID}, Mark: true}); err != nil {
+			d.log.Printf("dismiss #%d: marking the note read: %v", it.ID, err)
+		}
+	}
+	d.publish(m)
+}
+
+// watchItem returns a channel closed when item id closes without an answer
+// (withdrawn or dismissed), and a func that stops watching.
 func (d *Daemon) watchItem(id uint64) (<-chan struct{}, func()) {
 	ch := make(chan struct{})
 	d.mu.Lock()

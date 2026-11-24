@@ -108,6 +108,25 @@ func (d *Daemon) ask(c *conn, a AskArgs) (any, error) {
 	d.mu.Unlock()
 	defer d.unwait(m.ThreadID, ch)
 	d.publish(m)
+	// An ask to the person is an Inbox item: when it closes without an
+	// answer (withdrawn, dismissed), the wait ends (SPEC §7a).
+	var ended <-chan struct{}
+	var itemID uint64
+	if a.To == store.Human {
+		for _, it := range d.st.Items(false) {
+			if it.MID == m.MID {
+				itemID = it.ID
+			}
+		}
+		if itemID != 0 {
+			w, unwatch := d.watchItem(itemID)
+			defer unwatch()
+			ended = w
+			if it, _ := d.st.Item(itemID); it.ClosedBy == store.ClosedWithdrawn || it.ClosedBy == store.ClosedDismissed {
+				return nil, d.itemEnded(itemID)
+			}
+		}
+	}
 
 	var timer <-chan time.Time
 	if timeout > 0 {
@@ -119,8 +138,9 @@ func (d *Daemon) ask(c *conn, a AskArgs) (any, error) {
 		select {
 		case r := <-ch:
 			// Only a reply addressed to the asker ends the wait; a reply
-			// the recipient sends to someone else in the thread does not.
-			if r.To == from {
+			// the recipient sends to someone else in the thread does not,
+			// nor does mailai's own note on a dismiss.
+			if r.To == from && r.From != Bouncer {
 				// SPEC §7: pushed down this connection, so it is not also
 				// an unread notice. Mark before the RPC returns.
 				if _, err := d.st.Read(store.ReadQuery{Mailbox: from, IDs: []uint64{r.ID}, Mark: true}); err != nil {
@@ -130,6 +150,8 @@ func (d *Daemon) ask(c *conn, a AskArgs) (any, error) {
 			}
 		case <-timer:
 			return nil, proto.Errorf(proto.CodeTimeout, "no reply from %s within %s", a.To, timeout)
+		case <-ended:
+			return nil, d.itemEnded(itemID)
 		case <-c.gone:
 			// The asker died waiting (SPEC §7a): an ask to the person is
 			// withdrawn, or answered in the session if the person types

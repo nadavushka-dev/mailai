@@ -359,6 +359,24 @@ knows, and tells the agent nothing (D12).
   withdrawn question ends (`not_found: #N was withdrawn`). The person sees
   "withdrawn by <asker>" in the strip, the detail and a thread note. Both
   are refused on a spoke for now (they come with v0.1).
+- **Dismissed (decided 2026-11-24).** The person (or a supervisor with
+  `respond`) dismisses an ask or ask-human: the item closes `dismissed`.
+  A blocking ask still waiting on it ends as a withdrawn one does
+  (`not_found: #N was dismissed by the person`, exit 1). The daemon also
+  stores one fixed line in the ask's thread, addressed to the asker:
+  from `mailai`, kind reply, `reply_to` the ask, text `#N dismissed by
+  the person` (or `by supervisor:<name>`), never verified, no sender
+  proof, not rate limited; nobody's words (D12). It wakes the asker like
+  any mail, so a `--no-wait` asker learns of it; for a blocking asker,
+  told by its error, it is stored already read. It is never an answer:
+  the item stays `dismissed`, a waiting ask ignores it, and `--wait-for`
+  still says it ended without one. The TUI and the web show a message
+  from `mailai` with no sender proof (only the daemon writes those; a
+  bounce too) as a one-line system note, like the item notes below.
+  **Known gap:** an asker on another machine gets neither: its item lives
+  on the inbox machine, the spoke waits for a reply in the thread (and
+  would take any reply as the answer), and no dismiss goes back over the
+  link yet; a blocking spoke ask-human ends only by its timeout.
 - **Certain: the item closes, `closed_by: in_session`.**
   - A held approval of agent X while X's hooks say the tool ran
     (`tool_ran` for the same tool) or the turn ended (`turn_ended`), or
@@ -380,7 +398,8 @@ knows, and tells the agent nothing (D12).
   carry the maybe badge; an item closed `in_session` carries the
   "answered in session" badge (green) in the strip, the all list and its
   detail, so an answer given outside mailai stands out. A Mail thread shows a one-line note rendered from
-  its item ("answered in the session at 10:42"); no message is stored.
+  its item ("answered in the session at 10:42"); no message is stored
+  (a dismiss is the one exception, above).
   `mailai inbox` shows the badge, `mailai inbox --closed` lists recently
   closed with how; `--json` carries `closed_by`, `decided_by` and
   `maybe_in_session_at`.

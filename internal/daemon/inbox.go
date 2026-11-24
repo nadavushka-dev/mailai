@@ -176,12 +176,13 @@ func validAskHuman(a AskHumanArgs) error {
 
 // waitReply waits for the answer; when gone closes first, the ask dropped
 // (withdrawn, or answered in the session if the person types there next,
-// §7a); when the asker withdraws the item, the wait ends.
+// §7a); when the asker withdraws the item or the person dismisses it, the
+// wait ends.
 func (d *Daemon) waitReply(ch chan store.Message, from store.Address, item store.Item, timeout time.Duration, gone <-chan struct{}) (any, error) {
-	withdrawn, unwatch := d.watchItem(item.ID)
+	ended, unwatch := d.watchItem(item.ID)
 	defer unwatch()
-	if it, _ := d.st.Item(item.ID); it.ClosedBy == store.ClosedWithdrawn {
-		return nil, proto.Errorf(proto.CodeNotFound, "#%d was withdrawn", item.ID)
+	if it, _ := d.st.Item(item.ID); it.ClosedBy == store.ClosedWithdrawn || it.ClosedBy == store.ClosedDismissed {
+		return nil, d.itemEnded(item.ID)
 	}
 	var timer <-chan time.Time
 	if timeout > 0 {
@@ -192,14 +193,15 @@ func (d *Daemon) waitReply(ch chan store.Message, from store.Address, item store
 	for {
 		select {
 		case r := <-ch:
-			if r.To == from {
+			// mailai's own note on a dismiss is never the answer.
+			if r.To == from && r.From != Bouncer {
 				it, _ := d.st.Item(item.ID)
 				return AskHumanResult{Item: it, Reply: &r}, nil
 			}
 		case <-timer:
 			return nil, proto.Errorf(proto.CodeTimeout, "no answer yet; come back with --wait-for %d", item.ID)
-		case <-withdrawn:
-			return nil, proto.Errorf(proto.CodeNotFound, "#%d was withdrawn", item.ID)
+		case <-ended:
+			return nil, d.itemEnded(item.ID)
 		case <-gone:
 			d.askDropped(item.ID, from)
 			return nil, errClientGone
@@ -304,11 +306,14 @@ func (d *Daemon) dismiss(c *conn, a DismissArgs) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	it, err := d.st.CloseItemBy(a.Item, "dismissed", "", by)
+	it, err := d.st.CloseItemBy(a.Item, store.ClosedDismissed, "", by)
 	if err != nil {
 		return nil, proto.Errorf(proto.CodeNotFound, "no open item #%d", a.Item)
 	}
 	d.spend(grant)
 	d.publishItem(it)
+	// A blocking ask still waiting on it ends (SPEC §7a); every local
+	// asker gets one line from mailai in the thread.
+	d.noteDismissed(it, d.endItemWaits(it.ID))
 	return map[string]any{"item": it}, nil
 }

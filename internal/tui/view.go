@@ -468,6 +468,12 @@ func (m Model) threadLines(w int) []string {
 	var lines []string
 	nfile := 0
 	for _, x := range m.open {
+		// mailai's own line (a dismissed question, a bounce) is a system
+		// note, not a message (§7a).
+		if daemon.IsDaemonNote(x) {
+			lines = append(lines, styleDim.Render(fmt.Sprintf("── %s at %s", strings.TrimSpace(x.Text), clock(x.SentAt))), "")
+			continue
+		}
 		head := styleDim.Render(fmt.Sprintf("#%d ", x.ID)) + styleBold.Render(string(x.From)) + styleDim.Render(paneNote(x.From, x.SenderPane))
 		switch {
 		case x.Verified == "human":
