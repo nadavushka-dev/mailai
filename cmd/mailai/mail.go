@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -174,20 +175,30 @@ func cmdReply(args []string) error {
 	defer c.Close()
 	recipient := store.Address(*to)
 	if recipient == "" {
-		// Find the message so the reply goes back to whoever sent it. mid
-		// may be the number in its fence header (54 or #54); the daemon
+		// Find the message so the reply goes to its other party. mid may
+		// be the number in its fence header (54 or #54); the daemon
 		// resolves that to the thread, ids are unique on the machine.
 		var rr daemon.ReadResult
 		if err := c.Call("read", daemon.ReadArgs{Thread: mid}, &rr); err != nil {
+			// The hint the send would give: for a reply, the mid with --to.
+			var pe *proto.Error
+			if errors.As(err, &pe) && pe.Code == proto.CodeNotFound {
+				return proto.Errorf(pe.Code, "%s", strings.Replace(pe.Hint, daemon.RefHintRead, daemon.RefHintReply, 1))
+			}
 			return err
 		}
-		for _, m := range rr.Messages {
-			if m.MID == mid || "#"+strings.TrimPrefix(mid, "#") == fmt.Sprintf("#%d", m.ID) {
-				recipient = m.From
+		me := store.Address(*from)
+		if me == "" {
+			var who daemon.WhoamiResult
+			if err := c.Call("whoami", nil, &who); err != nil {
+				return err
+			}
+			if me = who.Principal; me == "" {
+				me = store.Human
 			}
 		}
-		if recipient == "" {
-			return fmt.Errorf("no message %s is held; pass --to", mid)
+		if recipient, err = replyRecipient(rr.Messages, mid, me); err != nil {
+			return err
 		}
 	}
 	var res daemon.SendResult
@@ -203,6 +214,43 @@ func cmdReply(args []string) error {
 	}
 	fmt.Printf("replied #%d (%s) to %s in thread %s\n", res.Message.ID, res.Message.MID, recipient, res.Message.ThreadID)
 	return nil
+}
+
+// replyRecipient is the other party of the message ref names in thread,
+// for a reply with no --to (SPEC §12): whoever sent it; when me sent it,
+// whoever it went to; when it went to me too, or it is mailai's own note,
+// the latest other party in the thread.
+func replyRecipient(thread []store.Message, ref string, me store.Address) (store.Address, error) {
+	var target *store.Message
+	for i, m := range thread {
+		if m.MID == ref || "#"+strings.TrimPrefix(ref, "#") == fmt.Sprintf("#%d", m.ID) {
+			target = &thread[i]
+		}
+	}
+	if target == nil {
+		return "", fmt.Errorf("no message %s is held here; reply with --to <recipient>", ref)
+	}
+	other := func(m store.Message) store.Address {
+		if daemon.IsDaemonNote(m) {
+			return "" // mailai's own line is nobody to reply to
+		}
+		if m.From != me {
+			return m.From
+		}
+		if m.To != "" && m.To != me {
+			return m.To
+		}
+		return ""
+	}
+	if a := other(*target); a != "" {
+		return a, nil
+	}
+	for i := len(thread) - 1; i >= 0; i-- {
+		if a := other(thread[i]); a != "" {
+			return a, nil
+		}
+	}
+	return "", fmt.Errorf("%s has nobody but you in its thread; reply with --to <recipient>", ref)
 }
 
 func cmdRead(args []string) error {

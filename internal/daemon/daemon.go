@@ -702,7 +702,7 @@ func (d *Daemon) send(c *conn, a SendArgs) (any, error) {
 		return nil, err
 	}
 	if a.ReplyTo != "" {
-		if a.ReplyTo, err = d.messageRef(c, a.ReplyTo); err != nil {
+		if a.ReplyTo, err = d.messageRef(c, a.ReplyTo, true); err != nil {
 			return nil, err
 		}
 	}
@@ -760,7 +760,7 @@ func (d *Daemon) read(c *conn, a ReadArgs) (any, error) {
 		return nil, err
 	}
 	if a.Thread != "" {
-		if a.Thread, err = d.messageRef(c, a.Thread); err != nil {
+		if a.Thread, err = d.messageRef(c, a.Thread, false); err != nil {
 			return nil, err
 		}
 		msgs := d.st.Thread(a.Thread)

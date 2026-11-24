@@ -1027,6 +1027,20 @@
   // sender proof, which only the daemon writes. A system note, never
   // someone's words (§7a).
   function isDaemonNote(m) { return m.from === 'mailai' && !m.sender_proof; }
+  // What a plain reply in a thread answers and who it goes to: the newest
+  // message with a party other than the person, and that party (its
+  // sender, or the recipient of the person's own message). mailai's own
+  // notes are nobody to reply to (§7a, §12).
+  function replyTarget(messages) {
+    for (let i = (messages || []).length - 1; i >= 0; i--) {
+      const m = messages[i];
+      if (isDaemonNote(m)) continue;
+      if (!m.mid) continue;
+      if (!isHuman(m.from)) return {mid: m.mid, to: m.from};
+      if (m.to && !isHuman(m.to)) return {mid: m.mid, to: m.to};
+    }
+    return null;
+  }
   function messagesHTML(messages, thItems, between) {
     const msgs = groupMessages(messages).map(m => {
       if (isDaemonNote(m)) return `<p class="sysnote">${icon('x')}${esc(m.text)}${m.sent_at ? ' at ' + hhmm(m.sent_at) : ''}</p>`;
@@ -1156,8 +1170,8 @@
       $('#joinbar').hidden = false;
     } else {
       joinFor = null;
-      const lastAgent = [...messages].reverse().find(m => !isHuman(m.from)) || first;
-      if (lastAgent && lastAgent.mid) showComposer(`Reply to ${localName(lastAgent.from)}`, 'Write a reply, signed as you', 'reply', {mid: lastAgent.mid, to: lastAgent.from});
+      const target = replyTarget(messages);
+      if (target) showComposer(`Reply to ${localName(target.to)}`, 'Write a reply, signed as you', 'reply', target);
       else hideComposer();
     }
     keys();

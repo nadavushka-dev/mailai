@@ -363,6 +363,21 @@ func (s *Store) Get(mid string) (Message, bool) {
 	return *m, true
 }
 
+// SentBy is message id when from sent it, in whichever mailbox it waits
+// (SPEC §12: a header number names one's own sent message too).
+func (s *Store) SentBy(from Address, id uint64) (Message, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, mb := range s.boxes {
+		for _, m := range mb.msgs {
+			if m.ID == id && m.From == from {
+				return *m, true
+			}
+		}
+	}
+	return Message{}, false
+}
+
 // attend keeps the Inbox in step with a stored message (D13): an ask to
 // human opens an item; a verified reply from human in an item's thread
 // closes it as answered. Plain mail opens nothing.

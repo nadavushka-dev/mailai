@@ -1034,3 +1034,70 @@ func TestCLI_DismissEndsABlockedAskHuman(t *testing.T) {
 		t.Fatalf("stderr %q stdout %q", got, stdout.String())
 	}
 }
+
+// Found on UbCl (2026-11-24): the conductor's `mailai reply 103` and RC's
+// `mailai reply 126`, where #103 and #126 were their own sent messages,
+// failed, and so did the mid the hint offered; only --to worked. A reply
+// to your own message goes to its other party, in the same thread, by
+// the header number or the mid; --to still overrides (SPEC §12).
+func TestCLI_ReplyToYourOwnMessage(t *testing.T) {
+	e := startEnv(t)
+	tok := strings.TrimSpace(strings.SplitN(e.must("token", "new", "conductor"), "\n", 2)[0])
+	as := func(args ...string) (string, error) {
+		c := e.cmd(args...)
+		c.Env = append(c.Env, "MAILAI_TOKEN="+tok)
+		out, err := c.CombinedOutput()
+		return string(out), err
+	}
+	type msg struct {
+		ID       uint64 `json:"id"`
+		MID      string `json:"mid"`
+		To       string `json:"to"`
+		ReplyTo  string `json:"reply_to"`
+		ThreadID string `json:"thread_id"`
+	}
+	sendJSON := func(args ...string) msg {
+		t.Helper()
+		out, err := as(append(args, "--json")...)
+		var m msg
+		if err != nil || json.Unmarshal([]byte(out), &m) != nil || m.ID == 0 {
+			t.Fatalf("%v: %v %s", args, err, out)
+		}
+		return m
+	}
+	own := sendJSON("send", "lane-1", "brief: build the parser")
+	n := fmt.Sprint(own.ID)
+	for _, ref := range []string{n, "#" + n, own.MID} {
+		r := sendJSON("reply", ref, "one more thing")
+		if r.To != "lane-1" || r.ReplyTo != own.MID || r.ThreadID != own.MID {
+			t.Fatalf("reply %s: %+v", ref, r)
+		}
+	}
+	// --to still overrides.
+	if r := sendJSON("reply", "--to", "watcher", n, "fyi"); r.To != "watcher" || r.ThreadID != own.MID {
+		t.Fatalf("--to: %+v", r)
+	}
+	// A thread whose last message is your own: the lane answered, the
+	// conductor answered back, and replies again to its own last message.
+	back := e.must("send", "--from", "lane-1", "--reply-to", own.MID, "conductor", "on it", "--json")
+	var b msg
+	json.Unmarshal([]byte(back), &b)
+	last := sendJSON("reply", fmt.Sprint(b.ID), "thanks")
+	if last.To != "lane-1" {
+		t.Fatalf("%+v", last)
+	}
+	if r := sendJSON("reply", fmt.Sprint(last.ID), "and the tests"); r.To != "lane-1" || r.ThreadID != own.MID {
+		t.Fatalf("reply to own last: %+v", r)
+	}
+	// An unknown number: the hint names a way that works, and it does.
+	out, err := as("reply", "999", "x")
+	if err == nil || !strings.Contains(out, "#999") || !strings.Contains(out, "--to") || !strings.Contains(out, "mid") {
+		t.Fatalf("%v %s", err, out)
+	}
+	if r := sendJSON("reply", "--to", "lane-1", own.MID, "following the hint"); r.To != "lane-1" || r.ThreadID != own.MID {
+		t.Fatalf("hint: %+v", r)
+	}
+	if r := sendJSON("reply", "--to", "lane-1", "nowhere:42", "a mid not held"); r.To != "lane-1" {
+		t.Fatalf("hint, mid not held: %+v", r)
+	}
+}

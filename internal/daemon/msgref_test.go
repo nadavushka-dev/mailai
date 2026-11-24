@@ -13,10 +13,12 @@ import (
 // never sees mids, so without this it answers with a fresh send and a new
 // thread (found on UbCl).
 func TestReplyByHeaderNumber(t *testing.T) {
-	pl := placed(Placement{Proof: store.ProofToken, Principal: "worker"}, Placement{Proof: store.ProofToken, Principal: "reviewer"})
+	pl := placed(Placement{Proof: store.ProofToken, Principal: "worker"}, Placement{Proof: store.ProofToken, Principal: "reviewer"},
+		Placement{Proof: store.ProofToken, Principal: "other"})
 	sock, _ := startDaemon(t, pl)
 	worker := dialAs(t, sock, "worker")
 	reviewer := dialAs(t, sock, "reviewer")
+	other := dialAs(t, sock, "other")
 	var task SendResult
 	if err := reviewer.Call("send", SendArgs{To: "worker", Text: "please review"}, &task); err != nil {
 		t.Fatal(err)
@@ -36,18 +38,64 @@ func TestReplyByHeaderNumber(t *testing.T) {
 	if err := worker.Call("read", ReadArgs{Thread: fmt.Sprintf("#%d", n)}, &rr); err != nil || len(rr.Messages) != 4 {
 		t.Fatalf("%v %d", err, len(rr.Messages))
 	}
-	// The number is in the caller's own mailbox only: reviewer holds no
-	// message with that id, and an unknown number says to pass the mid.
+	// The number is a message in the caller's own mailbox, or one it sent
+	// (2026-11-24: reviewer's own number now works, see
+	// TestReplyByOwnSentHeaderNumber): other neither holds nor sent it, and
+	// an unknown number says to pass the mid.
 	for _, c := range []struct {
 		who interface {
 			Call(string, any, any) error
 		}
 		ref string
-	}{{reviewer, fmt.Sprint(n)}, {worker, "#999"}, {worker, "999"}} {
+	}{{other, fmt.Sprint(n)}, {worker, "#999"}, {worker, "999"}} {
 		err := c.who.Call("send", SendArgs{To: "worker", Text: "x", ReplyTo: c.ref}, nil)
 		num := strings.TrimPrefix(c.ref, "#")
 		if err == nil || !strings.Contains(err.Error(), "#"+num) || !strings.Contains(err.Error(), "mid") {
 			t.Fatalf("%s: %v", c.ref, err)
 		}
+	}
+}
+
+// Found on UbCl (2026-11-24): `reply 103` where #103 was the caller's own
+// sent message said "no message #103 in your mailbox". The number names a
+// message in the caller's mailbox or one it sent; anyone else's number is
+// not found, and the hint names what works: the mid with --to.
+func TestReplyByOwnSentHeaderNumber(t *testing.T) {
+	pl := placed(Placement{Proof: store.ProofToken, Principal: "conductor"}, Placement{Proof: store.ProofToken, Principal: "lane"},
+		Placement{Proof: store.ProofToken, Principal: "other"})
+	sock, _ := startDaemon(t, pl)
+	conductor := dialAs(t, sock, "conductor")
+	var own SendResult
+	if err := conductor.Call("send", SendArgs{To: "lane", Text: "brief"}, &own); err != nil {
+		t.Fatal(err)
+	}
+	n := own.Message.ID
+	for _, ref := range []string{fmt.Sprint(n), fmt.Sprintf("#%d", n)} {
+		var r SendResult
+		if err := conductor.Call("send", SendArgs{To: "lane", Text: "more", ReplyTo: ref}, &r); err != nil {
+			t.Fatalf("%s: %v", ref, err)
+		}
+		if r.Message.ReplyTo != own.Message.MID || r.Message.ThreadID != own.Message.MID {
+			t.Fatalf("%s: %+v", ref, r.Message)
+		}
+		var rr ReadResult
+		if err := conductor.Call("read", ReadArgs{Thread: ref}, &rr); err != nil || len(rr.Messages) == 0 {
+			t.Fatalf("read --thread %s: %v %+v", ref, err, rr)
+		}
+	}
+	// Neither in other's mailbox nor sent by it.
+	err := dialAs(t, sock, "other").Call("send", SendArgs{To: "lane", Text: "x", ReplyTo: fmt.Sprint(n)}, nil)
+	if err == nil || !strings.Contains(err.Error(), fmt.Sprintf("#%d", n)) || !strings.Contains(err.Error(), "--to") ||
+		!strings.Contains(err.Error(), "mid") || !strings.Contains(err.Error(), "or sent by you") {
+		t.Fatalf("%v", err)
+	}
+	// What the hint says works.
+	var r SendResult
+	if err := dialAs(t, sock, "other").Call("send", SendArgs{To: "lane", Text: "x", ReplyTo: own.Message.MID}, &r); err != nil || r.Message.ThreadID != own.Message.MID {
+		t.Fatalf("%v %+v", err, r.Message)
+	}
+	err = dialAs(t, sock, "other").Call("read", ReadArgs{Thread: fmt.Sprint(n)}, nil)
+	if err == nil || !strings.Contains(err.Error(), "mid") || strings.Contains(err.Error(), "--to") {
+		t.Fatalf("read --thread hint: %v", err)
 	}
 }

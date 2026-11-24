@@ -52,6 +52,8 @@ type Model struct {
 	mode    inputMode
 	target  store.Item
 	replyTo store.Message
+	// replyAddr is who a plain reply goes to: replyTo's other party.
+	replyAddr store.Address
 	// joinTo are the agents of a thread between agents the person is
 	// joining; joinPick 0 writes to all of them, i to joinTo[i-1] only.
 	joinTo   []store.Address
@@ -710,6 +712,26 @@ func (m Model) current() (store.Item, bool) {
 }
 
 // startReply opens the input for the current item or thread.
+// replyTarget is the message a plain reply in thread answers and who it
+// goes to: the newest message with a party other than the person, and
+// that party (its sender, or, for the person's own message, its
+// recipient). mailai's own notes are nobody to reply to (§7a, §12).
+func replyTarget(thread []store.Message) (store.Message, store.Address) {
+	for i := len(thread) - 1; i >= 0; i-- {
+		x := thread[i]
+		if daemon.IsDaemonNote(x) {
+			continue
+		}
+		if x.From != store.Human {
+			return x, x.From
+		}
+		if x.To != "" && x.To != store.Human {
+			return x, x.To
+		}
+	}
+	return store.Message{}, ""
+}
+
 func (m Model) startReply() (tea.Model, tea.Cmd) {
 	if m.offline {
 		return m.fail(ErrNotConnected), nil
@@ -730,14 +752,12 @@ func (m Model) startReply() (tea.Model, tea.Cmd) {
 			m.input.Placeholder = "your answer to " + string(it.From)
 		}
 	case m.open != nil:
-		root := m.open[0]
-		for _, x := range m.open {
-			if x.From != store.Human {
-				root = x
-			}
+		root, to := replyTarget(m.open)
+		if to == "" {
+			return m.fail(fmt.Errorf("nobody but you in this thread to reply to")), nil
 		}
-		m.replyTo, m.mode, m.joinTo, m.joinPick = root, modeReply, nil, 0
-		m.input.Placeholder = "reply to " + string(root.From)
+		m.replyTo, m.replyAddr, m.mode, m.joinTo, m.joinPick = root, to, modeReply, nil, 0
+		m.input.Placeholder = "reply to " + string(to)
 		if first := m.open[0]; first.From != store.Human && first.To != store.Human {
 			// Between agents: the person joins, by default writing to
 			// every agent in it (D13).
@@ -855,7 +875,7 @@ func (m Model) updateInput(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "enter":
 		text := strings.TrimSpace(m.input.Value())
-		mode, target, replyTo, join := m.mode, m.target, m.replyTo, m.joinTargets()
+		mode, target, replyTo, replyAddr, join := m.mode, m.target, m.replyTo, m.replyAddr, m.joinTargets()
 		m.mode = modeNone
 		m.input.Blur()
 		switch mode {
@@ -880,7 +900,7 @@ func (m Model) updateInput(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 					return nil
 				})
 			}
-			return m.act(func() error { return m.b.Reply(replyTo.MID, replyTo.From, text) })
+			return m.act(func() error { return m.b.Reply(replyTo.MID, replyAddr, text) })
 		case modeFilter:
 			m.filterWho, m.filterSession, m.filterMachine = parseMailFilter(text)
 			m.clampCursor()
