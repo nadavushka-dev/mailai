@@ -197,6 +197,12 @@ Rules, all kept from TUIOS:
 - Store bound: per mailbox, 2,000 messages or 16 MB, oldest evicted first,
   read before unread. An unread message is never evicted by eviction alone;
   a mailbox at its unread cap refuses new mail with `mailbox_full`.
+- Keeping: a message read more than `[mail] keep_days` ago (7 by default;
+  0 keeps it until evicted) is deleted. The daemon sweeps at start and
+  hourly. Unread mail is never deleted by age.
+- The person deletes by hand: a whole thread, or one message, from the web
+  Mail view, the TUI or `mailai delete`. Agents cannot delete. Deleting
+  works on this machine's store only, and leaves Inbox items as they are.
 - Rate limit: a token bucket per claimed sender (10 messages burst, 1/s),
   with one shared overflow bucket for senders from another machine.
 
@@ -543,10 +549,10 @@ Supervisors are the one new idea against TUIOS. The rules:
   that have linked and the sha256 of each one's pinned key.
 - `mailai.sock` (`0700`), `daemon.log`, `daemon.pid`.
 
-Config in `$XDG_CONFIG_HOME/mailai/config.toml`: `adapter`, `[mail] wake`,
+Config in `$XDG_CONFIG_HOME/mailai/config.toml`: `adapter`, `[mail] wake`, `[mail] keep_days`,
 `[approvals]`, `[hosts]` policy (§13), `[notify]`, theme.
 `store.db` is SQLite through `modernc.org/sqlite` (pure Go, no cgo; Q2).
-Evicted messages are gone; there is no archive.
+Evicted, expired and deleted messages are gone; there is no archive.
 
 ## 12. Protocol and clients (D7)
 
@@ -567,6 +573,7 @@ CLI (every command takes `--json`):
 | `mailai reply <mid> [text]` | Reply in a thread. |
 | `mailai queue <to> <text>` · `queue ls` · `queue rm` | Typed when the agent comes to rest. |
 | `mailai inbox [--all] [--closed] [--session S]` · `mailai answer <item> <text\|choice>` · `mailai dismiss <item>` | The Inbox from the CLI. `--closed`: what closed in the last hour, and how (§7a). |
+| `mailai delete <thread>...` · `mailai delete --message <mid>...` | The person deletes mail (§6). |
 | `mailai agents` · `mailai whoami` | What the adapter sees; how the daemon places this caller. |
 | `mailai status` | Daemon, adapter, links, and per agent the context cost: notice lines injected, messages and bytes read, asks and their wait time (D12). |
 | `mailai grant <principal> <rights> [--scope S] [--once]` · `grant ls` · `grant rm` | Grants. `human` only. |
@@ -592,7 +599,7 @@ dim Recently closed strip says what closed in the last hour and how (§7a). Mail
 lists every thread with filters by session, machine, principal and unread;
 `t` narrows it to the person's own threads (started from or to `human`) or
 to those between agents, and the principal filter follows one agent through
-every thread it is in. Opening a thread marks the person's own mail in it
+every thread it is in. `D` deletes the selected thread after a `y` (§6). Opening a thread marks the person's own mail in it
 read, never an agent's. In a thread between agents `r` joins it as the
 person, writing to every agent in it by default (`tab` picks one); the
 web UI reads along by default and shows when each agent read (or, on another
@@ -895,7 +902,7 @@ Each milestone ends with all tests passing and a review in tuicr.
 | Harness support | Agnostic core, TOML manifests, graceful degradation (D14). |
 | Herdr pane identity without a shell pid | tty match, then token fallback (§9). |
 | Headless agents | Tokens only in v1 (§5). |
-| Retention | Gone when evicted (§6). |
+| Retention | Read mail goes after `keep_days` (7); evicted; deleted by the person (§6). |
 | Desktop notifications | Yes, Inbox items only, `[notify]` (§12b). |
 | Herdr `blocked` panes without mailai hooks | Not Inbox items (D13). |
 | Plain mail to `human` | Mail view only; asks are the Inbox (D13). |

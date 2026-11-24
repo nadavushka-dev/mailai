@@ -175,6 +175,52 @@ func cmdDismiss(args []string) error {
 	return nil
 }
 
+// cmdDelete: the person deletes threads, or messages by mid (SPEC §6).
+func cmdDelete(args []string) error {
+	fs := newFlags("delete")
+	message := fs.Bool("message", false, "the arguments are message mids, not threads")
+	rest := parse(fs, args)
+	if len(rest) == 0 {
+		return fmt.Errorf("usage: mailai delete <thread>... | mailai delete --message <mid>...")
+	}
+	c, err := connect()
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+	total := 0
+	call := func(a daemon.DeleteArgs) error {
+		var r daemon.DeleteResult
+		if err := c.Call("delete", a, &r); err != nil {
+			return err
+		}
+		total += r.Deleted
+		return nil
+	}
+	if *message {
+		err = call(daemon.DeleteArgs{MIDs: rest})
+	} else {
+		for _, th := range rest {
+			if err = call(daemon.DeleteArgs{Thread: th}); err != nil {
+				err = fmt.Errorf("%s: %w", th, err)
+				break
+			}
+		}
+	}
+	if err != nil {
+		return err
+	}
+	if jsonOut {
+		return printJSON(daemon.DeleteResult{Deleted: total})
+	}
+	s := "s"
+	if total == 1 {
+		s = ""
+	}
+	fmt.Printf("deleted %d message%s\n", total, s)
+	return nil
+}
+
 // cmdWithdraw: an agent takes back its own open question (SPEC §7a).
 func cmdWithdraw(args []string) error {
 	fs := newFlags("withdraw")

@@ -82,6 +82,10 @@ type Options struct {
 	// ListenAgents switches the add-on on per agent (glob patterns over the
 	// name, listen.go); nil allows every agent, empty none.
 	ListenAgents []string
+	// KeepFor is how long read mail is kept ([mail] keep_days, §6); zero
+	// keeps it until evicted. ExpireEvery is how often it is swept (1 h).
+	KeepFor     time.Duration
+	ExpireEvery time.Duration
 
 	WebPort       int
 	WebURL        string
@@ -111,6 +115,8 @@ type Daemon struct {
 	itemWaits       map[uint64][]chan struct{}
 	inSessionWindow time.Duration
 	listenAgents    []string
+	keepFor         time.Duration
+	expireEvery     time.Duration
 
 	agents    *agents
 	web       webState
@@ -226,6 +232,10 @@ func New(o Options) *Daemon {
 	d.notifier = o.Notifier
 	d.inSessionWindow = o.InSessionWindow
 	d.listenAgents = o.ListenAgents
+	d.keepFor, d.expireEvery = o.KeepFor, o.ExpireEvery
+	if d.expireEvery == 0 {
+		d.expireEvery = DefaultExpireEvery
+	}
 	if d.inSessionWindow == 0 {
 		d.inSessionWindow = DefaultInSessionWindow
 	}
@@ -286,6 +296,8 @@ func (d *Daemon) Serve(ctx context.Context) error {
 		go d.pollAgents(ctx, d.poll)
 	}
 	go d.runWakes(ctx)
+	d.expire()
+	go d.runExpire(ctx)
 	if d.web.port > 0 {
 		if err := d.webServe(d.web.port); err != nil {
 			d.log.Printf("web page on port %d: %v", d.web.port, err)
@@ -570,6 +582,12 @@ func (d *Daemon) handle(c *conn, req proto.Request) (any, error) {
 		return d.withdraw(c, a)
 	case "threads":
 		return d.threads(c)
+	case "delete":
+		a, err := decode[DeleteArgs](req.Args)
+		if err != nil {
+			return nil, err
+		}
+		return d.deleteMail(c, a)
 	case "web-start", "web-stop", "web-revoke":
 		return d.webVerb(c, req.Verb, req.Args)
 	case "grant":

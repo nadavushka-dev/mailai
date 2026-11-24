@@ -27,7 +27,11 @@ type fake struct {
 	byThread map[string][]store.Item
 	// marked are the id sets MarkRead was called with.
 	marked [][]uint64
+	// deleted are the threads DeleteThread was called with.
+	deleted []string
 }
+
+func (f *fake) DeleteThread(id string) error { f.deleted = append(f.deleted, id); return nil }
 
 func (f *fake) MarkRead(ids []uint64) error { f.marked = append(f.marked, ids); return nil }
 
@@ -111,6 +115,31 @@ func start(f Backend) Model {
 	m := New(f)
 	m.now = func() time.Time { return time.Date(2026, 10, 29, 12, 0, 0, 0, time.UTC) }
 	return drain(m, m.Init())
+}
+
+// SPEC §6/§12: D in Mail deletes the selected thread, only after a y.
+func TestMailDeleteThreadAsksFirst(t *testing.T) {
+	f := person()
+	m := start(f)
+	if m = press(m, "D"); len(f.deleted) != 0 || m.confirmDelete != "" {
+		t.Fatal("D in the Inbox view did something")
+	}
+	m = press(m, "m", "D")
+	if v := m.View(); !strings.Contains(v, "delete thread") || !strings.Contains(v, "deploy") || !strings.Contains(v, "y deletes") {
+		t.Fatalf("no question asked:\n%s", v)
+	}
+	if m = press(m, "n"); len(f.deleted) != 0 || m.confirmDelete != "" {
+		t.Fatalf("any key but y keeps it: %v", f.deleted)
+	}
+	m = press(m, "D", "y")
+	if len(f.deleted) != 1 || f.deleted[0] != "local:1" {
+		t.Fatalf("deleted %v", f.deleted)
+	}
+	// From inside an open thread too; the thread closes.
+	m = press(m, "enter", "D", "y")
+	if len(f.deleted) != 2 || m.open != nil {
+		t.Fatalf("deleted %v, open %v", f.deleted, m.open != nil)
+	}
 }
 
 func TestInboxViewListsItemsWithOptionsAndRisky(t *testing.T) {

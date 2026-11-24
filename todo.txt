@@ -9,3 +9,4 @@ x 2026-11-23 2026-11-23 v0: TUI reconnects when the daemon restarts
 x 2026-11-23 2026-11-23 v0: integration install puts the mailai skill where agents find it (test on the trial repo only)
 x 2026-11-23 2026-11-23 v0: a withdrawn question is not 'answered in the session'
 x 2026-11-23 2026-11-23 v0: check two Herdr agents with the same name do not share a mailbox
+2026-11-24 tui tests are slow (up to 30 s each, drain runs real ticks); make them fast

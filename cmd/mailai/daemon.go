@@ -73,7 +73,7 @@ func cmdDaemon(args []string) error {
 	opts := daemon.Options{Store: st, Log: logger, Stash: stash.New(p.Stash()), Tokens: tk, Placer: placer,
 		Adapter: ad, Wake: cfg.Wake(), Name: name, MachinesFile: p.Machines(), MachineKey: key, Notifier: notifier,
 		WebPort: cfg.Web.Port, WebURL: cfg.Web.URL, WebSessions: p.WebSessions(), WebSessionTTL: cfg.WebSession(),
-		ListenAgents: cfg.AddonAgents()}
+		ListenAgents: cfg.AddonAgents(), KeepFor: cfg.KeepFor()}
 	if target := cfg.Fleet.Inbox; target != "" {
 		remote := cfg.Fleet.Command
 		opts.Inbox = target

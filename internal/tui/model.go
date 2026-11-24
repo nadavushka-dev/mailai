@@ -59,7 +59,11 @@ type Model struct {
 
 	status string
 	errAt  time.Time
-	now    func() time.Time
+	// confirmDelete is the thread D asked about; the next key decides
+	// (y deletes). confirmText is the question shown.
+	confirmDelete string
+	confirmText   string
+	now           func() time.Time
 
 	// Mail filters (SPEC §12): unread, principal, session, machine.
 	filterUnread  bool
@@ -463,6 +467,16 @@ func parseMailFilter(s string) (who, session, machine string) {
 }
 
 func (m Model) updateKeys(k tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if id := m.confirmDelete; id != "" {
+		m.confirmDelete, m.confirmText = "", ""
+		if k.String() != "y" {
+			return m, nil
+		}
+		if m.openID == id {
+			m.open, m.openID = nil, ""
+		}
+		return m.act(func() error { return m.b.DeleteThread(id) })
+	}
 	// gg: a g waits for the next key; anything else cancels it.
 	pendingG := m.pendingG
 	m.pendingG = false
@@ -526,6 +540,8 @@ func (m Model) updateKeys(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "o":
 		m.view, m.cursor, m.open, m.openID = ViewInbox, 0, nil, ""
 		return m, nil
+	case "D":
+		return m.askDelete(), nil
 	case "v":
 		return m.startOpen()
 	case "t":
@@ -806,6 +822,33 @@ func (m Model) updateInput(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.input, cmd = m.input.Update(k)
 	return m, cmd
+}
+
+// askDelete asks before D deletes the open or selected Mail thread.
+func (m Model) askDelete() Model {
+	if m.view != ViewMail {
+		return m
+	}
+	var t daemon.ThreadRow
+	if m.openID != "" {
+		t.ThreadID = m.openID
+		for _, r := range m.threads {
+			if r.ThreadID == m.openID {
+				t = r
+			}
+		}
+	} else if rows := m.filteredThreads(); m.cursor < len(rows) {
+		t = rows[m.cursor]
+	} else {
+		return m
+	}
+	n := fmt.Sprintf("%d messages", t.Count)
+	if t.Count == 1 {
+		n = "1 message"
+	}
+	m.confirmDelete = t.ThreadID
+	m.confirmText = fmt.Sprintf("delete thread %q (%s)? y deletes, any other key keeps it", orFirst(t), n)
+	return m
 }
 
 func (m Model) act(f func() error) (tea.Model, tea.Cmd) {

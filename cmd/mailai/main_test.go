@@ -417,6 +417,38 @@ func TestCLI_WithdrawAndReplaces(t *testing.T) {
 	}
 }
 
+// SPEC §6: the person deletes a thread, or one message, from the CLI.
+func TestCLI_Delete(t *testing.T) {
+	e := startEnv(t)
+	midOf := func(out string) string {
+		// sent #1 (m:1) to worker
+		i, j := strings.Index(out, "("), strings.Index(out, ")")
+		if i < 0 || j < i {
+			t.Fatalf("no mid in %q", out)
+		}
+		return out[i+1 : j]
+	}
+	e.must("send", "worker", "keep me")
+	root := midOf(e.must("send", "worker", "delete this thread"))
+	one := midOf(e.must("send", "worker", "delete this message"))
+	if out := e.must("delete", root); !strings.Contains(out, "deleted 1 message") {
+		t.Fatalf("%s", out)
+	}
+	if out := e.must("delete", "--message", one); !strings.Contains(out, "deleted 1 message") {
+		t.Fatalf("%s", out)
+	}
+	left := e.must("read", "--peek", "-w", "worker")
+	if !strings.Contains(left, "keep me") || strings.Contains(left, "delete this") {
+		t.Fatalf("left:\n%s", left)
+	}
+	if out, err := e.cmd("delete", root).CombinedOutput(); err == nil {
+		t.Fatalf("deleted twice: %s", out)
+	}
+	if out, err := e.cmd("delete").CombinedOutput(); err == nil || !strings.Contains(string(out), "usage: mailai delete") {
+		t.Fatalf("%v %s", err, out)
+	}
+}
+
 func TestCLI_AskHumanAttachesRelativePaths(t *testing.T) {
 	e := startEnv(t)
 	dir := t.TempDir()

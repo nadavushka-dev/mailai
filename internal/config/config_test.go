@@ -7,6 +7,27 @@ import (
 	"time"
 )
 
+// [mail] keep_days (SPEC §6): read mail goes after 7 days by default; 0
+// keeps it until evicted; a negative number is a mistake.
+func TestKeepDays(t *testing.T) {
+	if got := (Config{}).KeepFor(); got != 7*24*time.Hour {
+		t.Fatalf("default %s", got)
+	}
+	f := filepath.Join(t.TempDir(), "config.toml")
+	os.WriteFile(f, []byte("[mail]\nkeep_days = 30\n"), 0o600)
+	if c, err := Load(f); err != nil || c.KeepFor() != 30*24*time.Hour {
+		t.Fatal(err, c.KeepFor())
+	}
+	os.WriteFile(f, []byte("[mail]\nkeep_days = 0\n"), 0o600)
+	if c, err := Load(f); err != nil || c.KeepFor() != 0 {
+		t.Fatal(err, c.KeepFor())
+	}
+	os.WriteFile(f, []byte("[mail]\nkeep_days = -1\n"), 0o600)
+	if _, err := Load(f); err == nil {
+		t.Fatal("a negative keep_days must be an error")
+	}
+}
+
 func TestPathsFromMailaiHomeAndSocketOverride(t *testing.T) {
 	t.Setenv("MAILAI_HOME", "/x")
 	t.Setenv("MAILAI_SOCKET", "")

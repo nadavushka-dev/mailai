@@ -25,6 +25,8 @@ type Backend interface {
 	Thread(id string) ([]store.Message, error)
 	Answer(item uint64, text, message string) error
 	Dismiss(item uint64) error
+	// DeleteThread deletes every message in a thread (SPEC §6).
+	DeleteThread(id string) error
 	Reply(mid string, to store.Address, text string) error
 	// MarkRead marks these of the person's own messages read.
 	MarkRead(ids []uint64) error
@@ -142,6 +144,10 @@ func (l *Live) Answer(item uint64, text, message string) error {
 
 func (l *Live) Dismiss(item uint64) error {
 	return l.call("dismiss", daemon.DismissArgs{Item: item}, nil)
+}
+
+func (l *Live) DeleteThread(id string) error {
+	return l.call("delete", daemon.DeleteArgs{Thread: id}, nil)
 }
 
 func (l *Live) Reply(mid string, to store.Address, text string) error {

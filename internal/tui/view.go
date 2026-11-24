@@ -39,6 +39,8 @@ func (m Model) View() string {
 	}
 	status := ""
 	switch {
+	case m.confirmDelete != "":
+		status = styleWarn.Render(fit(" "+m.confirmText, w))
 	case m.status == "done" || m.status == "reconnected":
 		status = styleOK.Render(" ✓ " + m.status)
 	case m.status != "":
@@ -88,10 +90,13 @@ func (m Model) footer(w int) string {
 	switch {
 	case m.open != nil:
 		parts = []string{key("r", "reply"), key("j/k", "scroll"), key("gg/G", "top/end"), key("esc", "back"), key("o", "oldest")}
+		if m.view == ViewMail {
+			parts = append(parts, key("D", "delete"))
+		}
 	case m.view == ViewInbox:
 		parts = []string{key("enter", "open"), key("r", "answer"), key("1-8", "pick"), key("a", "allow"), key("d", "deny"), key("x", "dismiss"), key("A", "all"), key("o", "oldest")}
 	default:
-		parts = []string{key("enter", "open"), key("r", "reply"), key("t", "to me/agents"), key("u", "unread"), key("f", "filter"), key("o", "oldest")}
+		parts = []string{key("enter", "open"), key("r", "reply"), key("t", "to me/agents"), key("u", "unread"), key("f", "filter"), key("D", "delete"), key("o", "oldest")}
 	}
 	if len(m.files()) > 0 {
 		parts = append([]string{key("v", "open a file")}, parts...)

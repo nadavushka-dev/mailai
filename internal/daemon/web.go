@@ -131,6 +131,7 @@ func (d *Daemon) webServe(port int) error {
 		mux.HandleFunc("/api/thread", d.webAuth(d.apiThread))
 		mux.HandleFunc("/api/answer", d.webAuth(d.apiAnswer))
 		mux.HandleFunc("/api/dismiss", d.webAuth(d.apiDismiss))
+		mux.HandleFunc("/api/delete", d.webAuth(d.apiDelete))
 		mux.HandleFunc("/api/reply", d.webAuth(d.apiReply))
 		mux.HandleFunc("/api/mark-read", d.webAuth(d.apiMarkRead))
 		mux.HandleFunc("/api/artifact", d.webAuth(d.apiArtifact))
@@ -410,6 +411,25 @@ func (d *Daemon) apiDismiss(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	res, err := d.dismiss(d.person(), a)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, res)
+}
+
+// apiDelete deletes a thread or messages as the person (§6).
+func (d *Daemon) apiDelete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST", http.StatusMethodNotAllowed)
+		return
+	}
+	var a DeleteArgs
+	if err := json.NewDecoder(r.Body).Decode(&a); err != nil {
+		writeErr(w, proto.Errorf(proto.CodeBadRequest, "%v", err))
+		return
+	}
+	res, err := d.deleteMail(d.person(), a)
 	if err != nil {
 		writeErr(w, err)
 		return

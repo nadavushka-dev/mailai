@@ -65,6 +65,9 @@ type Config struct {
 	Adapter string `toml:"adapter"`
 	Mail    struct {
 		Wake *bool `toml:"wake"`
+		// KeepDays is how long read mail is kept (SPEC §6): 7 when unset,
+		// 0 keeps it until evicted.
+		KeepDays *int `toml:"keep_days"`
 	} `toml:"mail"`
 	// Notify is desktop notifications for the Human Inbox (SPEC §12b).
 	Notify struct {
@@ -118,6 +121,16 @@ func (c Config) MachineName() string {
 	return h
 }
 
+// KeepFor is how long read mail is kept ([mail] keep_days, default 7
+// days); zero keeps it until evicted.
+func (c Config) KeepFor() time.Duration {
+	days := 7
+	if c.Mail.KeepDays != nil {
+		days = *c.Mail.KeepDays
+	}
+	return time.Duration(days) * 24 * time.Hour
+}
+
 // Wake says whether resting agents are woken (default true).
 func (c Config) Wake() bool { return c.Mail.Wake == nil || *c.Mail.Wake }
 
@@ -155,6 +168,9 @@ func Load(path string) (Config, error) {
 		if d, err := time.ParseDuration(c.Web.Session); err != nil || d <= 0 {
 			return c, fmt.Errorf("%s: [web] session %q: want a duration like 168h", path, c.Web.Session)
 		}
+	}
+	if c.Mail.KeepDays != nil && *c.Mail.KeepDays < 0 {
+		return c, fmt.Errorf("%s: [mail] keep_days %d: want 0 (keep until evicted) or more", path, *c.Mail.KeepDays)
 	}
 	for _, p := range c.Addon.Agents {
 		if _, err := pathpkg.Match(p, "x"); err != nil {

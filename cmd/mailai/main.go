@@ -39,6 +39,7 @@ inbox (the person)
   answer <item> <text>    answer an item; closes it
   dismiss <item>          close an item without an answer
   withdraw <item>         take back your own open question (an agent)
+  delete <thread>...      delete threads; --message <mid>... deletes single messages (person)
   grant <agent> <rights>  make a supervisor: read,respond over --scope (person; holders delegate narrower)
 
 harnesses
@@ -108,6 +109,8 @@ func main() {
 		err = cmdDismiss(args)
 	case "withdraw":
 		err = cmdWithdraw(args)
+	case "delete":
+		err = cmdDelete(args)
 	case "unread":
 		err = cmdUnread(args)
 	case "notice":
