@@ -99,6 +99,17 @@ func TestSkillSaysLongTextGoesOnStdin(t *testing.T) {
 	}
 }
 
+// SPEC §7 (2026-11-24): a wake lands between tool calls, so a lane that
+// sleeps ten minutes per call hears of mail ten minutes late. The skill
+// says to keep each wait short.
+func TestSkillSaysKeepWaitsShort(t *testing.T) {
+	for _, want := range []string{"under a few minutes", "between tool calls"} {
+		if !strings.Contains(Skill, want) {
+			t.Fatalf("skill lacks %q", want)
+		}
+	}
+}
+
 func TestSkillIsShortAndNamesTheCommands(t *testing.T) {
 	if len(Skill) > 2500 {
 		t.Fatalf("skill is %d bytes; keep it short (D12)", len(Skill))

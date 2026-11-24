@@ -101,10 +101,12 @@ func (d *Daemon) wakeOnce(ctx context.Context) {
 			continue
 		}
 		state, known := d.stateOf(box)
-		// A listener's harness holds the line until its agent is free, so
-		// an agent no adapter knows is woken through it (listen.go).
+		// A listener's harness decides when the line lands (Pi: a steer,
+		// after the current tool call), so a listened agent is woken
+		// whatever its state, mid-turn too (listen.go). Typing waits for
+		// an agent the adapter reports at rest.
 		listened := len(d.listenersOf(box)) > 0
-		if known && !state.AtRest() || !known && !listened {
+		if !listened && (!known || !state.AtRest()) {
 			continue
 		}
 		msgs, _ := d.st.Peek(store.PeekQuery{Mailbox: box, Unread: true})

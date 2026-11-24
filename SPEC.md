@@ -235,14 +235,17 @@ and reads it itself.
    agent a message takes the wake itself: its add-on keeps
    `mailai listen` open, and the daemon sends the same line, under the same
    rules, down that connection instead of typing it. While a listener is
-   open nothing is typed into that agent's pane. An agent no adapter knows
-   is woken through its listener too (its harness holds the line until the
-   agent is free); a `working` or `blocked` one still waits. The daemon
+   open nothing is typed into that agent's pane. A listened agent is woken
+   whatever its state (decided 2026-11-24: mail sat 1.5 h behind one long
+   turn): unknown to the adapter, idle, `working` or `blocked`; its harness
+   decides when the line lands. The other rules hold (5 s, once per
+   message, 30 s apart, rebuilt before sending). The daemon
    knows no harness: anything that keeps `mailai listen` open takes the
    wakes, and the add-on only carries lines across. `mailai addon pi [DIR]`
-   writes the Pi add-on (it hands each line over as a follow-up message,
-   which starts a turn when Pi is idle and waits for the turn's end when
-   not) with the skill beside it; `pi -e DIR`, or DIR under a project's
+   writes the Pi add-on (it hands each line over as a steer: Pi starts a
+   turn when idle, and mid-turn it lands after the current tool call; one
+   wake waits at a time, since it says to read every unread message) with
+   the skill beside it; `pi -e DIR`, or DIR under a project's
    `.pi/extensions/`, loads it. It is installed once for every session and
    switched on per agent: `[addon] agents` in the config, glob patterns
    over agent names (`["conductor", "lane-*"]`; nobody when empty, `"*"`
@@ -288,7 +291,8 @@ and reads it itself.
 target is doing; none puts reply text into a pane:
 - blocked in `mailai ask`: pushed down the waiting connection, the CLI
   prints it and exits; no notice, no typing, no extra turn;
-- working: the next hook injects the one-line notice (1);
+- working: the next hook injects the one-line notice (1), or its listener's
+  harness hands over the wake mid-turn (2);
 - at rest: the wake types the one-line notice (2); with `none`, nothing can
   type and the notice waits for the agent's next run;
 - blocked on a harness permission prompt: not mail; the hook holding the

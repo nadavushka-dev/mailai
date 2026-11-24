@@ -295,10 +295,16 @@ func TestCLI_AddonPiWritesTheAddonAndSkill(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{`"listen"`, "sendMessage", `deliverAs: "followUp"`, "triggerTurn: true", "session_shutdown", "resources_discover"} {
+	// Batching: one wake waits at a time; the next goes once it landed
+	// (message_start) or the run ended (agent_end).
+	for _, want := range []string{`"listen"`, "sendMessage", `deliverAs: "steer"`, "triggerTurn: true", "session_shutdown", "resources_discover", `"message_start"`, `"agent_end"`} {
 		if !strings.Contains(string(ts), want) {
 			t.Fatalf("add-on lacks %s", want)
 		}
+	}
+	// Mid-turn (decided 2026-11-24): never held until the turn ends.
+	if strings.Contains(string(ts), `"followUp"`) {
+		t.Fatal("add-on still delivers wakes as a follow-up")
 	}
 	sk, err := os.ReadFile(filepath.Join(dir, "SKILL.md"))
 	if err != nil || !strings.Contains(string(sk), "name: mailai") {

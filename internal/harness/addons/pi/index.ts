@@ -4,7 +4,8 @@
 // switched on in mailai's config ([addon] agents) and stays out otherwise.
 //
 // It runs `mailai listen` and hands each line to the agent as a message,
-// so mailai never types into this agent's pane (SPEC §7). The line is
+// mid-turn too (a steer), so mailai never types into this agent's pane and
+// mail does not wait for a long turn to end (SPEC §7). The line is
 // mailai's own one-line wake ("1 unread mailai message from …"), never a
 // sender's text; the agent reads its mail with `mailai read`. Mail rules
 // live in the daemon: this file only carries lines across.
@@ -42,6 +43,9 @@ export default function (pi: ExtensionAPI) {
 	let stopped = true;
 	let state: "on" | "off" | "unknown" = "off";
 	let again: ReturnType<typeof setTimeout> | undefined;
+	// waiting: a wake handed to Pi that has not landed yet. One at a time:
+	// it says to read every unread message, so later lines add nothing.
+	let waiting = false;
 
 	const start = () => {
 		if (stopped || child) return;
@@ -54,12 +58,14 @@ export default function (pi: ExtensionAPI) {
 			for (let i = buf.indexOf("\n"); i >= 0; i = buf.indexOf("\n")) {
 				const line = buf.slice(0, i).trim();
 				buf = buf.slice(i + 1);
-				if (!line) continue;
-				// followUp: an idle agent starts a turn now; a busy one
-				// gets it when its turn ends. Nothing touches the input box.
+				if (!line || waiting) continue;
+				// steer: an idle agent starts a turn now; a busy one gets it
+				// mid-turn, after its current tool call, not when the turn
+				// ends. Nothing touches the input box.
+				waiting = true;
 				pi.sendMessage(
 					{ customType: "mailai", content: line, display: true },
-					{ triggerTurn: true, deliverAs: "followUp" },
+					{ triggerTurn: true, deliverAs: "steer" },
 				);
 			}
 		});
@@ -85,6 +91,14 @@ export default function (pi: ExtensionAPI) {
 		if (state === "off") return;
 		stopped = false;
 		start();
+	});
+	pi.on("message_start", async (event) => {
+		const m = event.message as { role?: string; customType?: string };
+		if (m.role === "custom" && m.customType === "mailai") waiting = false;
+	});
+	// A run that ended has delivered what it queued; never stay stuck.
+	pi.on("agent_end", async () => {
+		waiting = false;
 	});
 	pi.on("session_shutdown", async () => {
 		stopped = true;

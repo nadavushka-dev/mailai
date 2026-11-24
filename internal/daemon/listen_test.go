@@ -89,10 +89,11 @@ func TestListen_WakeGoesToTheListenerNotThePane(t *testing.T) {
 	}
 }
 
-// The listener's harness queues the line until its agent is free, so an
-// agent the adapter does not know (no Herdr) is still woken; a busy one
-// waits, as a typed wake does.
-func TestListen_UnknownStateIsWokenBusyIsNot(t *testing.T) {
+// The listener's harness decides when the line lands (Pi: as a steer, after
+// the current tool call), so a listened agent is woken whatever its state:
+// unknown to the adapter, idle, working or blocked (decided 2026-11-24:
+// mail must not sit until a long turn ends). Nothing is typed meanwhile.
+func TestListen_WokenWhateverItsState(t *testing.T) {
 	d, sock, _, clk := listenRig(t, map[store.Address]adapter.State{})
 	c := listenAs(t, sock, "worker")
 	d.st.Send(store.SendRequest{From: "reviewer", To: "worker", Text: "hi"})
@@ -102,13 +103,32 @@ func TestListen_UnknownStateIsWokenBusyIsNot(t *testing.T) {
 		t.Fatal("an agent with no known state and a listener was not woken")
 	}
 
-	d2, sock2, _, clk2 := listenRig(t, map[store.Address]adapter.State{"worker": adapter.Working})
-	c2 := listenAs(t, sock2, "worker")
-	d2.st.Send(store.SendRequest{From: "reviewer", To: "worker", Text: "hi"})
-	clk2.add(6 * time.Second)
-	d2.wakeOnce(context.Background())
-	if l := nextLine(c2, 300*time.Millisecond); l != "" {
-		t.Fatalf("a working agent was woken: %q", l)
+	for _, st := range []adapter.State{adapter.Working, adapter.Blocked} {
+		d2, sock2, fa2, clk2 := listenRig(t, map[store.Address]adapter.State{"worker": st})
+		c2 := listenAs(t, sock2, "worker")
+		d2.st.Send(store.SendRequest{From: "reviewer", To: "worker", Text: "hi"})
+		clk2.add(6 * time.Second)
+		d2.wakeOnce(context.Background())
+		if l := nextLine(c2, 2*time.Second); !strings.Contains(l, "reviewer") {
+			t.Fatalf("a %s agent with a listener was not woken: %q", st, l)
+		}
+		if n := typedCount(fa2); n != 0 {
+			t.Fatalf("typed into a %s pane %d times", st, n)
+		}
+	}
+}
+
+// Without a listener nothing changes: a working or blocked agent gets no
+// typed wake; it waits until it is at rest.
+func TestListen_UnlistenedBusyAgentIsNotTypedAt(t *testing.T) {
+	for _, st := range []adapter.State{adapter.Working, adapter.Blocked} {
+		d, _, fa, clk := listenRig(t, map[store.Address]adapter.State{"worker": st})
+		d.st.Send(store.SendRequest{From: "reviewer", To: "worker", Text: "hi"})
+		clk.add(6 * time.Second)
+		d.wakeOnce(context.Background())
+		if n := typedCount(fa); n != 0 {
+			t.Fatalf("typed at a %s agent with no listener: %d", st, n)
+		}
 	}
 }
 
