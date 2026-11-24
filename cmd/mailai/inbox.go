@@ -203,10 +203,10 @@ func cmdDelete(args []string) error {
 		return nil
 	}
 	if *message {
-		err = call(daemon.DeleteArgs{MIDs: rest})
+		err = call(daemon.DeleteArgs{MIDs: rest, Via: "cli"})
 	} else {
 		for _, th := range rest {
-			if err = call(daemon.DeleteArgs{Thread: th}); err != nil {
+			if err = call(daemon.DeleteArgs{Thread: th, Via: "cli"}); err != nil {
 				err = fmt.Errorf("%s: %w", th, err)
 				break
 			}
@@ -237,7 +237,7 @@ func deleteReadBetweenAgents(rest []string, dry bool) error {
 	}
 	defer c.Close()
 	var r daemon.DeleteResult
-	if err := c.Call("delete", daemon.DeleteArgs{ReadBetweenAgents: true, DryRun: dry}, &r); err != nil {
+	if err := c.Call("delete", daemon.DeleteArgs{ReadBetweenAgents: true, DryRun: dry, Via: "cli"}, &r); err != nil {
 		return err
 	}
 	if jsonOut {

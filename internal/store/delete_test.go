@@ -132,3 +132,16 @@ func TestPersist_DeleteAndExpireSurviveRestart(t *testing.T) {
 		t.Fatalf("evicted %d after restart", s2.Evicted("worker"))
 	}
 }
+
+// ExpireThreads says which threads lost mail, so the daemon can log it.
+func TestExpireThreads_SaysWhichThreads(t *testing.T) {
+	s, c := newTestStore(t, DefaultLimits)
+	a := send(t, s, "a", "worker", "one")
+	b := send(t, s, "a", "worker", "two")
+	s.Read(ReadQuery{Mailbox: "worker", Mark: true})
+	c.tick(8 * 24 * time.Hour)
+	n, threads, err := s.ExpireThreads(7 * 24 * time.Hour)
+	if err != nil || n != 2 || len(threads) != 2 || threads[0] != a.ThreadID || threads[1] != b.ThreadID {
+		t.Fatalf("%v %d %v", err, n, threads)
+	}
+}

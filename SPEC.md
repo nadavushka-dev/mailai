@@ -218,6 +218,10 @@ Rules, all kept from TUIOS:
   `mailai delete --read-between-agents` (every read thread between
   agents: no message to or from the person, none unread; `--dry-run` only
   counts), for scripts.
+- Every delete, the person's or expiry's, leaves one line in the daemon log
+  (decided 2026-11-24): how many messages in how many threads, by whom
+  (`human via web`, `tui`, `cli` or `socket`, or `expiry`), and the thread
+  ids, the first five then `+N more`. A dry run logs nothing.
 - Rate limit: a token bucket per claimed sender (10 messages burst, 1/s),
   with one shared overflow bucket for senders from another machine.
 

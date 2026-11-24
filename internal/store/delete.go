@@ -6,13 +6,32 @@ import "time"
 // Unread mail is never deleted by age; keep <= 0 keeps everything. It
 // returns how many went.
 func (s *Store) Expire(keep time.Duration) (int, error) {
+	n, _, err := s.ExpireThreads(keep)
+	return n, err
+}
+
+// ExpireThreads is Expire, also saying which threads lost mail (in the
+// order first met), for the daemon's log.
+func (s *Store) ExpireThreads(keep time.Duration) (int, []string, error) {
 	if keep <= 0 {
-		return 0, nil
+		return 0, nil, nil
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	cutoff := s.now().Add(-keep).UnixNano()
-	return s.drop(func(m *Message) bool { return m.ReadAt != 0 && m.ReadAt <= cutoff })
+	var threads []string
+	seen := map[string]bool{}
+	n, err := s.drop(func(m *Message) bool {
+		if m.ReadAt == 0 || m.ReadAt > cutoff {
+			return false
+		}
+		if !seen[m.ThreadID] {
+			seen[m.ThreadID] = true
+			threads = append(threads, m.ThreadID)
+		}
+		return true
+	})
+	return n, threads, err
 }
 
 // DeleteThread deletes every message in a thread, whatever mailbox holds

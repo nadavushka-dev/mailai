@@ -2,6 +2,8 @@ package daemon
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/nadavushka-dev/mailai/internal/proto"
@@ -13,12 +15,14 @@ import (
 
 // DeleteArgs names a whole thread, or messages by mid; or, alone,
 // ReadBetweenAgents: every read thread between agents. DryRun only counts
-// what that would delete, for a confirm.
+// what that would delete, for a confirm. Via names the client ("cli" or
+// "tui") for the daemon log only; the web is known without it.
 type DeleteArgs struct {
 	Thread            string   `json:"thread,omitempty"`
 	MIDs              []string `json:"mids,omitempty"`
 	ReadBetweenAgents bool     `json:"read_between_agents,omitempty"`
 	DryRun            bool     `json:"dry_run,omitempty"`
+	Via               string   `json:"via,omitempty"`
 }
 
 // DeleteResult: Deleted counts messages; Threads, threads (bulk delete).
@@ -30,33 +34,85 @@ type DeleteResult struct {
 // DefaultExpireEvery is how often read mail past KeepFor is swept.
 const DefaultExpireEvery = time.Hour
 
+// deletedVia says through what the person deleted, for the log: the web
+// (a request with no socket), the CLI or TUI as they say, else the socket.
+func deletedVia(c *conn, a DeleteArgs) string {
+	switch {
+	case c.Conn == nil:
+		return "web"
+	case a.Via == "cli" || a.Via == "tui":
+		return a.Via
+	}
+	return "socket"
+}
+
+// logDeleted leaves the one daemon-log line every delete gets: how many
+// messages in how many threads, by whom, and the threads (the first five,
+// then how many more).
+func (d *Daemon) logDeleted(msgs int, threads []string, by string) {
+	ids := threads
+	more := ""
+	if len(ids) > 5 {
+		ids, more = ids[:5], fmt.Sprintf(" +%d more", len(threads)-5)
+	}
+	d.log.Printf("deleted %d message%s in %d thread%s by %s: %s%s", msgs, plural(msgs), len(threads), plural(len(threads)), by, strings.Join(ids, " "), more)
+}
+
+func plural(n int) string {
+	if n == 1 {
+		return ""
+	}
+	return "s"
+}
+
 func (d *Daemon) deleteMail(c *conn, a DeleteArgs) (any, error) {
 	if !isPerson(c.pl) {
 		return nil, proto.Errorf(proto.CodeNotHuman, "only the person deletes mail")
 	}
+	by := "human via " + deletedVia(c, a)
 	if a.ReadBetweenAgents {
 		if a.Thread != "" || len(a.MIDs) > 0 {
 			return nil, proto.Errorf(proto.CodeBadRequest, "read_between_agents deletes on its own; name no thread or messages with it")
 		}
-		return d.deleteReadBetweenAgents(a.DryRun)
+		return d.deleteReadBetweenAgents(a.DryRun, by)
 	}
 	if a.Thread == "" && len(a.MIDs) == 0 {
 		return nil, proto.Errorf(proto.CodeBadRequest, "name a thread or messages to delete")
 	}
-	n := 0
-	if a.Thread != "" {
-		k, err := d.st.DeleteThread(a.Thread)
-		n += k
-		if err != nil {
-			return nil, err
+	// The threads touched, for the log: the thread, then those of the mids.
+	var threads []string
+	seen := map[string]bool{}
+	touch := func(id string) {
+		if id != "" && !seen[id] {
+			seen[id] = true
+			threads = append(threads, id)
 		}
 	}
-	if len(a.MIDs) > 0 {
-		k, err := d.st.Delete(a.MIDs...)
-		n += k
-		if err != nil {
-			return nil, err
+	if a.Thread != "" && len(d.st.Thread(a.Thread)) > 0 {
+		touch(a.Thread)
+	}
+	for _, mid := range a.MIDs {
+		if m, ok := d.st.Get(mid); ok {
+			touch(m.ThreadID)
 		}
+	}
+	n := 0
+	var err error
+	if a.Thread != "" {
+		var k int
+		k, err = d.st.DeleteThread(a.Thread)
+		n += k
+	}
+	if err == nil && len(a.MIDs) > 0 {
+		var k int
+		k, err = d.st.Delete(a.MIDs...)
+		n += k
+	}
+	if n > 0 {
+		d.logDeleted(n, threads, by)
+	}
+	if err != nil {
+		return nil, err
 	}
 	if n == 0 {
 		return nil, proto.Errorf(proto.CodeNotFound, "nothing held here to delete")
@@ -87,7 +143,7 @@ func betweenAgentsRead(msgs []store.Message) bool {
 // deleteReadBetweenAgents deletes every read thread between agents in this
 // machine's store (§6); Inbox items stay. A thread is checked again right
 // before it goes, so mail that arrived meanwhile keeps it.
-func (d *Daemon) deleteReadBetweenAgents(dry bool) (any, error) {
+func (d *Daemon) deleteReadBetweenAgents(dry bool, by string) (any, error) {
 	seen := map[string]bool{}
 	var ids []string
 	for _, box := range d.st.Mailboxes() {
@@ -100,6 +156,7 @@ func (d *Daemon) deleteReadBetweenAgents(dry bool) (any, error) {
 		}
 	}
 	res := DeleteResult{}
+	var gone []string
 	for _, id := range ids {
 		th := d.st.Thread(id)
 		if !betweenAgentsRead(th) {
@@ -114,12 +171,15 @@ func (d *Daemon) deleteReadBetweenAgents(dry bool) (any, error) {
 		res.Deleted += n
 		if n > 0 {
 			res.Threads++
+			gone = append(gone, id)
 		}
 		if err != nil {
+			d.logDeleted(res.Deleted, gone, by+" (read between agents)")
 			return nil, err
 		}
 	}
 	if !dry && res.Deleted > 0 {
+		d.logDeleted(res.Deleted, gone, by+" (read between agents)")
 		d.publishEvent("deleted", map[string]any{"count": res.Deleted, "threads": res.Threads})
 	}
 	return res, nil
@@ -130,12 +190,12 @@ func (d *Daemon) expire() {
 	if d.keepFor <= 0 {
 		return
 	}
-	n, err := d.st.Expire(d.keepFor)
+	n, threads, err := d.st.ExpireThreads(d.keepFor)
 	if err != nil {
 		d.log.Printf("expire: %v", err)
 	}
 	if n > 0 {
-		d.log.Printf("expired %d read message(s) older than %s", n, d.keepFor)
+		d.logDeleted(n, threads, fmt.Sprintf("expiry (read over %s ago)", d.keepFor))
 		d.publishEvent("deleted", map[string]any{"count": n})
 	}
 }

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -12,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -42,7 +44,21 @@ type env struct {
 	t    *testing.T
 	home string
 	sock string
+	// daemonLog is what the daemon wrote to stderr (its daemon.log).
+	daemonLog *lockedBuf
 }
+
+type lockedBuf struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (l *lockedBuf) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.Write(p)
+}
+func (l *lockedBuf) String() string { l.mu.Lock(); defer l.mu.Unlock(); return l.b.String() }
 
 func startEnv(t *testing.T) *env {
 	t.Helper()
@@ -57,12 +73,13 @@ func startEnvWith(t *testing.T, extra string) *env {
 	id := hex.EncodeToString(b)
 	home := t.TempDir()
 	sock := filepath.Join(os.TempDir(), "mailai-cli-"+id+".sock")
-	e := &env{t: t, home: home, sock: sock}
+	e := &env{t: t, home: home, sock: sock, daemonLog: &lockedBuf{}}
 	// Test processes have no terminal; the person check is covered by the
 	// identity and daemon tests. Tests never pop desktop notifications.
 	os.MkdirAll(filepath.Join(home, "config"), 0o700)
 	os.WriteFile(filepath.Join(home, "config", "config.toml"), []byte("[identity]\nrequire_terminal = false\ndetect_agents = false\n[notify]\nenabled = false\n"+extra), 0o600)
 	cmd := e.cmd("daemon", "run")
+	cmd.Stderr = e.daemonLog
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
@@ -550,6 +567,32 @@ func TestCLI_DeleteReadBetweenAgents(t *testing.T) {
 	if out, err := e.run("delete", "--read-between-agents", "local:1"); err == nil || !strings.Contains(out, "on its own") {
 		t.Fatalf("%v %s", err, out)
 	}
+}
+
+// Every delete leaves a line in the daemon log; the CLI's says so.
+func TestCLI_DeleteSaysCLIInTheDaemonLog(t *testing.T) {
+	e := startEnv(t)
+	var sent struct {
+		ThreadID string `json:"thread_id"`
+	}
+	if err := json.Unmarshal([]byte(e.must("send", "--from", "worker", "reviewer", "hi", "--json")), &sent); err != nil || sent.ThreadID == "" {
+		t.Fatal(err, sent)
+	}
+	// The daemon's stderr reaches the test through a pipe: wait for it.
+	logged := func(want string) {
+		t.Helper()
+		for deadline := time.Now().Add(5 * time.Second); !strings.Contains(e.daemonLog.String(), want); time.Sleep(10 * time.Millisecond) {
+			if time.Now().After(deadline) {
+				t.Fatalf("daemon log:\n%s\nwant %q", e.daemonLog.String(), want)
+			}
+		}
+	}
+	e.must("delete", sent.ThreadID)
+	logged("deleted 1 message in 1 thread by human via cli: " + sent.ThreadID)
+	e.must("send", "--from", "worker", "reviewer", "read one")
+	e.must("read", "-w", "reviewer")
+	e.must("delete", "--read-between-agents")
+	logged("by human via cli (read between agents): ")
 }
 
 func TestCLI_AskHumanAttachesRelativePaths(t *testing.T) {

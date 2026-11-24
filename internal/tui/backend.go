@@ -147,7 +147,7 @@ func (l *Live) Dismiss(item uint64) error {
 }
 
 func (l *Live) DeleteThread(id string) error {
-	return l.call("delete", daemon.DeleteArgs{Thread: id}, nil)
+	return l.call("delete", daemon.DeleteArgs{Thread: id, Via: "tui"}, nil)
 }
 
 func (l *Live) Reply(mid string, to store.Address, text string) error {
