@@ -368,6 +368,9 @@
   .scopes > button { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border: 0; border-radius: 8px; background: transparent; color: var(--dim); font: inherit; font-size: 12.5px; font-weight: 560; cursor: pointer; }
   .scopes > button:hover { color: var(--fg-2); background: var(--hover); }
   .scopes > button.on { color: var(--fg); background: var(--panel-2); }
+  .scopes > button[hidden] { display: none; }
+  .scopes > button.bulk-del { margin-left: auto; }
+  .scopes > button.bulk-del:hover { color: var(--red); background: var(--red-soft); }
   .follow-chip { display: inline-flex; align-items: center; gap: 8px; margin-left: auto; padding: 3px 4px 3px 3px; border-radius: 99px; background: var(--amber-soft); color: var(--fg); font-size: 12.5px; font-weight: 560; }
   .follow-chip:empty { display: none; }
   .follow-chip .av, .person-chip .av, .to-pick .av { width: 22px; height: 22px; font-size: 9.5px; border-radius: 99px; }
@@ -538,6 +541,7 @@
       <button type="button" id="scope-me" data-scope="me" title="Mail to and from you"><svg class="i"><use href="#i-user"/></svg>To me <span class="count" id="n-me"></span></button>
       <button type="button" id="scope-agents" data-scope="agents" title="Your agents writing to each other"><svg class="i"><use href="#i-bot"/></svg>Between agents</button>
       <button type="button" id="scope-people" data-scope="people" title="Every agent; pick one to follow"><svg class="i"><use href="#i-users"/></svg>Agents</button>
+      <button type="button" class="bulk-del" id="bulk-del" data-a="delete-read-agents" hidden title="Delete every read thread between agents (none to or from you)"><svg class="i"><use href="#i-trash"/></svg>Delete read</button>
       <span class="follow-chip" id="follow"></span>
     </nav>
     <section id="list" role="listbox" aria-label="Waiting on you"></section>
@@ -823,7 +827,8 @@
     $('#mail-count').textContent = unread || '';
     $('#n-me').textContent = unread || '';
     $('#scopes').hidden = view !== 'mail';
-    for (const b of document.querySelectorAll('.scopes > button')) {
+    $('#bulk-del').hidden = !(view === 'mail' && mailScope === 'agents' && !following);
+    for (const b of document.querySelectorAll('.scopes > button[data-scope]')) {
       const on = !following && b.dataset.scope === mailScope;
       b.classList.toggle('on', on); b.setAttribute('aria-pressed', on);
     }
@@ -1196,7 +1201,7 @@
   document.addEventListener('click', async e => {
     const row = e.target.closest('.row');
     if (row) return select(+row.dataset.i);
-    const sc = e.target.closest('.scopes > button');
+    const sc = e.target.closest('.scopes > button[data-scope]');
     if (sc) return setScope(sc.dataset.scope);
     const tp = e.target.closest('#to-pick button');
     if (tp) {
@@ -1223,6 +1228,17 @@
       if (!confirm(`Delete this thread (${n} message${n === 1 ? '' : 's'})? It can't be undone.`)) return;
       if (openThread === id) { openThread = null; reading(false); }
       return act('/api/delete', {thread: id}, 'Thread deleted');
+    }
+    if (a === 'delete-read-agents') {
+      // Count first, then ask: every read thread between agents (SPEC §6).
+      let dry;
+      try { dry = await api('/api/delete', {read_between_agents: true, dry_run: true}); } catch (err) { return status(err.message, true); }
+      if (!dry) return;
+      const n = dry.threads || 0, m = dry.deleted || 0;
+      if (!n) return status('No read threads between agents');
+      if (!confirm(`Delete ${n} read thread${n === 1 ? '' : 's'} between agents (${m} message${m === 1 ? '' : 's'})? It can't be undone.`)) return;
+      openThread = null; reading(false);
+      return act('/api/delete', {read_between_agents: true}, `Deleted ${n} thread${n === 1 ? '' : 's'}`);
     }
     if (a === 'open') { openThread = id; reading(true); return renderThread(id, true); }
     if (a === 'back') { openThread = null; renderList(); return renderDetail(); }

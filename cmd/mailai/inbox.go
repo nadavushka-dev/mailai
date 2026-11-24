@@ -179,7 +179,12 @@ func cmdDismiss(args []string) error {
 func cmdDelete(args []string) error {
 	fs := newFlags("delete")
 	message := fs.Bool("message", false, "the arguments are message mids, not threads")
+	bulk := fs.Bool("read-between-agents", false, "delete every read thread between agents (none to or from you)")
+	dry := fs.Bool("dry-run", false, "with --read-between-agents: only count what would go")
 	rest := parse(fs, args)
+	if *bulk {
+		return deleteReadBetweenAgents(rest, *dry)
+	}
 	if len(rest) == 0 {
 		return fmt.Errorf("usage: mailai delete <thread>... | mailai delete --message <mid>...")
 	}
@@ -219,6 +224,39 @@ func cmdDelete(args []string) error {
 	}
 	fmt.Printf("deleted %d message%s\n", total, s)
 	return nil
+}
+
+// deleteReadBetweenAgents is delete --read-between-agents (SPEC §6).
+func deleteReadBetweenAgents(rest []string, dry bool) error {
+	if len(rest) > 0 {
+		return fmt.Errorf("--read-between-agents deletes on its own; name no thread or messages with it")
+	}
+	c, err := connect()
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+	var r daemon.DeleteResult
+	if err := c.Call("delete", daemon.DeleteArgs{ReadBetweenAgents: true, DryRun: dry}, &r); err != nil {
+		return err
+	}
+	if jsonOut {
+		return printJSON(r)
+	}
+	what := fmt.Sprintf("%d thread%s (%d message%s)", r.Threads, plural(r.Threads), r.Deleted, plural(r.Deleted))
+	if dry {
+		fmt.Printf("would delete %s between agents\n", what)
+		return nil
+	}
+	fmt.Printf("deleted %s between agents\n", what)
+	return nil
+}
+
+func plural(n int) string {
+	if n == 1 {
+		return ""
+	}
+	return "s"
 }
 
 // cmdWithdraw: an agent takes back its own open question (SPEC §7a).

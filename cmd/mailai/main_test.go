@@ -528,6 +528,30 @@ func TestCLI_EmptyTextSaysWhyAndFileGivesText(t *testing.T) {
 	}
 }
 
+// SPEC §6: `mailai delete --read-between-agents` deletes every read thread
+// between agents; --dry-run only counts them.
+func TestCLI_DeleteReadBetweenAgents(t *testing.T) {
+	e := startEnv(t)
+	e.must("send", "--from", "worker", "reviewer", "read one")
+	e.must("send", "--from", "worker", "human", "to me")
+	e.must("read", "-w", "reviewer")
+	if out := e.must("delete", "--read-between-agents", "--dry-run"); !strings.Contains(out, "would delete 1 thread (1 message)") {
+		t.Fatalf("%s", out)
+	}
+	if out := e.must("delete", "--read-between-agents"); !strings.Contains(out, "deleted 1 thread (1 message) between agents") {
+		t.Fatalf("%s", out)
+	}
+	if out := e.must("read", "--peek", "-w", "reviewer"); strings.Contains(out, "read one") {
+		t.Fatalf("still there: %s", out)
+	}
+	if out := e.must("read", "--peek"); !strings.Contains(out, "to me") {
+		t.Fatalf("the person's mail went: %s", out)
+	}
+	if out, err := e.run("delete", "--read-between-agents", "local:1"); err == nil || !strings.Contains(out, "on its own") {
+		t.Fatalf("%v %s", err, out)
+	}
+}
+
 func TestCLI_AskHumanAttachesRelativePaths(t *testing.T) {
 	e := startEnv(t)
 	dir := t.TempDir()

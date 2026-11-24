@@ -63,7 +63,10 @@ type Model struct {
 	// (y deletes). confirmText is the question shown.
 	confirmDelete string
 	confirmText   string
-	now           func() time.Time
+	// confirmBulk: X asked whether to delete every read thread between
+	// agents; the next key decides (y deletes).
+	confirmBulk bool
+	now         func() time.Time
 
 	// Mail filters (SPEC §12): unread, principal, session, machine.
 	filterUnread  bool
@@ -478,6 +481,14 @@ func parseMailFilter(s string) (who, session, machine string) {
 }
 
 func (m Model) updateKeys(k tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.confirmBulk {
+		m.confirmBulk, m.confirmText = false, ""
+		if k.String() != "y" {
+			return m, nil
+		}
+		m.open, m.openID = nil, ""
+		return m.act(func() error { _, err := m.b.DeleteReadBetweenAgents(); return err })
+	}
 	if id := m.confirmDelete; id != "" {
 		m.confirmDelete, m.confirmText = "", ""
 		if k.String() != "y" {
@@ -553,6 +564,8 @@ func (m Model) updateKeys(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "D":
 		return m.askDelete(), nil
+	case "X":
+		return m.askBulkDelete(), nil
 	case "v":
 		return m.startOpen()
 	case "t":
@@ -833,6 +846,31 @@ func (m Model) updateInput(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.input, cmd = m.input.Update(k)
 	return m, cmd
+}
+
+// askBulkDelete asks before X deletes every read thread between agents
+// (SPEC §6); only on the Between agents scope, where those threads show.
+func (m Model) askBulkDelete() Model {
+	if m.view != ViewMail || m.scope != scopeAgents {
+		return m
+	}
+	threads, msgs := 0, 0
+	for _, t := range m.threads {
+		if t.Unread == 0 && !toMe(t) && !peopleMatch(t.People, string(store.Human)) {
+			threads++
+			msgs += t.Count
+		}
+	}
+	m.confirmBulk = true
+	m.confirmText = fmt.Sprintf("delete %d read thread%s between agents (%d message%s)? y deletes, any other key keeps them", threads, plural(threads), msgs, plural(msgs))
+	return m
+}
+
+func plural(n int) string {
+	if n == 1 {
+		return ""
+	}
+	return "s"
 }
 
 // askDelete asks before D deletes the open or selected Mail thread.

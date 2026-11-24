@@ -203,6 +203,11 @@ Rules, all kept from TUIOS:
 - The person deletes by hand: a whole thread, or one message, from the web
   Mail view, the TUI or `mailai delete`. Agents cannot delete. Deleting
   works on this machine's store only, and leaves Inbox items as they are.
+  In one go (decided 2026-11-24), every read thread between agents (no
+  message to or from the person, none unread): the web's Between agents
+  tab has one button that counts them and asks first, the TUI's `X` there
+  asks for a `y`, the CLI has `mailai delete --read-between-agents`
+  (`--dry-run` only counts).
 - Rate limit: a token bucket per claimed sender (10 messages burst, 1/s),
   with one shared overflow bucket for senders from another machine.
 
@@ -578,7 +583,7 @@ CLI (every command takes `--json`):
 | `mailai reply <#\|mid> [text] [--file PATH]` | Reply in a thread. `#` is the number in a message's fence header (`54` or `#54`), a message in the caller's own mailbox; the daemon resolves it, so a full mid works too. |
 | `mailai queue <to> <text>` · `queue ls` · `queue rm` | Typed when the agent comes to rest. |
 | `mailai inbox [--all] [--closed] [--session S]` · `mailai answer <item> <text\|choice>` · `mailai dismiss <item>` | The Inbox from the CLI. `--closed`: what closed in the last hour, and how (§7a). |
-| `mailai delete <thread>...` · `mailai delete --message <mid>...` | The person deletes mail (§6). |
+| `mailai delete <thread>...` · `mailai delete --message <mid>...` · `mailai delete --read-between-agents [--dry-run]` | The person deletes mail (§6). |
 | `mailai agents` · `mailai whoami` | What the adapter sees; how the daemon places this caller. |
 | `mailai status` | Daemon, adapter, links, and per agent the context cost: notice lines injected, messages and bytes read, asks and their wait time (D12). |
 | `mailai grant <principal> <rights> [--scope S] [--once]` · `grant ls` · `grant rm` | Grants. `human` only. |
@@ -604,7 +609,7 @@ dim Recently closed strip says what closed in the last hour and how (§7a). Mail
 lists every thread with filters by session, machine, principal and unread;
 `t` narrows it to the person's own threads (started from or to `human`) or
 to those between agents, and the principal filter follows one agent through
-every thread it is in. `D` deletes the selected thread after a `y` (§6). Opening a thread marks the person's own mail in it
+every thread it is in. `D` deletes the selected thread after a `y`; on the between-agents scope `X` deletes every read thread between agents after a `y` (§6). Opening a thread marks the person's own mail in it
 read, never an agent's. In a thread between agents `r` joins it as the
 person, writing to every agent in it by default (`tab` picks one); the
 web UI reads along by default and shows when each agent read (or, on another

@@ -40,6 +40,7 @@ inbox (the person)
   dismiss <item>          close an item without an answer
   withdraw <item>         take back your own open question (an agent)
   delete <thread>...      delete threads; --message <mid>... deletes single messages (person)
+  delete --read-between-agents  delete every read thread between agents; --dry-run counts (person)
   grant <agent> <rights>  make a supervisor: read,respond over --scope (person; holders delegate narrower)
 
 harnesses
