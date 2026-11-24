@@ -79,6 +79,9 @@ type Options struct {
 	// InSessionWindow is how long after a dropped ask the person's typing in
 	// that session means they answered it there (§7a, 2 min).
 	InSessionWindow time.Duration
+	// ListenAgents switches the add-on on per agent (glob patterns over the
+	// name, listen.go); nil allows every agent, empty none.
+	ListenAgents []string
 
 	WebPort       int
 	WebURL        string
@@ -107,6 +110,7 @@ type Daemon struct {
 	drops           map[store.Address][]dropped
 	itemWaits       map[uint64][]chan struct{}
 	inSessionWindow time.Duration
+	listenAgents    []string
 
 	agents    *agents
 	web       webState
@@ -221,6 +225,7 @@ func New(o Options) *Daemon {
 	}
 	d.notifier = o.Notifier
 	d.inSessionWindow = o.InSessionWindow
+	d.listenAgents = o.ListenAgents
 	if d.inSessionWindow == 0 {
 		d.inSessionWindow = DefaultInSessionWindow
 	}
@@ -620,7 +625,11 @@ func (d *Daemon) handle(c *conn, req proto.Request) (any, error) {
 		}
 		return d.queueRm(c, a)
 	case "listen":
-		return d.listen(c)
+		a, err := decode[ListenArgs](req.Args)
+		if err != nil {
+			return nil, err
+		}
+		return d.listen(c, a)
 	case "subscribe":
 		d.mu.Lock()
 		d.subs[c] = true

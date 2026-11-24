@@ -2,6 +2,8 @@ package daemon
 
 import (
 	"encoding/json"
+	"path"
+	"strings"
 
 	"github.com/nadavushka-dev/mailai/internal/proto"
 	"github.com/nadavushka-dev/mailai/internal/store"
@@ -13,6 +15,11 @@ import (
 // agent itself. The daemon knows no harness: the rules for when to wake
 // stay here, and the line is the one that would have been typed.
 
+// ListenArgs: Check only asks whether the caller may listen.
+type ListenArgs struct {
+	Check bool `json:"check,omitempty"`
+}
+
 // ListenResult names the mailbox whose wakes the connection now takes.
 type ListenResult struct {
 	Mailbox store.Address `json:"mailbox"`
@@ -23,13 +30,38 @@ type ListenEvent struct {
 	Line string `json:"line"`
 }
 
-func (d *Daemon) listen(c *conn) (any, error) {
+// listenAllowed: the add-on is switched on per agent ([addon] agents, glob
+// patterns over the name); nil patterns (a daemon built without config)
+// allow every agent.
+func (d *Daemon) listenAllowed(box store.Address) bool {
+	if d.listenAgents == nil {
+		return true
+	}
+	name := string(box)
+	if i := strings.IndexByte(name, '@'); i >= 0 {
+		name = name[:i]
+	}
+	for _, p := range d.listenAgents {
+		if ok, _ := path.Match(p, name); ok {
+			return true
+		}
+	}
+	return false
+}
+
+func (d *Daemon) listen(c *conn, a ListenArgs) (any, error) {
 	if isPerson(c.pl) {
 		return nil, proto.Errorf(proto.CodeBadRequest, "listen is for agents; the person has mailai tui and the web page")
 	}
 	box := d.own(c.pl)
 	if box == "" {
 		return nil, proto.Errorf(proto.CodeBadRequest, "who are you? listen needs an agent (a pane, or MAILAI_TOKEN)")
+	}
+	if !d.listenAllowed(box) {
+		return nil, proto.Errorf(proto.CodeForbidden, "the add-on is not switched on for %s: add it to [addon] agents in the config", box)
+	}
+	if a.Check {
+		return ListenResult{Mailbox: box}, nil
 	}
 	d.mu.Lock()
 	if d.listeners == nil {

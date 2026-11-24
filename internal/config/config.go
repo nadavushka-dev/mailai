@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	pathpkg "path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -82,6 +83,11 @@ type Config struct {
 		// Session is how long a login lasts, a Go duration; 12h when empty.
 		Session string `toml:"session"`
 	} `toml:"web"`
+	// Addon switches the harness add-on on per agent (SPEC §7): glob
+	// patterns over agent names; nobody when empty, "*" for everyone.
+	Addon struct {
+		Agents []string `toml:"agents"`
+	} `toml:"addon"`
 	Identity struct {
 		RequireTerminal *bool `toml:"require_terminal"`
 		DetectAgents    *bool `toml:"detect_agents"`
@@ -150,10 +156,21 @@ func Load(path string) (Config, error) {
 			return c, fmt.Errorf("%s: [web] session %q: want a duration like 168h", path, c.Web.Session)
 		}
 	}
+	for _, p := range c.Addon.Agents {
+		if _, err := pathpkg.Match(p, "x"); err != nil {
+			return c, fmt.Errorf("%s: [addon] agents: bad pattern %q", path, p)
+		}
+	}
 	return c, nil
 }
 
 // WebSession is how long a web login lasts: [web] session, else 12 h.
+// AddonAgents are the patterns the add-on is switched on for; never nil, so
+// an empty list means nobody (not "no rule").
+func (c Config) AddonAgents() []string {
+	return append([]string{}, c.Addon.Agents...)
+}
+
 func (c Config) WebSession() time.Duration {
 	if d, err := time.ParseDuration(c.Web.Session); err == nil && d > 0 {
 		return d

@@ -285,7 +285,7 @@ func TestCLI_WebServedFromTheStart(t *testing.T) {
 // `mailai addon pi DIR` writes the Pi add-on (it runs mailai listen and
 // hands each line to Pi) and the skill beside it, for `pi -e DIR`.
 func TestCLI_AddonPiWritesTheAddonAndSkill(t *testing.T) {
-	e := startEnv(t)
+	e := startEnvWith(t, "[addon]\nagents = [\"builder\"]\n")
 	dir := filepath.Join(t.TempDir(), "pi")
 	out := e.must("addon", "pi", dir)
 	if !strings.Contains(out, "pi -e "+dir) {
@@ -305,6 +305,20 @@ func TestCLI_AddonPiWritesTheAddonAndSkill(t *testing.T) {
 		t.Fatalf("skill: %v %q", err, sk)
 	}
 	e.must("addon", "pi", dir) // again: idempotent
+	// The add-on asks `mailai listen --check` whether its agent is switched
+	// on: exit 0 yes, exit 3 no (and it stays out of that session).
+	for _, tc := range []struct {
+		name string
+		want int
+	}{{"builder", 0}, {"brain", 3}} {
+		tok := strings.TrimSpace(strings.SplitN(e.must("token", "new", tc.name), "\n", 2)[0])
+		c := e.cmd("listen", "--check")
+		c.Env = append(c.Env, "MAILAI_TOKEN="+tok)
+		c.Run()
+		if got := c.ProcessState.ExitCode(); got != tc.want {
+			t.Fatalf("listen --check as %s: exit %d, want %d", tc.name, got, tc.want)
+		}
+	}
 	if _, err := e.run("addon", "nope", dir); err == nil {
 		t.Fatal("an unknown harness is refused")
 	}
@@ -313,7 +327,7 @@ func TestCLI_AddonPiWritesTheAddonAndSkill(t *testing.T) {
 // SPEC §7 (2026-11-23): `mailai listen` stays open and prints one wake line
 // per wake, for a harness add-on to hand its agent; nothing is typed.
 func TestCLI_ListenPrintsTheWakeLine(t *testing.T) {
-	e := startEnv(t)
+	e := startEnvWith(t, "[addon]\nagents = [\"builder\"]\n")
 	tok := strings.TrimSpace(strings.SplitN(e.must("token", "new", "builder"), "\n", 2)[0])
 	l := e.cmd("listen")
 	l.Env = append(l.Env, "MAILAI_TOKEN="+tok)

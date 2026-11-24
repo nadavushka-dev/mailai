@@ -55,6 +55,18 @@ func TestLoadMissingIsDefaultAndWakeParses(t *testing.T) {
 	if _, err = Load(f); err == nil {
 		t.Fatal("a bad [web] session must be an error")
 	}
+	// [addon] agents: who the add-on is switched on for; nobody by default.
+	if a := (Config{}).AddonAgents(); a == nil || len(a) != 0 {
+		t.Fatalf("nobody by default, as an empty list: %#v", a)
+	}
+	os.WriteFile(f, []byte("[addon]\nagents = [\"conductor\", \"lane-*\"]\n"), 0o600)
+	if c, err = Load(f); err != nil || len(c.AddonAgents()) != 2 || c.AddonAgents()[1] != "lane-*" {
+		t.Fatal(err, c.AddonAgents())
+	}
+	os.WriteFile(f, []byte("[addon]\nagents = [\"lane-[\"]\n"), 0o600)
+	if _, err = Load(f); err == nil {
+		t.Fatal("a bad [addon] pattern must be an error")
+	}
 	// Test rigs run under whatever started them, an agent included.
 	if !(Config{}).DetectAgents() {
 		t.Fatal("agent detection is on by default")

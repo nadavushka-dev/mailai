@@ -138,6 +138,39 @@ func TestListen_GoneListenerTypingResumes(t *testing.T) {
 	}
 }
 
+// The add-on is installed for every Pi session and switched on per agent
+// in the config (decided 2026-11-23): [addon] agents, glob patterns over
+// the agent's name. An agent not listed is refused, and --check says so
+// without listening.
+func TestListen_OnlyAgentsSwitchedOn(t *testing.T) {
+	pl := placed(Placement{Proof: store.ProofPane, Principal: "lane-a"}, Placement{Proof: store.ProofPane, Principal: "brain"})
+	sock, d := startDaemonWith(t, Options{Placer: pl, ListenAgents: []string{"conductor", "lane-*"}})
+	if err := dialAs(t, sock, "brain").Call("listen", nil, nil); client.Code(err) != proto.CodeForbidden {
+		t.Fatalf("brain is not switched on: %v", err)
+	}
+	if err := dialAs(t, sock, "brain").Call("listen", ListenArgs{Check: true}, nil); client.Code(err) != proto.CodeForbidden {
+		t.Fatalf("check for brain: %v", err)
+	}
+	var r ListenResult
+	if err := dialAs(t, sock, "lane-a").Call("listen", ListenArgs{Check: true}, &r); err != nil || r.Mailbox != "lane-a" {
+		t.Fatalf("check for lane-a: %v %+v", err, r)
+	}
+	d.mu.Lock()
+	n := len(d.listeners["lane-a"])
+	d.mu.Unlock()
+	if n != 0 {
+		t.Fatal("a check registered a listener")
+	}
+	if err := dialAs(t, sock, "lane-a").Call("listen", nil, nil); err != nil {
+		t.Fatalf("lane-a listens: %v", err)
+	}
+	// An empty list switches nobody on.
+	sock2, _ := startDaemonWith(t, Options{Placer: pl, ListenAgents: []string{}})
+	if err := dialAs(t, sock2, "lane-a").Call("listen", nil, nil); client.Code(err) != proto.CodeForbidden {
+		t.Fatalf("empty list: %v", err)
+	}
+}
+
 // Only an agent listens: the person has the TUI and the page, and a
 // detached caller has no mailbox.
 func TestListen_OnlyAnAgent(t *testing.T) {

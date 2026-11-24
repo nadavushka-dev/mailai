@@ -215,7 +215,30 @@ func cmdWait(args []string) error {
 // refuses the caller (not an agent).
 func cmdListen(args []string) error {
 	fs := newFlags("listen")
+	check := fs.Bool("check", false, "only say whether this agent is switched on: exit 0 yes, 3 no")
 	parse(fs, args)
+	// Not switched on ([addon] agents) exits 3, so an add-on can stay out
+	// of that session instead of retrying.
+	notOn := func(err error) error {
+		if client.Code(err) == proto.CodeForbidden {
+			fmt.Fprintln(os.Stderr, "mailai:", err)
+			os.Exit(3)
+		}
+		return err
+	}
+	if *check {
+		c, err := connect()
+		if err != nil {
+			return err
+		}
+		defer c.Close()
+		var r daemon.ListenResult
+		if err := c.Call("listen", daemon.ListenArgs{Check: true}, &r); err != nil {
+			return notOn(err)
+		}
+		fmt.Println("switched on for", r.Mailbox)
+		return nil
+	}
 	backoff := []time.Duration{500 * time.Millisecond, time.Second, 2 * time.Second, 3 * time.Second}
 	try, told := 0, false
 	for {
@@ -223,9 +246,9 @@ func cmdListen(args []string) error {
 		if err == nil {
 			var r daemon.ListenResult
 			err = c.Call("listen", nil, &r)
-			if err != nil && client.Code(err) == proto.CodeBadRequest {
+			if code := client.Code(err); code == proto.CodeBadRequest || code == proto.CodeForbidden {
 				c.Close()
-				return err
+				return notOn(err)
 			}
 			if err == nil {
 				if told {

@@ -237,7 +237,14 @@ and reads it itself.
    writes the Pi add-on (it hands each line over as a follow-up message,
    which starts a turn when Pi is idle and waits for the turn's end when
    not) with the skill beside it; `pi -e DIR`, or DIR under a project's
-   `.pi/extensions/`, loads it. Without a listener: `mailai wait` (5), or
+   `.pi/extensions/`, loads it. It is installed once for every session and
+   switched on per agent: `[addon] agents` in the config, glob patterns
+   over agent names (`["conductor", "lane-*"]`; nobody when empty, `"*"`
+   for everyone). At session start the add-on asks
+   `mailai listen --check` (exit 0 on, 3 not switched on); an agent not
+   switched on gets neither the listener nor the skill, so onboarding an
+   agent is one config line and touches no repo or launch command.
+   Without a listener: `mailai wait` (5), or
    typing as above. Costs the same as a typed wake: nothing while idle, one
    line per wake.
 
