@@ -150,6 +150,9 @@ type (
 // New makes a model over a backend.
 func New(b Backend) Model {
 	in := textinput.New()
+	if blinkSpeed > 0 {
+		in.Cursor.BlinkSpeed = blinkSpeed
+	}
 	in.Prompt = "> "
 	in.CharLimit = store.MaxText
 	m := Model{b: b, input: in, now: time.Now, width: 100, height: 30, opener: systemOpen}
@@ -170,7 +173,15 @@ func (m Model) Init() tea.Cmd {
 	return tea.Batch(m.refresh(), m.listen(), tick())
 }
 
-func tick() tea.Cmd { return tea.Tick(time.Second, func(t time.Time) tea.Msg { return tickMsg(t) }) }
+// after is tea.Tick. Tests run commands by hand, so they make it fire at
+// once instead of waiting out the real delay.
+var after = tea.Tick
+
+// blinkSpeed overrides the input cursor's blink when set; tests make it
+// fire at once for the same reason. Zero keeps bubbles' own.
+var blinkSpeed time.Duration
+
+func tick() tea.Cmd { return after(time.Second, func(t time.Time) tea.Msg { return tickMsg(t) }) }
 
 func (m Model) refresh() tea.Cmd {
 	b, all := m.b, m.showAll
@@ -219,7 +230,7 @@ func redialDelay(n int) time.Duration {
 }
 
 func redialAfter(d time.Duration) tea.Cmd {
-	return tea.Tick(d, func(time.Time) tea.Msg { return redialMsg{} })
+	return after(d, func(time.Time) tea.Msg { return redialMsg{} })
 }
 
 // redial connects again and asks who this is: the answer may differ.
