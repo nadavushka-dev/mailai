@@ -20,7 +20,7 @@ usage: mailai <command> [flags]
 mail
   send <to> [text]        leave a message; text from stdin when omitted
   read                    read your mailbox inside the fence
-  reply <mid> [text]      reply in a thread
+  reply <#> [text]        reply in a thread; # is the number in the message's header (or its mid)
   ask <to> <text>         send and wait for the reply; prints the reply alone
   wait [--timeout 10m]    block until mail arrives, then print it (instead of polling unread)
   listen                  stay open, one line per wake: for a harness add-on (nothing typed meanwhile)

@@ -253,13 +253,11 @@ func (m Model) recentRow(it store.Item, w int) string {
 func clock(ns int64) string { return time.Unix(0, ns).Format("15:04") }
 
 func (m Model) threadRow(t daemon.ThreadRow, w int, sel bool) string {
-	// ● unread by the person; ○ not yet read by an agent in it.
+	// ● unread by the person. An agent's unread carries no mark for the
+	// person (SPEC §12: mail between agents is quiet).
 	mark := " "
-	switch {
-	case t.UnreadMine > 0:
+	if t.UnreadMine > 0 {
 		mark = styleAccent.Render("●")
-	case t.Unread > 0:
-		mark = styleDim.Render("○")
 	}
 	subj := t.Subject
 	if subj == "" {

@@ -697,6 +697,11 @@ func (d *Daemon) send(c *conn, a SendArgs) (any, error) {
 	if err != nil {
 		return nil, err
 	}
+	if a.ReplyTo != "" {
+		if a.ReplyTo, err = d.messageRef(c, a.ReplyTo); err != nil {
+			return nil, err
+		}
+	}
 	a.To = d.localize(a.To)
 	if d.isSpoke() && d.offMachine(a.To) {
 		if len(a.Attachments) > 0 {
@@ -751,6 +756,9 @@ func (d *Daemon) read(c *conn, a ReadArgs) (any, error) {
 		return nil, err
 	}
 	if a.Thread != "" {
+		if a.Thread, err = d.messageRef(c, a.Thread); err != nil {
+			return nil, err
+		}
 		msgs := d.st.Thread(a.Thread)
 		if len(msgs) == 0 {
 			// Any message names its thread, not only the first one.

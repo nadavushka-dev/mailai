@@ -129,6 +129,7 @@ func (d *Daemon) webServe(port int) error {
 		mux.HandleFunc("/api/inbox", d.webAuth(d.apiInbox))
 		mux.HandleFunc("/api/threads", d.webAuth(d.apiThreads))
 		mux.HandleFunc("/api/thread", d.webAuth(d.apiThread))
+		mux.HandleFunc("/api/agents", d.webAuth(d.apiAgents))
 		mux.HandleFunc("/api/answer", d.webAuth(d.apiAnswer))
 		mux.HandleFunc("/api/dismiss", d.webAuth(d.apiDismiss))
 		mux.HandleFunc("/api/delete", d.webAuth(d.apiDelete))

@@ -111,10 +111,11 @@ func TestOpeningAThreadMarksThePersonsMailRead(t *testing.T) {
 	if len(f.marked) != 0 {
 		t.Fatalf("marked an agent's mail: %v", f.marked)
 	}
-	// Agent-side unread shows hollow; the person's own, solid.
+	// The person's own unread shows solid; an agent's unread carries no
+	// mark for the person (SPEC §12: mail between agents is quiet).
 	m = press(m, "esc")
 	v := m.View()
-	if !strings.Contains(v, "●") || !strings.Contains(v, "○") {
+	if !strings.Contains(v, "●") || strings.Contains(v, "○") {
 		t.Fatalf("%s", v)
 	}
 

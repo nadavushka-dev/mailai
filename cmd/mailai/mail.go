@@ -126,7 +126,7 @@ func cmdReply(args []string) error {
 	to := fs.String("to", "", "recipient; the thread's other party by default")
 	rest := parse(fs, args)
 	if len(rest) == 0 {
-		return fmt.Errorf("reply needs the message id to answer")
+		return fmt.Errorf("reply needs the message to answer: the number in its header, or its mid")
 	}
 	mid, rest := rest[0], rest[1:]
 	text, err := textArg(rest)
@@ -140,13 +140,15 @@ func cmdReply(args []string) error {
 	defer c.Close()
 	recipient := store.Address(*to)
 	if recipient == "" {
-		// Find the message so the reply goes back to whoever sent it.
+		// Find the message so the reply goes back to whoever sent it. mid
+		// may be the number in its fence header (54 or #54); the daemon
+		// resolves that to the thread, ids are unique on the machine.
 		var rr daemon.ReadResult
 		if err := c.Call("read", daemon.ReadArgs{Thread: mid}, &rr); err != nil {
 			return err
 		}
 		for _, m := range rr.Messages {
-			if m.MID == mid {
+			if m.MID == mid || "#"+strings.TrimPrefix(mid, "#") == fmt.Sprintf("#%d", m.ID) {
 				recipient = m.From
 			}
 		}

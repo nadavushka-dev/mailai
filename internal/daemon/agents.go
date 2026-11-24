@@ -15,6 +15,10 @@ import (
 // poll, so it wins until the next poll disagrees with a newer timestamp.
 type agents struct {
 	byName map[store.Address]*agentRec
+	// seen is when each agent was last seen live, kept after it goes, in
+	// memory only (SPEC §12a): after a restart a gone agent's time is
+	// unknown.
+	seen map[store.Address]*AgentSeen
 }
 
 type agentRec struct {
@@ -24,7 +28,25 @@ type agentRec struct {
 	Source string `json:"source"`
 }
 
-func newAgents() *agents { return &agents{byName: map[store.Address]*agentRec{}} }
+func newAgents() *agents {
+	return &agents{byName: map[store.Address]*agentRec{}, seen: map[store.Address]*AgentSeen{}}
+}
+
+// saw records an agent seen live now. Called with d.mu held.
+func (g *agents) saw(a adapter.Agent, now int64) {
+	s := g.seen[a.Principal]
+	if s == nil {
+		s = &AgentSeen{Principal: a.Principal}
+		g.seen[a.Principal] = s
+	}
+	if a.Name != "" {
+		s.Name = a.Name
+	}
+	if a.PaneID != "" {
+		s.PaneID = a.PaneID
+	}
+	s.LastSeen = now
+}
 
 // ReportStateArgs is what a harness hook sends (SPEC §8): its own state.
 type ReportStateArgs struct {
@@ -87,6 +109,7 @@ func (d *Daemon) mergeAgents(list []adapter.Agent) (resumed, started []store.Add
 	seen := map[store.Address]bool{}
 	for _, a := range list {
 		seen[a.Principal] = true
+		d.agents.saw(a, now)
 		rec := d.agents.byName[a.Principal]
 		if rec == nil {
 			rec = &agentRec{}
@@ -159,6 +182,7 @@ func (d *Daemon) reportState(c *conn, a ReportStateArgs) (any, error) {
 		rec.Label = a.Label
 	}
 	rec.ReportedAt, rec.Source = d.now().UnixNano(), "hook"
+	d.agents.saw(rec.Agent, rec.ReportedAt)
 	snapshot := *rec
 	d.mu.Unlock()
 	d.publishAgent(snapshot)

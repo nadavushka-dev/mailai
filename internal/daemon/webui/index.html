@@ -164,6 +164,8 @@
   .r-q code { font: 12.5px/1.45 var(--mono); color: var(--fg); }
   .r-tags { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 3px; }
   .r-q .subj { color: var(--fg); font-weight: 580; }
+  .live-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); display: inline-block; flex: none; align-self: center; margin-right: 2px; }
+  .gone { color: var(--faint); font-size: 12px; font-weight: 450; }
   .unread-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--amber); display: inline-block; flex: none; align-self: center; }
 
   /* ---------- tags and badges ---------- */
@@ -365,7 +367,6 @@
   .scopes > button { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border: 0; border-radius: 8px; background: transparent; color: var(--dim); font: inherit; font-size: 12.5px; font-weight: 560; cursor: pointer; }
   .scopes > button:hover { color: var(--fg-2); background: var(--hover); }
   .scopes > button.on { color: var(--fg); background: var(--panel-2); }
-  .scopes .count.new { background: rgba(130,182,255,.14); color: var(--blue); }
   .follow-chip { display: inline-flex; align-items: center; gap: 8px; margin-left: auto; padding: 3px 4px 3px 3px; border-radius: 99px; background: var(--amber-soft); color: var(--fg); font-size: 12.5px; font-weight: 560; }
   .follow-chip:empty { display: none; }
   .follow-chip .av, .person-chip .av, .to-pick .av { width: 22px; height: 22px; font-size: 9.5px; border-radius: 99px; }
@@ -378,7 +379,6 @@
   .profile .stats b { color: var(--fg); font-weight: 600; }
   .profile .stats .link { padding: 0; color: var(--amber); }
   .ring { width: 7px; height: 7px; border-radius: 99px; box-shadow: inset 0 0 0 1.5px var(--dim); flex: none; align-self: center; }
-  .tag.new { color: var(--blue); background: rgba(130,182,255,.1); }
   .tag.joined { color: var(--amber); background: var(--amber-soft); }
   .people { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-bottom: 22px; }
   .people .lbl { color: var(--faint); font-size: 12px; margin-right: 2px; }
@@ -535,7 +535,7 @@
   <aside class="left">
     <nav class="scopes" id="scopes" aria-label="Mail" hidden>
       <button type="button" id="scope-me" data-scope="me" title="Mail to and from you"><svg class="i"><use href="#i-user"/></svg>To me <span class="count" id="n-me"></span></button>
-      <button type="button" id="scope-agents" data-scope="agents" title="Your agents writing to each other"><svg class="i"><use href="#i-bot"/></svg>Between agents <span class="count new" id="n-agents"></span></button>
+      <button type="button" id="scope-agents" data-scope="agents" title="Your agents writing to each other"><svg class="i"><use href="#i-bot"/></svg>Between agents</button>
       <button type="button" id="scope-people" data-scope="people" title="Every agent; pick one to follow"><svg class="i"><use href="#i-users"/></svg>Agents</button>
       <span class="follow-chip" id="follow"></span>
     </nav>
@@ -567,14 +567,14 @@
   const $ = s => document.querySelector(s);
   let view = 'inbox', showAll = false, openThread = null, selected = 0;
   let items = [], threads = [], recent = [], me = 'human';
+  // Who is live, from the daemon's adapter poll (SPEC §12a).
+  let seen = {known: false, machine: '', agents: [], unknown: []};
   // Done starts folded while something waits, so the queue keeps the room.
   let recentOpen = null, convoFor = null;
   // Mail (D13): mailScope is me | agents | people; following narrows Mail
-  // to one agent's threads. agentsMark is when the person last looked at
-  // mail between agents, for its "new" count.
+  // to one agent's threads. Mail between agents carries no new or unread
+  // marks for the person (SPEC §12).
   let mailScope = 'me', following = null;
-  const SEEN_KEY = 'mailai.agentsSeenAt';
-  let agentsMark = +(localStorage.getItem(SEEN_KEY) || 0);
 
   // ---------- words ----------
   const icon = (id, cls) => `<svg class="i${cls ? ' ' + cls : ''}"><use href="#i-${id}"/></svg>`;
@@ -752,7 +752,20 @@
       return true;
     });
   };
-  // Every agent seen in Mail or the Inbox, busiest first.
+  // liveness: live (listed now, by name or pane id), closed (with when it
+  // was last seen, 0 when the daemon restarted since), or unknown (another
+  // machine, a token-held name, no adapter).
+  const liveness = a => {
+    const host = hostOf(a);
+    if (!seen.known || (host && host !== seen.machine)) return {s: 'unknown'};
+    const n = localName(a).toLowerCase();
+    const hits = (seen.agents || []).filter(x => [x.principal, x.name, x.pane_id].some(v => v && String(v).toLowerCase() === n));
+    if (hits.some(x => x.live)) return {s: 'live'};
+    if ((seen.unknown || []).some(u => String(u).toLowerCase() === n)) return {s: 'unknown'};
+    return {s: 'closed', at: Math.max(0, ...hits.map(x => x.last_seen || 0))};
+  };
+  const closedText = lv => lv.at ? `closed ${ago(lv.at)} ago` : 'closed';
+  // Every agent seen in Mail or the Inbox: live ones first, then busiest.
   const agentsList = () => {
     const by = new Map();
     const get = a => { const k = a.toLowerCase(); if (!by.has(k)) by.set(k, {addr: a, threads: 0, last: 0, waiting: 0, mine: 0}); return by.get(k); };
@@ -762,7 +775,9 @@
     }
     for (const it of items) if (!it.closed_at && it.from && !isHuman(it.from)) { const g = get(it.from); g.waiting++; g.last = Math.max(g.last, it.opened_at || 0); }
     const f = filters();
-    return [...by.values()].filter(g => matchWho([g.addr], f.who) && matchHost([g.addr], f.machine)).sort((a, b) => b.last - a.last);
+    for (const g of by.values()) g.live = liveness(g.addr);
+    const rank = g => g.live.s === 'live' ? 0 : 1;
+    return [...by.values()].filter(g => matchWho([g.addr], f.who) && matchHost([g.addr], f.machine)).sort((a, b) => rank(a) - rank(b) || b.last - a.last);
   };
   const mailRows = () => view === 'mail' && mailScope === 'people' && !following ? agentsList() : visibleThreads();
   const current = () => view === 'inbox' ? visibleItems()[selected] : null;
@@ -806,9 +821,6 @@
     const unread = threads.filter(t => t.unread_mine > 0).length;
     $('#mail-count').textContent = unread || '';
     $('#n-me').textContent = unread || '';
-    const fresh = threads.filter(t => !toMe(t) && t.last_at > agentsMark && !isHuman(t.last_from)).length;
-    $('#n-agents').textContent = fresh || '';
-    $('#n-agents').title = fresh ? `${fresh} new since you last looked` : '';
     $('#scopes').hidden = view !== 'mail';
     for (const b of document.querySelectorAll('.scopes > button')) {
       const on = !following && b.dataset.scope === mailScope;
@@ -839,15 +851,13 @@
     const on = i === selected;
     const fromMe = isHuman(t.from);
     const other = fromMe ? t.to : t.from;
-    const theirs = (t.unread || 0) - (t.unread_mine || 0);
-    const dot = t.unread_mine ? '<span class="unread-dot" title="unread"></span>'
-      : theirs > 0 ? '<span class="ring" title="not read yet by the agent it is to"></span>' : '';
+    // Only the person's own unread is marked; an agent's is its business.
+    const dot = t.unread_mine ? '<span class="unread-dot" title="unread"></span>' : '';
     const between = !toMe(t);
     const tags = [];
     if (t.count > 1) tags.push(`<span class="tag">${icon('thread')}${t.count}</span>`);
     if (t.files) tags.push(`<span class="tag" title="attached files">${icon('clip')}${t.files}</span>`);
     if (between && (t.people || []).some(isHuman)) tags.push(`<span class="tag joined">${icon('join')}you stepped in</span>`);
-    if (between && t.last_at > agentsMark && !isHuman(t.last_from) && mailScope === 'agents' && !following) tags.push('<span class="tag new">new</span>');
     const people = fromMe
       ? `<span class="agent">You</span><span class="host">→ ${esc(t.to || 'session ' + (t.session||''))}</span>`
       : `${agentName(t.from)}${withPane(t.from, t.from_pane)}<span class="host">→ ${localName(t.to) === 'human' ? 'you' : esc(t.to || 'session ' + (t.session||''))}</span>`;
@@ -855,6 +865,7 @@
     return `<button class="row${on?' on':''}" role="option" aria-selected="${on}" data-i="${i}">${avatar(other)}<span class="r-body"><span class="r-top">${dot}${people}<span class="age">${ago(t.last_at)}</span></span><span class="r-q">${line}</span>${tags.length ? `<span class="r-tags">${tags.join('')}</span>` : ''}</span></button>`;
   }
   const agentStats = g => [
+    g.live?.s === 'live' ? '<span><span class="live-dot"></span> live</span>' : g.live?.s === 'closed' ? `<span>${closedText(g.live)}</span>` : '',
     `<span><b>${g.threads}</b> thread${g.threads === 1 ? '' : 's'}</span>`,
     g.waiting ? `<span><b>${g.waiting}</b> waiting on you</span>` : '',
     g.mine ? `<span><b>${g.mine}</b> unread by you</span>` : '',
@@ -863,7 +874,12 @@
   function agentRow(g, i) {
     const on = i === selected;
     const tags = g.waiting ? `<span class="r-tags"><span class="tag k-ask">${icon('ask')}${g.waiting} waiting on you</span></span>` : '';
-    return `<button class="row${on?' on':''}" role="option" aria-selected="${on}" data-i="${i}">${avatar(g.addr)}<span class="r-body"><span class="r-top">${agentName(g.addr)}<span class="age">${g.last ? ago(g.last) : ''}</span></span><span class="r-q">${g.threads} thread${g.threads === 1 ? '' : 's'}${g.mine ? ` · ${g.mine} unread by you` : ''}</span>${tags}</span></button>`;
+    // Live: a dot, sorted first. Closed: dimmed, and since when.
+    const lv = g.live || {s: 'unknown'};
+    const cls = lv.s === 'closed' ? 'row agent-row closed' : 'row agent-row';
+    const dot = lv.s === 'live' ? '<span class="live-dot" title="live"></span>' : '';
+    const gone = lv.s === 'closed' ? `<span class="gone">${closedText(lv)}</span>` : '';
+    return `<button class="${cls}${on?' on':''}" role="option" aria-selected="${on}" data-i="${i}">${avatar(g.addr)}<span class="r-body"><span class="r-top">${dot}${agentName(g.addr)}${gone}<span class="age">${g.last ? ago(g.last) : ''}</span></span><span class="r-q">${g.threads} thread${g.threads === 1 ? '' : 's'}${g.mine ? ` · ${g.mine} unread by you` : ''}</span>${tags}</span></button>`;
   }
   function profileHTML(who) {
     const g = agentsList().find(x => sameAgent(x.addr, who)) || {addr: who, threads: 0, last: 0, waiting: 0, mine: 0};
@@ -892,11 +908,6 @@
       return;
     }
     list.innerHTML = head + data.map((row, i) => view === 'inbox' ? itemRow(row, i) : people ? agentRow(row, i) : threadRow(row, i)).join('');
-    // Looking at mail between agents clears its "new" count next time.
-    if (view === 'mail' && mailScope === 'agents' && !following) {
-      const newest = Math.max(agentsMark, ...threads.filter(t => !toMe(t)).map(t => t.last_at || 0));
-      localStorage.setItem(SEEN_KEY, String(newest));
-    }
     const on = list.querySelector('.row.on');
     if (on) on.scrollIntoView({block:'nearest'});
   }
@@ -1114,8 +1125,9 @@
   async function render() {
     if (typing()) { render.pending = true; return; }
     try {
-      const [inbox, mail, closed] = await Promise.all([api('/api/inbox' + (showAll ? '?all=1' : '')), api('/api/threads'), api('/api/inbox?closed=1')]);
+      const [inbox, mail, closed, live] = await Promise.all([api('/api/inbox' + (showAll ? '?all=1' : '')), api('/api/threads'), api('/api/inbox?closed=1'), api('/api/agents').catch(() => null)]);
       if (!inbox || !mail || !closed) return;
+      if (live) seen = live;
       // Keep the selection on the same thing when the order changes.
       // Items have opened_at; thread rows a thread_id; agents an addr.
       const keyOf = r => r && (r.opened_at ? 'i' + r.id : r.thread_id ? 't' + r.thread_id : r.addr ? 'a' + r.addr : null);
@@ -1152,7 +1164,6 @@
   const go = async (v, all) => { view = v; showAll = !!all; openThread = null; following = null; selected = 0; reading(false); await render(); };
   const setScope = async s => {
     view = 'mail'; mailScope = s; following = null; openThread = null; selected = 0; reading(false);
-    agentsMark = +(localStorage.getItem(SEEN_KEY) || 0);
     await render();
   };
   const follow = async who => {

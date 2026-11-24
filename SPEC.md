@@ -570,7 +570,7 @@ CLI (every command takes `--json`):
 | `mailai read [--unread] [--peek] [--summary] [--thread MID] [--from P] [-w PRINCIPAL]` | Read, inside the fence. `--summary` prints one line per message (id, sender, proof, subject) so an agent triages before paying for bodies. |
 | `mailai ask <to> <text> [--timeout MS]` · `mailai ask-human <text> -o A -o B [--no-wait] [--attach PATH]… [--replaces ID]` · `mailai withdraw <item>` | Send and wait; take a question back (§7a). |
 | `mailai wait [--timeout D] [-w PRINCIPAL]` | Block until mail arrives, then print it (§7 point 5). |
-| `mailai reply <mid> [text]` | Reply in a thread. |
+| `mailai reply <#\|mid> [text]` | Reply in a thread. `#` is the number in a message's fence header (`54` or `#54`), a message in the caller's own mailbox; the daemon resolves it, so a full mid works too. |
 | `mailai queue <to> <text>` · `queue ls` · `queue rm` | Typed when the agent comes to rest. |
 | `mailai inbox [--all] [--closed] [--session S]` · `mailai answer <item> <text\|choice>` · `mailai dismiss <item>` | The Inbox from the CLI. `--closed`: what closed in the last hour, and how (§7a). |
 | `mailai delete <thread>...` · `mailai delete --message <mid>...` | The person deletes mail (§6). |
@@ -604,6 +604,7 @@ read, never an agent's. In a thread between agents `r` joins it as the
 person, writing to every agent in it by default (`tab` picks one); the
 web UI reads along by default and shows when each agent read (or, on another
 machine, received) a message.
+Mail between agents carries no new or unread marks for the person; only mail to or from the person counts as new.
 Plain mail from an agent to `human` is Mail, not Inbox: an agent that needs
 an answer uses `ask-human` or `ask human`, and that is what the Inbox lists. Supervisor answers show in their own colour.
 A reply typed in the TUI is verified; the TUI refuses to run from inside a
@@ -652,6 +653,14 @@ do, the web UI can do, and nothing more.
   notifications, so a phone logs in without a terminal; the link is only as
   private as the notification channel, so that channel must be the
   person's own.
+- **Agents list (decided 2026-11-24):** built from Mail as before, and
+  marked with liveness from the adapter poll. The daemon remembers when it
+  last saw each agent live, in memory only. A live agent (matched by name
+  or pane id) gets a dot and sorts first; a closed one is dimmed with
+  "closed 2h ago", or just "closed" when the daemon restarted since; one
+  whose liveness cannot be known (on another machine, known only by token,
+  or the `none` adapter) is shown neutral. An agent still leaves the list
+  when its mail goes (§6).
 - **Scope guard:** the web UI may show only what `inbox`, `read` and the
   mailbox verbs return. Anything about pane output belongs to Herdr.
 - **Attachments:** `/api/artifact?mid=M&i=N` reads the Nth attachment of

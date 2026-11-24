@@ -449,6 +449,40 @@ func TestCLI_Delete(t *testing.T) {
 	}
 }
 
+// SPEC §12: `mailai reply 54` (or '#54') answers the message whose fence
+// header says #54, in its thread; agents never see mids.
+func TestCLI_ReplyByHeaderNumber(t *testing.T) {
+	e := startEnv(t)
+	tok := strings.TrimSpace(strings.SplitN(e.must("token", "new", "builder"), "\n", 2)[0])
+	as := func(args ...string) (string, error) {
+		c := e.cmd(args...)
+		c.Env = append(c.Env, "MAILAI_TOKEN="+tok)
+		out, err := c.CombinedOutput()
+		return string(out), err
+	}
+	var sent struct {
+		ID  uint64 `json:"id"`
+		MID string `json:"mid"`
+	}
+	if err := json.Unmarshal([]byte(e.must("send", "--from", "reviewer", "builder", "please review", "--json")), &sent); err != nil || sent.ID == 0 {
+		t.Fatal(err, sent)
+	}
+	n := fmt.Sprint(sent.ID)
+	if out, _ := as("read"); !strings.Contains(out, "#"+n+" from reviewer") {
+		t.Fatalf("header: %s", out)
+	}
+	for _, ref := range []string{n, "#" + n} {
+		out, err := as("reply", ref, "looks good")
+		if err != nil || !strings.Contains(out, "to reviewer in thread "+sent.MID) {
+			t.Fatalf("reply %s: %v %s", ref, err, out)
+		}
+	}
+	out, err := as("reply", "999", "x")
+	if err == nil || !strings.Contains(out, "#999") || !strings.Contains(out, "mid") {
+		t.Fatalf("%v %s", err, out)
+	}
+}
+
 func TestCLI_AskHumanAttachesRelativePaths(t *testing.T) {
 	e := startEnv(t)
 	dir := t.TempDir()

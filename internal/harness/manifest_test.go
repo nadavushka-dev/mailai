@@ -78,6 +78,16 @@ func TestSkillTellsAgentsToOutwaitTheHarnessTimeout(t *testing.T) {
 	}
 }
 
+// SPEC §12: an agent answers by the number in the header, so the answer
+// stays in its thread; a fresh send opens a new one (found on UbCl).
+func TestSkillSaysReplyByHeaderNumber(t *testing.T) {
+	for _, want := range []string{"mailai reply <#>", "header", "stays in its thread", "A new task is a new send"} {
+		if !strings.Contains(Skill, want) {
+			t.Fatalf("skill lacks %q", want)
+		}
+	}
+}
+
 func TestSkillIsShortAndNamesTheCommands(t *testing.T) {
 	if len(Skill) > 2500 {
 		t.Fatalf("skill is %d bytes; keep it short (D12)", len(Skill))
