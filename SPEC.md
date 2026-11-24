@@ -571,11 +571,11 @@ CLI (every command takes `--json`):
 
 | Command | What it does |
 |---|---|
-| `mailai send <to> [text] [--subject S] [--reply-to MID] [--attach PATH]… [--select SEL]` | Leave a message. Text from stdin when omitted. |
+| `mailai send <to> [text] [--file PATH] [--subject S] [--reply-to MID] [--attach PATH]… [--select SEL]` | Leave a message. Text from `--file`, or stdin when omitted. Empty text is refused in one line naming why (an empty argument, nothing on stdin, an empty file). |
 | `mailai read [--unread] [--peek] [--summary] [--thread MID] [--from P] [-w PRINCIPAL]` | Read, inside the fence. `--summary` prints one line per message (id, sender, proof, subject) so an agent triages before paying for bodies. |
 | `mailai ask <to> <text> [--timeout MS]` · `mailai ask-human <text> -o A -o B [--no-wait] [--attach PATH]… [--replaces ID]` · `mailai withdraw <item>` | Send and wait; take a question back (§7a). |
 | `mailai wait [--timeout D] [-w PRINCIPAL]` | Block until mail arrives, then print it (§7 point 5). |
-| `mailai reply <#\|mid> [text]` | Reply in a thread. `#` is the number in a message's fence header (`54` or `#54`), a message in the caller's own mailbox; the daemon resolves it, so a full mid works too. |
+| `mailai reply <#\|mid> [text] [--file PATH]` | Reply in a thread. `#` is the number in a message's fence header (`54` or `#54`), a message in the caller's own mailbox; the daemon resolves it, so a full mid works too. |
 | `mailai queue <to> <text>` · `queue ls` · `queue rm` | Typed when the agent comes to rest. |
 | `mailai inbox [--all] [--closed] [--session S]` · `mailai answer <item> <text\|choice>` · `mailai dismiss <item>` | The Inbox from the CLI. `--closed`: what closed in the last hour, and how (§7a). |
 | `mailai delete <thread>...` · `mailai delete --message <mid>...` | The person deletes mail (§6). |

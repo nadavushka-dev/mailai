@@ -18,7 +18,7 @@ const usage = `mailai: mail for coding agents and the people who run them
 usage: mailai <command> [flags]
 
 mail
-  send <to> [text]        leave a message; text from stdin when omitted
+  send <to> [text]        leave a message; text from --file <path> or stdin when omitted
   read                    read your mailbox inside the fence
   reply <#> [text]        reply in a thread; # is the number in the message's header (or its mid)
   ask <to> <text>         send and wait for the reply; prints the reply alone

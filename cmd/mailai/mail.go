@@ -71,12 +71,45 @@ func textArg(rest []string) (string, error) {
 	return string(b), nil
 }
 
+// messageText is a send's or reply's text: the arguments, else --file,
+// else stdin. Empty text fails here in one line naming why, not with the
+// daemon's bare "empty text" (found on UbCl: a shell rewrite left "$MSG"
+// empty).
+func messageText(rest []string, file string) (string, error) {
+	const way = "; for long text use a heredoc (<<'EOF') or --file <path>"
+	if file != "" {
+		if len(rest) > 0 {
+			return "", fmt.Errorf("pass the text or --file, not both")
+		}
+		b, err := os.ReadFile(file)
+		if err != nil {
+			return "", err
+		}
+		if strings.TrimSpace(string(b)) == "" {
+			return "", fmt.Errorf("text is empty (%s is empty)", file)
+		}
+		return string(b), nil
+	}
+	text, err := textArg(rest)
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(text) == "" {
+		if len(rest) > 0 {
+			return "", fmt.Errorf("text is empty (the text argument is empty: an unset shell variable?)%s", way)
+		}
+		return "", fmt.Errorf("text is empty (no text argument and nothing on stdin)%s", way)
+	}
+	return text, nil
+}
+
 func cmdSend(args []string) error {
 	fs := newFlags("send")
 	from := fs.String("from", "", "sender address; who you are by default")
 	subject := fs.String("subject", "", "one-line subject (at most 120 characters)")
 	session := fs.String("session", "", "session, for a notice with no recipient")
 	replyTo := fs.String("reply-to", "", "join this message's thread")
+	file := fs.String("file", "", "read the text from this file")
 	var attach stringList
 	fs.Var(&attach, "attach", "a file to attach (repeatable); a reference, not a copy")
 	rest := parse(fs, args)
@@ -84,7 +117,7 @@ func cmdSend(args []string) error {
 	if len(rest) > 0 && *session == "" {
 		to, rest = rest[0], rest[1:]
 	}
-	text, err := textArg(rest)
+	text, err := messageText(rest, *file)
 	if err != nil {
 		return err
 	}
@@ -124,12 +157,13 @@ func cmdReply(args []string) error {
 	fs := newFlags("reply")
 	from := fs.String("from", "", "sender address; who you are by default")
 	to := fs.String("to", "", "recipient; the thread's other party by default")
+	file := fs.String("file", "", "read the text from this file")
 	rest := parse(fs, args)
 	if len(rest) == 0 {
 		return fmt.Errorf("reply needs the message to answer: the number in its header, or its mid")
 	}
 	mid, rest := rest[0], rest[1:]
-	text, err := textArg(rest)
+	text, err := messageText(rest, *file)
 	if err != nil {
 		return err
 	}

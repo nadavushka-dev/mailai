@@ -92,7 +92,7 @@ func TestSkillSaysReplyByHeaderNumber(t *testing.T) {
 // the variable was empty ("empty text"). Heredocs and pipes pass through,
 // so the skill says to pass long text on stdin, not in a shell variable.
 func TestSkillSaysLongTextGoesOnStdin(t *testing.T) {
-	for _, want := range []string{"mailai reply <#> <<'EOF'", "stdin", "not a shell variable"} {
+	for _, want := range []string{"mailai reply <#> <<'EOF'", "stdin or --file", "not a shell variable"} {
 		if !strings.Contains(Skill, want) {
 			t.Fatalf("skill lacks %q", want)
 		}

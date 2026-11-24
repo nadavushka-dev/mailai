@@ -489,6 +489,45 @@ func TestCLI_ReplyByHeaderNumber(t *testing.T) {
 	}
 }
 
+// Found on UbCl: a shell rewrite left "$MSG" empty and the daemon said only
+// "empty text". send and reply say why in one line, and take --file.
+func TestCLI_EmptyTextSaysWhyAndFileGivesText(t *testing.T) {
+	e := startEnv(t)
+	dir := t.TempDir()
+	body := filepath.Join(dir, "body.txt")
+	os.WriteFile(body, []byte("line one\nline two\n"), 0o600)
+	empty := filepath.Join(dir, "empty.txt")
+	os.WriteFile(empty, nil, 0o600)
+	for _, c := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"send", "worker", ""}, "text is empty (the text argument is empty"},
+		{[]string{"send", "worker"}, "text is empty (no text argument and nothing on stdin)"},
+		{[]string{"send", "--file", empty, "worker"}, "text is empty (" + empty + " is empty)"},
+		{[]string{"send", "--file", body, "worker", "and this"}, "the text or --file, not both"},
+		{[]string{"reply", "local:1", ""}, "text is empty (the text argument is empty"},
+	} {
+		out, err := e.run(c.args...)
+		if err == nil || !strings.Contains(out, c.want) || strings.Count(strings.TrimSpace(out), "\n") != 0 {
+			t.Fatalf("%v: %v %q", c.args, err, out)
+		}
+		if strings.Contains(c.want, "argument") && !strings.Contains(out, "heredoc") || strings.Contains(c.want, "argument") && !strings.Contains(out, "--file <path>") {
+			t.Fatalf("%v: no way out named: %q", c.args, out)
+		}
+	}
+	var sent struct {
+		MID  string `json:"mid"`
+		Text string `json:"text"`
+	}
+	if err := json.Unmarshal([]byte(e.must("send", "--from", "reviewer", "--file", body, "worker", "--json")), &sent); err != nil || sent.Text != "line one\nline two\n" {
+		t.Fatal(err, sent)
+	}
+	if out := e.must("reply", "--from", "worker", "--file", body, sent.MID); !strings.Contains(out, "to reviewer in thread "+sent.MID) {
+		t.Fatalf("%s", out)
+	}
+}
+
 func TestCLI_AskHumanAttachesRelativePaths(t *testing.T) {
 	e := startEnv(t)
 	dir := t.TempDir()
