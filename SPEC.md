@@ -480,8 +480,9 @@ its pane), and a Herdr agent that takes a name a token holds is placed
 under its pane id instead, by identity and the adapter poll alike; the
 daemon logs that once per pane and name. A `pane` sender's pane is recorded
 on the message (`sender_pane`) and shown beside its name (`builder ·
-w4Y:p1`) in the TUI, the web UI and `mailai read`, never in a wake or
-notice line, so a name that moved panes is visible. Mail over a link may
+w4Y:p1`) in the TUI, the web UI and `mailai read`, on thread rows and
+Inbox rows alike (an item takes it from its ask's message, an approval
+from its hook), never in a wake or notice line, so a name that moved panes is visible. Mail over a link may
 leave it empty. Accepted for now: any agent can `herdr agent rename`
 itself to a free name (an absent agent's) and read that mailbox; closing it
 would bind a name to one process and break role re-spins.

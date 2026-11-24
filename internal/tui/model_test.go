@@ -347,3 +347,15 @@ func TestEmptyStates(t *testing.T) {
 	m = press(m, "enter", "r", "x", "j", "k") // nothing to act on, no panic
 	_ = m
 }
+
+// SPEC §9: an Inbox row shows the asker's pane beside its name, as thread
+// rows do; nothing when the name is the pane or no pane was proved.
+func TestInboxRowShowsTheSendersPane(t *testing.T) {
+	f := person()
+	f.items[0].From, f.items[0].FromPane, f.items[0].Session = "builder", "w4Y:p1", ""
+	f.items[1].FromPane = "w1:p3"
+	v := start(f).View()
+	if !strings.Contains(v, "builder · w4Y:p1") || strings.Contains(v, "w1:p3 · w1:p3") {
+		t.Fatalf("%s", v)
+	}
+}

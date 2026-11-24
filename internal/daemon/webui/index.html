@@ -846,7 +846,7 @@
     if (it.closed_at) tags.push(closedState(it));
     else if (it.maybe_in_session_at) tags.push(maybeBadge);
     const age = it.closed_at ? `<span class="age">${ago(it.closed_at)}</span>` : `<span class="age ${heat(it.opened_at)}">${ago(it.opened_at)}</span>`;
-    return `<button class="row${on?' on':''}${it.closed_at?' closed':''}" role="option" aria-selected="${on}" data-i="${i}">${avatar(it.from)}<span class="r-body"><span class="r-top">${agentName(it.from)}${age}</span><span class="r-q">${q}</span><span class="r-tags">${tags.join('')}</span></span></button>`;
+    return `<button class="row${on?' on':''}${it.closed_at?' closed':''}" role="option" aria-selected="${on}" data-i="${i}">${avatar(it.from)}<span class="r-body"><span class="r-top">${agentName(it.from)}${withPane(it.from, it.from_pane)}${age}</span><span class="r-q">${q}</span><span class="r-tags">${tags.join('')}</span></span></button>`;
   }
   function threadRow(t, i) {
     const on = i === selected;

@@ -233,9 +233,14 @@ func (d *Daemon) inbox(c *conn, a InboxArgs) (any, error) {
 	items := []store.Item{}
 	for _, it := range list {
 		if d.canSee(c, it) {
-			if m, ok := d.st.Get(it.MID); ok && len(m.Attachments) > 0 {
-				it.Attachments = append([]store.Attachment(nil), m.Attachments...)
-				resolveFiles(it.Attachments)
+			if m, ok := d.st.Get(it.MID); ok {
+				if len(m.Attachments) > 0 {
+					it.Attachments = append([]store.Attachment(nil), m.Attachments...)
+					resolveFiles(it.Attachments)
+				}
+				if it.FromPane == "" {
+					it.FromPane = m.SenderPane
+				}
 			}
 			items = append(items, it)
 		}

@@ -219,7 +219,8 @@ func (m Model) itemRow(it store.Item, w int, sel bool) string {
 			state = styleOK.Render(daemon.InSessionBadge)
 		}
 	}
-	who := string(it.From)
+	// The asker's pane beside its name, as on thread rows (§9).
+	who := string(it.From) + paneNote(it.From, it.FromPane)
 	if it.Session != "" {
 		who += " · " + it.Session
 	}

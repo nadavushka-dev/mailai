@@ -36,8 +36,12 @@ type Item struct {
 	MID      string   `json:"mid,omitempty"`
 	ThreadID string   `json:"thread_id,omitempty"`
 	From     Address  `json:"from"`
-	Session  string   `json:"session,omitempty"`
-	Subject  string   `json:"subject,omitempty"`
+	// FromPane is the asker's pane when it proved one (SPEC §9), shown
+	// beside its name. An approval records it from the hook's placement;
+	// an ask's is filled in from its message when items are listed.
+	FromPane string `json:"from_pane,omitempty"`
+	Session  string `json:"session,omitempty"`
+	Subject  string `json:"subject,omitempty"`
 	// Question is the text shown in the list; for mail kinds it is the body.
 	Question string   `json:"question"`
 	Options  []string `json:"options,omitempty"`

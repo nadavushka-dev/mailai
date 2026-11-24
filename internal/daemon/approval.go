@@ -50,18 +50,19 @@ func (d *Daemon) holdApproval(c *conn, a HoldApprovalArgs) (any, error) {
 	if d.isSpoke() {
 		return d.holdRemoteIn(c.gone, who, a)
 	}
-	return d.holdApprovalGone(who, a, c.gone)
+	return d.holdApprovalGone(who, senderPane(c.pl), a, c.gone)
 }
 
 // holdApprovalAs holds for a link, whose connection dropping is not the
 // person answering anywhere.
 func (d *Daemon) holdApprovalAs(who store.Address, a HoldApprovalArgs) (any, error) {
-	return d.holdApprovalGone(who, a, nil)
+	return d.holdApprovalGone(who, "", a, nil)
 }
 
 // holdApprovalGone holds until a decision, the timeout, or gone closing (the
-// holding hook died: answered in the session, SPEC §7a).
-func (d *Daemon) holdApprovalGone(who store.Address, a HoldApprovalArgs, gone <-chan struct{}) (any, error) {
+// holding hook died: answered in the session, SPEC §7a). pane is the hook's
+// pane when it proved one, shown beside who (§9).
+func (d *Daemon) holdApprovalGone(who store.Address, pane string, a HoldApprovalArgs, gone <-chan struct{}) (any, error) {
 	if a.Tool == "" {
 		return nil, proto.Errorf(proto.CodeBadRequest, "hold-approval needs the tool name")
 	}
@@ -71,7 +72,7 @@ func (d *Daemon) holdApprovalGone(who store.Address, a HoldApprovalArgs, gone <-
 	}
 	ch := make(chan approvalDecision, 1)
 	d.mu.Lock()
-	item, err := d.st.OpenApproval(store.Item{Kind: store.ItemApproval, From: who, Subject: a.Tool,
+	item, err := d.st.OpenApproval(store.Item{Kind: store.ItemApproval, From: who, FromPane: pane, Subject: a.Tool,
 		Question: summary, Options: []string{"allow", "deny"}, Risky: a.Risky, Harness: a.Harness})
 	if err != nil {
 		d.mu.Unlock()
