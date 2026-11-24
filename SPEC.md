@@ -508,7 +508,8 @@ name when one is set, else its pane id. Herdr keeps names unique among live
 agents only, and a name outliving its agent keeps its mailbox on purpose: a
 re-spun `supervisor` reads the old one's mail. Token names are reserved:
 `token new` refuses a name a live Herdr agent has (`bad_request`, naming
-its pane), and a Herdr agent that takes a name a token holds is placed
+its pane), and fails closed when the adapter cannot say (`offline`, one
+line naming the cause; no token is issued), and a Herdr agent that takes a name a token holds is placed
 under its pane id instead, by identity and the adapter poll alike; the
 daemon logs that once per pane and name. A `pane` sender's pane is recorded
 on the message (`sender_pane`) and shown beside its name (`builder ·

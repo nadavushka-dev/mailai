@@ -241,3 +241,40 @@ func TestNames_TokenNameGivesWayToThePaneAndSenderPaneIsRecorded(t *testing.T) {
 		t.Fatalf("want one line saying why, got:\n%s", logs.String())
 	}
 }
+
+// downAdapter cannot list agents: Herdr is not answering.
+type downAdapter struct{ listAdapter }
+
+func (*downAdapter) Agents(context.Context) ([]adapter.Agent, error) {
+	return nil, errors.New("herdr agent list: connect: no such file or directory\nis the server running?")
+}
+
+// SPEC §9: token names are reserved. When the adapter cannot say whether a
+// live agent has the name, token-new fails closed: no token is issued, and
+// one line names the cause.
+func TestNames_TokenNewFailsClosedWhenTheAdapterErrs(t *testing.T) {
+	tk := newTokens(t)
+	pl := &identity.Placer{Proc: realProc{}, Tokens: tk}
+	sock, _ := startDaemonWith(t, Options{Placer: pl, Tokens: tk, Adapter: &downAdapter{}, PollEvery: time.Hour,
+		Log: log.New(&syncBuf{}, "", 0)})
+	person := dial(t, sock)
+	var tn TokenNewResult
+	err := person.Call("token-new", TokenNewArgs{Name: "builder"}, &tn)
+	if err == nil || tn.Token != "" {
+		t.Fatalf("a token was issued while the adapter erred: %+v", tn)
+	}
+	if client.Code(err) != proto.CodeOffline {
+		t.Fatalf("code: %v", err)
+	}
+	for _, want := range []string{"no token issued", `"builder"`, "herdr", "no such file or directory"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("%q lacks %q", err, want)
+		}
+	}
+	if strings.Contains(err.Error(), "\n") {
+		t.Fatalf("not one line: %q", err)
+	}
+	if list := tk.List(); len(list) != 0 {
+		t.Fatalf("token file holds %+v", list)
+	}
+}
