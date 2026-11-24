@@ -361,7 +361,7 @@ func (m Model) filteredThreads() []daemon.ThreadRow {
 		if (m.scope == scopeMe && !toMe(t)) || (m.scope == scopeAgents && toMe(t)) {
 			continue
 		}
-		if m.filterUnread && t.Unread == 0 {
+		if m.filterUnread && t.UnreadMine == 0 {
 			continue
 		}
 		if m.filterWho != "" && !addrMatch(t.From, t.To, t.LastFrom, m.filterWho) && !peopleMatch(t.People, m.filterWho) {

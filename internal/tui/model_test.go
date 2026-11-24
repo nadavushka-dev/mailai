@@ -255,9 +255,9 @@ func TestReplyFromMailList(t *testing.T) {
 func TestMailFilters(t *testing.T) {
 	f := person()
 	f.threads = []daemon.ThreadRow{
-		{ThreadID: "local:1", From: "worker", To: "human", Subject: "deploy", Session: "api", Count: 1, Unread: 1, LastFrom: "worker"},
+		{ThreadID: "local:1", From: "worker", To: "human", Subject: "deploy", Session: "api", Count: 1, Unread: 1, UnreadMine: 1, LastFrom: "worker"},
 		{ThreadID: "local:2", From: "reviewer", To: "worker", Subject: "nit", Session: "docs", Count: 2, Unread: 0, LastFrom: "reviewer"},
-		{ThreadID: "local:3", From: "gemini@s2", To: "human", Subject: "nightly", Count: 1, Unread: 1, LastFrom: "gemini@s2"},
+		{ThreadID: "local:3", From: "gemini@s2", To: "human", Subject: "nightly", Count: 1, Unread: 1, UnreadMine: 1, LastFrom: "gemini@s2"},
 	}
 	m := start(f)
 	m = press(m, "m", "u")

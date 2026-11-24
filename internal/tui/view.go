@@ -376,7 +376,7 @@ func (m Model) detailBody(w, h int) string {
 		if t.Session != "" {
 			where = "\nsession " + t.Session
 		}
-		return fmt.Sprintf("%s\n%s → %s%s\n%d messages, %d unread\n\n%s", styleBold.Render(orFirst(t)), t.From, t.To, where, t.Count, t.Unread, styleDim.Render("enter opens the thread, r replies"))
+		return fmt.Sprintf("%s\n%s → %s%s\n%d messages, %d unread\n\n%s", styleBold.Render(orFirst(t)), t.From, t.To, where, t.Count, t.UnreadMine, styleDim.Render("enter opens the thread, r replies"))
 	}
 	return center(styleDim.Render("nothing selected"), w, h)
 }

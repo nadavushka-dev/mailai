@@ -38,3 +38,25 @@ func TestWeb_MailBetweenAgentsIsQuiet(t *testing.T) {
 		}
 	}
 }
+
+// SPEC §12: "Unread only" keeps threads with the person's own unread mail,
+// not threads where only an agent has some.
+func TestWeb_UnreadFilterIsThePersons(t *testing.T) {
+	sock, _ := startDaemon(t, placed())
+	person := dial(t, sock)
+	var ws WebStartResult
+	if err := person.Call("web-start", WebStartArgs{}, &ws); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { person.Call("web-stop", nil, nil) })
+	jar, _ := cookiejar.New(nil)
+	cl := &http.Client{Jar: jar, Timeout: 5 * time.Second}
+	r, err := cl.Get(ws.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	page, _ := readAll(r)
+	if !strings.Contains(page, "if (f.unread && !t.unread_mine) return false;") || strings.Contains(page, "f.unread && !t.unread)") {
+		t.Fatal("the unread filter must count only the person's unread (unread_mine)")
+	}
+}

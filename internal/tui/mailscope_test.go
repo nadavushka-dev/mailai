@@ -126,3 +126,18 @@ func TestOpeningAThreadMarksThePersonsMailRead(t *testing.T) {
 		t.Fatalf("browse-only client marked %v", g.marked)
 	}
 }
+
+// SPEC §12: only mail to or from the person counts as new. The unread
+// filter and the detail line count the person's own unread, never a
+// thread where only an agent has unread mail.
+func TestUnreadCountsOnlyThePersonsMail(t *testing.T) {
+	m := start(agentMail())
+	m = press(m, "m", "u")
+	if v := m.View(); !strings.Contains(v, "deploy") || strings.Contains(v, "schema") {
+		t.Fatalf("unread filter: %s", v)
+	}
+	m = press(m, "u", "j")
+	if v := m.View(); !strings.Contains(v, "1 messages, 0 unread") {
+		t.Fatalf("detail of a thread only an agent has unread: %s", v)
+	}
+}

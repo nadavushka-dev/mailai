@@ -736,7 +736,7 @@
     return threads.filter(t => {
       if (following) { if (!agentsOf(t).some(a => sameAgent(a, following))) return false; }
       else if (mailScope === 'me' ? !toMe(t) : toMe(t)) return false;
-      if (f.unread && !t.unread) return false;
+      if (f.unread && !t.unread_mine) return false;
       if (!matchWho([t.from, t.to, t.last_from, ...(t.people || [])], f.who)) return false;
       if (f.session && String(t.session||'').toLowerCase() !== f.session) return false;
       if (!matchHost([t.from, t.to, t.last_from], f.machine)) return false;
