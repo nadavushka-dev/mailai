@@ -2,7 +2,7 @@
 (D) 2026-10-29 M7 polish: MCP server, selectors/--select, stash across machines, notifications, docker e2e, goreleaser + install.sh +m7
 (B) 2026-11-22 decide: colour probe costs 5 s per CLI command at a terminal that never answers (bubbletea init); separate mailai-tui binary? +polish
 (C) 2026-11-22 run mailai service install/status/uninstall against real systemd (ubuntu1-3) and launchd (Mac) +m6
-(D) 2026-11-22 web: clicking a Recently closed row opens its thread +polish
+x 2026-11-24 2026-11-22 web: clicking a Recently closed row opens its thread +polish
 2026-11-22 web UI on a VPS: reach the inbox web page from anywhere (tunnel UbCl->VPS + TLS + real login; design first, it can approve commands) +web
 x 2026-11-23 2026-11-23 v0: web page started by the service on a fixed port; logins survive a restart; Mac keeps the tunnel up
 x 2026-11-23 2026-11-23 v0: TUI reconnects when the daemon restarts

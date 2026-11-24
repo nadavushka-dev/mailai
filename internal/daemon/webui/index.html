@@ -209,6 +209,7 @@
     padding: 7px 12px; border-radius: 8px; font-size: 13px;
   }
   .recent-row:hover { background: var(--hover); }
+  .recent-row.opens { cursor: pointer; }
   .recent-row .who-line { color: var(--dim); min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .recent-row .who-line b { color: var(--fg-2); font-weight: 560; }
   .recent-row .how { display: inline-flex; align-items: center; gap: 6px; justify-self: end; }
@@ -921,9 +922,13 @@
     $('#recent').classList.toggle('shut', !open);
     $('#recent-toggle').setAttribute('aria-expanded', open);
     $('#recent-n').textContent = recent.length;
-    $('#recent-list').innerHTML = recent.map(it =>
-      `<div class="recent-row"><span class="who-line"><b>${esc(localName(it.from))}</b>${hostOf(it.from) ? '@' + esc(hostOf(it.from)) : ''}</span><span class="how">${closedState(it)}<span class="ago">${ago(it.closed_at)}</span></span><span class="q">${esc(question(it))}</span></div>`
-    ).join('');
+    // A row opens its thread when the thread is held here; otherwise it is
+    // plain text.
+    $('#recent-list').innerHTML = recent.map(it => {
+      const held = it.thread_id && threads.some(t => t.thread_id === it.thread_id);
+      const row = held ? `class="recent-row opens" data-a="open" data-id="${esc(it.thread_id)}" title="Open thread"` : 'class="recent-row"';
+      return `<div ${row}><span class="who-line"><b>${esc(localName(it.from))}</b>${hostOf(it.from) ? '@' + esc(hostOf(it.from)) : ''}</span><span class="how">${closedState(it)}<span class="ago">${ago(it.closed_at)}</span></span><span class="q">${esc(question(it))}</span></div>`;
+    }).join('');
   }
 
   // ---------- detail ----------
