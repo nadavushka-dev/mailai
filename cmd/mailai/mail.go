@@ -260,14 +260,25 @@ func cmdRead(args []string) error {
 	peek := fs.Bool("peek", false, "read without marking read")
 	summary := fs.Bool("summary", false, "one line per message, no bodies")
 	thread := fs.String("thread", "", "every message in this thread")
-	parse(fs, args)
+	rest := parse(fs, args)
+	// read <#|mid>: one message, named as reply names it (SPEC §12).
+	one := ""
+	switch {
+	case len(rest) > 1:
+		return fmt.Errorf("read takes one message: the number in its header, or its mid")
+	case len(rest) == 1:
+		if *thread != "" || *unread || *mailbox != "" {
+			return fmt.Errorf("read <#> reads one message; it does not go with --thread, --unread or -w")
+		}
+		one = rest[0]
+	}
 	c, err := connect()
 	if err != nil {
 		return err
 	}
 	defer c.Close()
 	var rr daemon.ReadResult
-	if err := c.Call("read", daemon.ReadArgs{Mailbox: store.Address(*mailbox), Unread: *unread, Peek: *peek || *summary, Thread: *thread}, &rr); err != nil {
+	if err := c.Call("read", daemon.ReadArgs{Mailbox: store.Address(*mailbox), Unread: *unread, Peek: *peek || *summary, Thread: *thread, Message: one}, &rr); err != nil {
 		return err
 	}
 	return printRead(rr, *summary)

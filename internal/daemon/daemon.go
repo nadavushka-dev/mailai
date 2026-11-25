@@ -755,6 +755,9 @@ func (d *Daemon) store(pl Placement, r store.SendRequest) (store.Message, error)
 }
 
 func (d *Daemon) read(c *conn, a ReadArgs) (any, error) {
+	if a.Message != "" {
+		return d.readOne(c, a)
+	}
 	box, err := d.box(c, a.Mailbox)
 	if err != nil && a.Thread == "" {
 		return nil, err
@@ -806,6 +809,37 @@ func (d *Daemon) read(c *conn, a ReadArgs) (any, error) {
 		msgs = []store.Message{}
 	}
 	return ReadResult{Messages: msgs, PeekForced: peekForced}, nil
+}
+
+// readOne is `read <#|mid>`: one message, named as reply names it (SPEC
+// §12). It reaches what read --thread reaches; only a message in the
+// caller's own mailbox is marked read, unless peeking.
+func (d *Daemon) readOne(c *conn, a ReadArgs) (any, error) {
+	mid, err := d.messageRef(c, a.Message, false)
+	if err != nil {
+		return nil, err
+	}
+	m, ok := d.st.Get(mid)
+	if ok && isPerson(c.pl) && d.st.Hidden(m) {
+		ok = false
+	}
+	if !ok {
+		return nil, proto.Errorf(proto.CodeNotFound, "no message %s is held on this machine", a.Message)
+	}
+	if own := d.own(c.pl); !a.Peek && own != "" && m.To == own && m.ReadAt == 0 {
+		msgs, err := d.st.Read(store.ReadQuery{Mailbox: own, IDs: []uint64{m.ID}, Mark: true, SkipHidden: isPerson(c.pl)})
+		if err != nil {
+			return nil, err
+		}
+		for _, x := range msgs {
+			if x.MID == m.MID {
+				m = x
+			}
+		}
+	}
+	msgs := []store.Message{m}
+	resolveMissing(msgs)
+	return ReadResult{Messages: msgs}, nil
 }
 
 func (d *Daemon) publish(m store.Message) {

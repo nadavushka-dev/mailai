@@ -29,6 +29,9 @@ type ReadArgs struct {
 	Peek    bool          `json:"peek,omitempty"`
 	IDs     []uint64      `json:"ids,omitempty"`
 	Thread  string        `json:"thread,omitempty"`
+	// Message is one message: the number in its fence header (54 or #54)
+	// or its mid, resolved as reply resolves it (SPEC §12).
+	Message string `json:"message,omitempty"`
 }
 
 type ReadResult struct {

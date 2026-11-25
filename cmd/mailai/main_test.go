@@ -1101,3 +1101,61 @@ func TestCLI_ReplyToYourOwnMessage(t *testing.T) {
 		t.Fatalf("hint, mid not held: %+v", r)
 	}
 }
+
+// SPEC §12 (2026-11-25): `mailai read <#>` prints one message, named by the
+// number in its header (yours or one you sent) or its mid. Found on UbCl:
+// agents read a whole thread, or everything, to see one message.
+func TestCLI_ReadOneMessage(t *testing.T) {
+	e := startEnv(t)
+	tok := strings.TrimSpace(strings.SplitN(e.must("token", "new", "worker"), "\n", 2)[0])
+	as := func(args ...string) (string, error) {
+		c := e.cmd(args...)
+		c.Env = append(c.Env, "MAILAI_TOKEN="+tok)
+		out, err := c.CombinedOutput()
+		return string(out), err
+	}
+	type msg struct {
+		ID  uint64 `json:"id"`
+		MID string `json:"mid"`
+	}
+	sent := func(out string) msg {
+		var m msg
+		if json.Unmarshal([]byte(out), &m) != nil || m.ID == 0 {
+			t.Fatalf("%s", out)
+		}
+		return m
+	}
+	first := sent(e.must("send", "--from", "reviewer", "worker", "first body", "--json"))
+	second := sent(e.must("send", "--from", "reviewer", "worker", "second body", "--json"))
+	for _, ref := range []string{fmt.Sprint(second.ID), fmt.Sprintf("#%d", second.ID), second.MID} {
+		out, err := as("read", ref)
+		if err != nil || !strings.Contains(out, "second body") || strings.Contains(out, "first body") || strings.Count(out, "── end ──") != 1 {
+			t.Fatalf("read %s: %v\n%s", ref, err, out)
+		}
+	}
+	// Only that one is marked read; the existing flags still work.
+	if out, _ := as("unread"); !strings.HasPrefix(out, "1 unread") {
+		t.Fatalf("unread after reading one: %q", out)
+	}
+	if out, err := as("read", "--thread", first.MID); err != nil || !strings.Contains(out, "first body") {
+		t.Fatalf("read --thread: %v %s", err, out)
+	}
+	if out, err := as("read", "--unread"); err != nil || !strings.Contains(out, "first body") || strings.Contains(out, "second body") {
+		t.Fatalf("read --unread: %v %s", err, out)
+	}
+	// Your own sent message, by its number.
+	mine, err := as("send", "reviewer", "my own words", "--json")
+	if err != nil {
+		t.Fatal(mine)
+	}
+	if out, err := as("read", fmt.Sprint(sent(mine).ID)); err != nil || !strings.Contains(out, "my own words") {
+		t.Fatalf("read own sent: %v %s", err, out)
+	}
+	// An unknown number says what works; a number with --thread is refused.
+	if out, err := as("read", "999"); err == nil || !strings.Contains(out, "#999") || !strings.Contains(out, "mid") {
+		t.Fatalf("unknown: %v %s", err, out)
+	}
+	if out, err := as("read", fmt.Sprint(first.ID), "--thread", first.MID); err == nil {
+		t.Fatalf("a number and --thread: %s", out)
+	}
+}

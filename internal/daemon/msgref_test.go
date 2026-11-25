@@ -99,3 +99,61 @@ func TestReplyByOwnSentHeaderNumber(t *testing.T) {
 		t.Fatalf("read --thread hint: %v", err)
 	}
 }
+
+// SPEC §12 (2026-11-25): `read <#>` reads one message by the number in its
+// fence header, resolved as reply resolves it (a message in the caller's
+// mailbox or one it sent), or by its mid. Found on UbCl: agents read a whole
+// thread, or everything, to see one message. Reading one's own mail by
+// number marks that message read (and only it); --peek does not; a sent
+// message read back is not marked read for its recipient.
+func TestReadOneMessageByHeaderNumber(t *testing.T) {
+	pl := placed(Placement{Proof: store.ProofToken, Principal: "worker"}, Placement{Proof: store.ProofToken, Principal: "reviewer"})
+	sock, d := startDaemon(t, pl)
+	worker := dialAs(t, sock, "worker")
+	reviewer := dialAs(t, sock, "reviewer")
+	var a, b, sent SendResult
+	reviewer.Call("send", SendArgs{To: "worker", Text: "first"}, &a)
+	reviewer.Call("send", SendArgs{To: "worker", Text: "second"}, &b)
+	worker.Call("send", SendArgs{To: "reviewer", Text: "mine"}, &sent)
+	one := func(c interface{ Call(string, any, any) error }, args ReadArgs) store.Message {
+		t.Helper()
+		var rr ReadResult
+		if err := c.Call("read", args, &rr); err != nil || len(rr.Messages) != 1 {
+			t.Fatalf("%+v: %v %+v", args, err, rr)
+		}
+		return rr.Messages[0]
+	}
+	if m := one(worker, ReadArgs{Message: fmt.Sprint(b.Message.ID), Peek: true}); m.MID != b.Message.MID || m.Text != "second" {
+		t.Fatalf("peek: %+v", m)
+	}
+	if n, _ := d.st.Unread("worker"); n != 2 {
+		t.Fatalf("a peek marked read: %d unread", n)
+	}
+	if m := one(worker, ReadArgs{Message: fmt.Sprintf("#%d", b.Message.ID)}); m.MID != b.Message.MID || m.ReadAt == 0 {
+		t.Fatalf("#n: %+v", m)
+	}
+	if n, _ := d.st.Unread("worker"); n != 1 {
+		t.Fatalf("read by number marked %d unread, want 1 left", n)
+	}
+	if m := one(worker, ReadArgs{Message: a.Message.MID}); m.MID != a.Message.MID || m.ReadAt == 0 {
+		t.Fatalf("mid: %+v", m)
+	}
+	// One's own sent message, by its number: shown, not marked read for
+	// the recipient.
+	if m := one(worker, ReadArgs{Message: fmt.Sprint(sent.Message.ID)}); m.MID != sent.Message.MID || m.Text != "mine" {
+		t.Fatalf("own sent: %+v", m)
+	}
+	if n, _ := d.st.Unread("reviewer"); n != 1 {
+		t.Fatalf("reading your own sent message marked it read for its recipient: %d", n)
+	}
+	// Unknown: the hint names the mid, and a mid not held says so.
+	for _, ref := range []string{"#999", "999", "ubcl:999"} {
+		err := worker.Call("read", ReadArgs{Message: ref}, nil)
+		if err == nil || !strings.Contains(err.Error(), "999") {
+			t.Fatalf("%s: %v", ref, err)
+		}
+	}
+	if err := worker.Call("read", ReadArgs{Message: "999"}, nil); !strings.Contains(err.Error(), "mid") {
+		t.Fatalf("hint: %v", err)
+	}
+}

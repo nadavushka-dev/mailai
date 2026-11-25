@@ -19,7 +19,7 @@ usage: mailai <command> [flags]
 
 mail
   send <to> [text]        leave a message; text from --file <path> or stdin when omitted
-  read                    read your mailbox inside the fence
+  read [<#>]              read your mailbox inside the fence; <#> (or a mid) reads one message
   reply <#> [text]        reply in a thread; # is the number in the message's header (or its mid)
   ask <to> <text>         send and wait for the reply; prints the reply alone
   wait [--timeout 10m]    block until mail arrives, then print it (instead of polling unread)

@@ -128,3 +128,13 @@ func TestSkillSaysWhatMailFromMailaiIs(t *testing.T) {
 		t.Fatal("skill does not say what mail from mailai is")
 	}
 }
+
+// SPEC §12 (2026-11-25): one message by its header number, not a whole
+// thread or every message (found on UbCl).
+func TestSkillSaysReadOneByHeaderNumber(t *testing.T) {
+	for _, want := range []string{"mailai read <#>", "--thread <#>"} {
+		if !strings.Contains(Skill, want) {
+			t.Fatalf("skill lacks %q", want)
+		}
+	}
+}
