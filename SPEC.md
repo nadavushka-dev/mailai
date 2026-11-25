@@ -271,13 +271,20 @@ and reads it itself.
    knows no harness: anything that keeps `mailai listen` open takes the
    wakes, and the add-on only carries lines across. `mailai addon pi [DIR]`
    writes the Pi add-on (it hands each line over as a steer: Pi starts a
-   turn when idle, and mid-turn it lands after the current tool call; one
+   turn when idle, and mid-turn it lands after the current tool calls; one
    wake waits at a time, since it says to read every unread message) with
    the skill beside it; `pi -e DIR`, or DIR under a project's
    `.pi/extensions/`, loads it. It is installed once for every session and
    switched on per agent: `[addon] agents` in the config, glob patterns
    over agent names (`["conductor", "lane-*"]`; nobody when empty, `"*"`
-   for everyone). At session start the add-on asks
+   for everyone). A steer handed to Pi cannot be taken back, and a tool
+   call may read the mail before it lands (found by the UbCl watch: 8 of
+   about 150 wakes came after their mail was read). So mid-turn the add-on
+   holds the line until the turn's tool calls are done, where the steer
+   would land, and asks the daemon for it again there (`mailai notice
+   --json`): nothing unread sends nothing, and the count is the one now; a
+   failed check sends the line as it came (decided 2026-11-25). At session
+   start the add-on asks
    `mailai listen --check` (exit 0 on, 3 not switched on); an agent not
    switched on gets neither the listener nor the skill, so onboarding an
    agent is one config line and touches no repo or launch command.

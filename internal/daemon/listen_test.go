@@ -200,3 +200,27 @@ func TestListen_OnlyAnAgent(t *testing.T) {
 		t.Fatalf("person listen: %v", err)
 	}
 }
+
+// Found by the UbCl watch (2026-11-25): wakes for mail already read. The
+// line a listener gets is rebuilt from the mailbox right before it goes:
+// mail read meanwhile sends nothing, and a count that dropped goes out as
+// it is now.
+func TestListen_LineRebuiltBeforeItGoes(t *testing.T) {
+	d, sock, _, clk := listenRig(t, map[store.Address]adapter.State{"worker": adapter.Working})
+	c := listenAs(t, sock, "worker")
+	d.st.Send(store.SendRequest{From: "reviewer", To: "worker", Text: "hi"})
+	clk.add(6 * time.Second)
+	d.st.Read(store.ReadQuery{Mailbox: "worker", Mark: true})
+	d.wakeOnce(context.Background())
+	if l := nextLine(c, 300*time.Millisecond); l != "" {
+		t.Fatalf("woke for mail already read: %q", l)
+	}
+	a, _ := d.st.Send(store.SendRequest{From: "reviewer", To: "worker", Text: "one"})
+	d.st.Send(store.SendRequest{From: "lead", To: "worker", Text: "two"})
+	clk.add(6 * time.Second)
+	d.st.Read(store.ReadQuery{Mailbox: "worker", IDs: []uint64{a.ID}, Mark: true})
+	d.wakeOnce(context.Background())
+	if l := nextLine(c, 2*time.Second); !strings.Contains(l, "1 unread") || !strings.Contains(l, "lead") || strings.Contains(l, "reviewer") {
+		t.Fatalf("line not rebuilt: %q", l)
+	}
+}

@@ -5,7 +5,10 @@
 //
 // It runs `mailai listen` and hands each line to the agent as a message,
 // mid-turn too (a steer), so mailai never types into this agent's pane and
-// mail does not wait for a long turn to end (SPEC §7). The line is
+// mail does not wait for a long turn to end (SPEC §7). Mid-turn it holds the
+// line until the turn's tool calls are done, where a steer lands, and asks
+// the daemon for it again there: a steer handed to Pi cannot be taken back,
+// and a tool call may have read the mail meanwhile. The line is
 // mailai's own one-line wake ("1 unread mailai message from …"), never a
 // sender's text; the agent reads its mail with `mailai read`. Mail rules
 // live in the daemon: this file only carries lines across.
@@ -38,6 +41,23 @@ function check(): Promise<"on" | "off" | "unknown"> {
 	});
 }
 
+// fresh: the wake line as it is now ("" when nothing is unread any more),
+// from the daemon; line itself when the daemon cannot say, so a wake is
+// never lost to a failed check.
+function fresh(line: string): Promise<string> {
+	return new Promise((resolve) => {
+		execFile(mailaiBin(), ["notice", "--json"], { timeout: 5000 }, (err, stdout) => {
+			if (err) return resolve(line);
+			try {
+				const r = JSON.parse(String(stdout)) as { count?: number; line?: string };
+				resolve(r.count === 0 ? "" : r.line || line);
+			} catch {
+				resolve(line);
+			}
+		});
+	});
+}
+
 export default function (pi: ExtensionAPI) {
 	let child: ChildProcess | undefined;
 	let stopped = true;
@@ -46,6 +66,28 @@ export default function (pi: ExtensionAPI) {
 	// waiting: a wake handed to Pi that has not landed yet. One at a time:
 	// it says to read every unread message, so later lines add nothing.
 	let waiting = false;
+	// running: a run is going; held: a line kept for its next boundary.
+	let running = false;
+	let held = "";
+
+	const hand = (line: string) => {
+		// steer: an idle agent starts a turn now; a busy one gets it
+		// mid-turn, after its current tool calls, not when the turn ends.
+		// Nothing touches the input box.
+		waiting = true;
+		pi.sendMessage(
+			{ customType: "mailai", content: line, display: true },
+			{ triggerTurn: true, deliverAs: "steer" },
+		);
+	};
+	// flush at a boundary: the held line, if mail is still unread.
+	const flush = async () => {
+		const line = held;
+		held = "";
+		if (!line || waiting) return;
+		const now = await fresh(line);
+		if (now && !waiting) hand(now);
+	};
 
 	const start = () => {
 		if (stopped || child) return;
@@ -59,14 +101,8 @@ export default function (pi: ExtensionAPI) {
 				const line = buf.slice(0, i).trim();
 				buf = buf.slice(i + 1);
 				if (!line || waiting) continue;
-				// steer: an idle agent starts a turn now; a busy one gets it
-				// mid-turn, after its current tool call, not when the turn
-				// ends. Nothing touches the input box.
-				waiting = true;
-				pi.sendMessage(
-					{ customType: "mailai", content: line, display: true },
-					{ triggerTurn: true, deliverAs: "steer" },
-				);
+				if (running) held = line;
+				else hand(line);
 			}
 		});
 		// `mailai listen` outlives daemon restarts by itself. It ends when
@@ -96,9 +132,19 @@ export default function (pi: ExtensionAPI) {
 		const m = event.message as { role?: string; customType?: string };
 		if (m.role === "custom" && m.customType === "mailai") waiting = false;
 	});
+	pi.on("agent_start", async () => {
+		running = true;
+	});
+	// After the turn's tool calls, before Pi picks up steers for the next
+	// model call: a line handed over here lands there.
+	pi.on("turn_end", async () => {
+		await flush();
+	});
 	// A run that ended has delivered what it queued; never stay stuck.
 	pi.on("agent_end", async () => {
+		running = false;
 		waiting = false;
+		await flush();
 	});
 	pi.on("session_shutdown", async () => {
 		stopped = true;
